@@ -14,14 +14,13 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AuthScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const router = useRouter();
 
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -87,6 +86,12 @@ export default function AuthScreen() {
           } else {
             console.log('Profile created successfully');
             Alert.alert('Success', 'Account created! Please check your email to verify your account.');
+            // Clear form and switch to sign in
+            setEmail('');
+            setPassword('');
+            setFullName('');
+            setUsername('');
+            setBio('');
             setIsSignUp(false);
           }
         }
@@ -103,8 +108,8 @@ export default function AuthScreen() {
           console.error('Sign in error:', error);
           Alert.alert('Sign In Error', error.message);
         } else {
-          console.log('Sign in successful, navigating to home');
-          router.replace('/(tabs)/(home)');
+          console.log('Sign in successful');
+          Alert.alert('Success', 'You are now signed in!');
         }
       }
     } catch (error: any) {

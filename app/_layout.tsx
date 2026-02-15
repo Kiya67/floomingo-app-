@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack } from "expo-router";
 import { SystemBars } from "react-native-edge-to-edge";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
@@ -31,30 +31,6 @@ const BlackDarkTheme: Theme = {
   },
 };
 
-function useProtectedRoute(session: Session | null) {
-  const segments = useSegments();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    const inAuthGroup = segments[0] === 'auth';
-
-    console.log('Auth state changed:', { 
-      hasSession: !!session, 
-      currentRoute: segments.join('/'),
-      inAuthGroup 
-    });
-
-    if (session && inAuthGroup) {
-      console.log('User is signed in, redirecting to home');
-      router.replace('/(tabs)/(home)');
-    }
-  }, [session, segments]);
-}
-
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
@@ -63,8 +39,6 @@ export default function RootLayout() {
   const { isConnected } = useNetworkState();
   const [session, setSession] = useState<Session | null>(null);
   const [isReady, setIsReady] = useState(false);
-
-  useProtectedRoute(session);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -102,29 +76,13 @@ export default function RootLayout() {
     return null;
   }
 
-  if (!session) {
-    return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
-          <WidgetProvider>
-            <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
-            <Stack>
-              <Stack.Screen name="auth" options={{ headerShown: false }} />
-            </Stack>
-            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-          </WidgetProvider>
-        </ThemeProvider>
-      </GestureHandlerRootView>
-    );
-  }
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
         <WidgetProvider>
           <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
           <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="auth" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
           <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
