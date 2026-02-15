@@ -1,7 +1,6 @@
 
 import React, { useEffect, useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "@react-navigation/native";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl } from "react-native";
 import { colors } from "@/styles/commonStyles";
@@ -111,17 +110,17 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+      <View style={[styles.container, { backgroundColor: bgColor }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
           <Text style={[styles.loadingText, { color: textColor }]}>Loading profile...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
       <ScrollView 
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -133,26 +132,28 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* Header - Settings button only */}
-        <View style={styles.header}>
-          <View style={styles.headerSpacer} />
-          <TouchableOpacity onPress={handleSettings}>
-            <IconSymbol 
-              ios_icon_name="gearshape.fill"
-              android_material_icon_name="settings" 
-              size={24} 
-              color={textColor}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Cover Photo */}
+        {/* Cover Photo - Extended to top */}
         <View style={styles.coverContainer}>
           {profile?.cover_url ? (
             <Image source={resolveImageSource(profile.cover_url)} style={styles.coverImage} />
           ) : (
             <View style={[styles.coverPlaceholder, { backgroundColor: cardColor }]} />
           )}
+          
+          {/* Settings Icon Overlay */}
+          <TouchableOpacity 
+            style={styles.settingsOverlay}
+            onPress={handleSettings}
+          >
+            <View style={styles.settingsIconContainer}>
+              <IconSymbol 
+                ios_icon_name="gearshape.fill"
+                android_material_icon_name="settings" 
+                size={24} 
+                color="#FFFFFF"
+              />
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Profile Info */}
@@ -243,12 +244,12 @@ export default function ProfileScreen() {
           
           <View style={styles.postsGrid}>
             <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              Your travel posts will appear here
+              Your travel videos will appear here
             </Text>
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -265,19 +266,10 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerSpacer: {
-    width: 24,
-  },
   coverContainer: {
-    height: 150,
+    height: 280,
     width: '100%',
+    position: 'relative',
   },
   coverImage: {
     width: '100%',
@@ -286,6 +278,20 @@ const styles = StyleSheet.create({
   coverPlaceholder: {
     width: '100%',
     height: '100%',
+  },
+  settingsOverlay: {
+    position: 'absolute',
+    top: 48,
+    right: 16,
+    zIndex: 10,
+  },
+  settingsIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileSection: {
     alignItems: 'center',
