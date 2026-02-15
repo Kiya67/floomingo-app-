@@ -1,15 +1,28 @@
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator } from "react-native";
 import { colors } from "@/styles/commonStyles";
+import { supabase } from "@/lib/supabase";
+
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string;
+  username: string | null;
+  bio: string | null;
+  avatar_url: string | null;
+}
 
 export default function ProfileScreen() {
   const theme = useTheme();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
   
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
@@ -17,9 +30,70 @@ export default function ProfileScreen() {
   const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
-  const postsCount = '24';
-  const followersCount = '1.2K';
-  const followingCount = '456';
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    console.log('Fetching user profile');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.log('No user found');
+        setLoading(false);
+        return;
+      }
+
+      console.log('User ID:', user.id);
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+      } else {
+        console.log('Profile fetched successfully:', data);
+        setProfile(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProfile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getInitials = (name: string) => {
+    const nameParts = name.split(' ');
+    const firstInitial = nameParts[0]?.charAt(0) || '';
+    const lastInitial = nameParts[1]?.charAt(0) || '';
+    const initials = firstInitial + lastInitial;
+    return initials.toUpperCase();
+  };
+
+  const displayName = profile?.full_name || 'User';
+  const displayUsername = profile?.username || '';
+  const displayBio = profile?.bio || 'No bio yet';
+  const displayEmail = profile?.email || '';
+  const initials = getInitials(displayName);
+
+  const postsCount = '0';
+  const followersCount = '0';
+  const followingCount = '0';
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={primaryColor} />
+          <Text style={[styles.loadingText, { color: textColor }]}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
@@ -37,15 +111,18 @@ export default function ProfileScreen() {
         {/* Profile Info */}
         <View style={styles.profileSection}>
           <View style={[styles.avatarLarge, { backgroundColor: primaryColor }]}>
-            <Text style={styles.avatarLargeText}>JD</Text>
+            <Text style={styles.avatarLargeText}>{initials}</Text>
           </View>
           
-          <Text style={[styles.name, { color: textColor }]}>John Doe</Text>
+          <Text style={[styles.name, { color: textColor }]}>{displayName}</Text>
+          {displayUsername ? (
+            <Text style={[styles.username, { color: textSecondaryColor }]}>@{displayUsername}</Text>
+          ) : null}
           <Text style={[styles.bio, { color: textSecondaryColor }]}>
-            Travel enthusiast 🌍 | Adventure seeker ✈️
+            {displayBio}
           </Text>
-          <Text style={[styles.bio, { color: textSecondaryColor }]}>
-            Exploring the world one destination at a time
+          <Text style={[styles.email, { color: textSecondaryColor }]}>
+            {displayEmail}
           </Text>
 
           {/* Stats */}
@@ -132,6 +209,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -164,12 +250,21 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 22,
     fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  username: {
+    fontSize: 16,
     marginBottom: 8,
   },
   bio: {
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 4,
+  },
+  email: {
+    fontSize: 12,
+    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',

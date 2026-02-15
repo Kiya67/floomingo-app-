@@ -13,11 +13,12 @@ import {
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AuthScreen() {
+  const router = useRouter();
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -79,17 +80,13 @@ export default function AuthScreen() {
           if (profileError) {
             console.error('Profile creation error:', profileError);
             Alert.alert('Profile Error', profileError.message);
-          } else {
-            console.log('Profile created successfully');
-            Alert.alert('Success', 'Account created! Please check your email to verify your account.');
-            // Clear form and switch to sign in
-            setEmail('');
-            setPassword('');
-            setFullName('');
-            setUsername('');
-            setBio('');
-            setIsSignUp(false);
+            setLoading(false);
+            return;
           }
+
+          console.log('Profile created successfully, navigating to tabs');
+          // Navigate to tabs after successful sign up
+          router.replace('/(tabs)/(home)/');
         }
       } else {
         console.log('Attempting sign in with email:', email);
@@ -103,15 +100,17 @@ export default function AuthScreen() {
         if (error) {
           console.error('Sign in error:', error);
           Alert.alert('Sign In Error', error.message);
-        } else {
-          console.log('Sign in successful');
-          Alert.alert('Success', 'You are now signed in!');
+          setLoading(false);
+          return;
         }
+
+        console.log('Sign in successful, navigating to tabs');
+        // Navigate to tabs after successful sign in
+        router.replace('/(tabs)/(home)/');
       }
     } catch (error: any) {
       console.error('Auth error:', error);
       Alert.alert('Error', error.message || 'An unexpected error occurred');
-    } finally {
       setLoading(false);
     }
   };
