@@ -42,8 +42,8 @@
     },
     "extra": {
       "router": {},
-      "supabaseUrl": "YOUR_SUPABASE_PROJECT_URL",
-      "supabaseAnonKey": "YOUR_SUPABASE_ANON_KEY"
+      "supabaseUrl": "https://ilobeaszwnfbwebemmji.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlsb2JlYXN6d25mYndlYmVtbWppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExMTk2NzAsImV4cCI6MjA4NjY5NTY3MH0.su5VZdsQZaaIKF3eOs9tH4YcivLQRydmTUIQeMOm8xU"
     }
   }
 }

@@ -4,7 +4,7 @@ import { StyleSheet } from 'react-native';
 export const colors = {
   // Travel-themed color palette - warm and inviting
   background: '#FFFFFF',
-  backgroundDark: '#0F1419',
+  backgroundDark: '#000000', // Changed to pure black for dark mode
   
   text: '#1A1A1A',
   textDark: '#F5F5F5',
@@ -22,13 +22,13 @@ export const colors = {
   accentDark: '#FFE066',
   
   card: '#F9FAFB',
-  cardDark: '#1F2937',
+  cardDark: '#1A1A1A', // Dark card background for black theme
   
   highlight: '#FEF3C7', // Soft yellow highlight
-  highlightDark: '#374151',
+  highlightDark: '#2A2A2A',
   
   border: '#E5E7EB',
-  borderDark: '#374151',
+  borderDark: '#333333',
   
   success: '#10B981',
   error: '#EF4444',
