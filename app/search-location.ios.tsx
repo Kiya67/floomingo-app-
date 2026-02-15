@@ -39,7 +39,6 @@ export default function SearchLocationScreen() {
   const [mode, setMode] = useState<SearchMode>('city');
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
-  const [debounceTimeout, setDebounceTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const searchLocations = useCallback(async (input: string, searchMode: SearchMode) => {
     if (!input.trim()) {
@@ -106,26 +105,19 @@ export default function SearchLocationScreen() {
   }, []);
 
   useEffect(() => {
-    if (debounceTimeout) {
-      clearTimeout(debounceTimeout);
-    }
-
-    if (searchText.trim()) {
-      const timeout = setTimeout(() => {
+    const timeout = setTimeout(() => {
+      if (searchText.trim()) {
         searchLocations(searchText, mode);
-      }, 300);
-      setDebounceTimeout(timeout);
-    } else {
-      setPredictions([]);
-      setLoading(false);
-    }
+      } else {
+        setPredictions([]);
+        setLoading(false);
+      }
+    }, 300);
 
     return () => {
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
+      clearTimeout(timeout);
     };
-  }, [searchText, mode]);
+  }, [searchText, mode, searchLocations]);
 
   const handleSelectLocation = (prediction: Prediction) => {
     console.log('User selected location:', prediction);
