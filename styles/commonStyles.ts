@@ -2,9 +2,9 @@
 import { StyleSheet } from 'react-native';
 
 export const colors = {
-  // Travel-themed color palette - warm and inviting
+  // Pink-themed color palette
   background: '#FFFFFF',
-  backgroundDark: '#000000', // Changed to pure black for dark mode
+  backgroundDark: '#000000', // Pure black for dark mode
   
   text: '#1A1A1A',
   textDark: '#F5F5F5',
@@ -12,22 +12,22 @@ export const colors = {
   textSecondary: '#6B7280',
   textSecondaryDark: '#9CA3AF',
   
-  primary: '#FF6B35', // Vibrant sunset orange
-  primaryDark: '#FF8C5A',
+  primary: '#FFB6C1', // Light pink
+  primaryDark: '#FF69B4',
   
-  secondary: '#00B4D8', // Ocean blue
-  secondaryDark: '#48CAE4',
+  secondary: '#FF7F50', // Coral orange
+  secondaryDark: '#FF8C69',
   
-  accent: '#FFD23F', // Golden yellow
-  accentDark: '#FFE066',
+  accent: '#FFA07A', // Light salmon
+  accentDark: '#FFB399',
   
-  card: '#F9FAFB',
+  card: '#FFF5F7',
   cardDark: '#1A1A1A', // Dark card background for black theme
   
-  highlight: '#FEF3C7', // Soft yellow highlight
+  highlight: '#FFE4E1', // Misty rose highlight
   highlightDark: '#2A2A2A',
   
-  border: '#E5E7EB',
+  border: '#FFD6E0',
   borderDark: '#333333',
   
   success: '#10B981',

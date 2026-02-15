@@ -1,5 +1,5 @@
 
-const tintColorLight = "#0a7ea4";
+const tintColorLight = "#FFB6C1"; // Light pink
 const tintColorDark = "#fff";
 
 export const zincColors = {
@@ -26,13 +26,13 @@ export const Colors = {
     text: "#11181C",
     background: "#fff",
     tint: tintColorLight,
-    icon: "#687076",
-    tabIconDefault: "#687076",
+    icon: "#FFB6C1", // Pink icons
+    tabIconDefault: "#D8A0A8",
     tabIconSelected: tintColorLight,
   },
   dark: {
     text: "#ECEDEE",
-    background: "#000000", // Changed to pure black for dark mode
+    background: "#000000", // Pure black for dark mode
     tint: tintColorDark,
     icon: "#9BA1A6",
     tabIconDefault: "#9BA1A6",
