@@ -1,7 +1,7 @@
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useFonts } from "expo-font";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { SystemBars } from "react-native-edge-to-edge";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
@@ -16,6 +16,8 @@ import { WidgetProvider } from "@/contexts/WidgetContext";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme, Alert } from "react-native";
 import { useNetworkState } from "expo-network";
+import { supabase } from "@/lib/supabase";
+import { Session } from "@supabase/supabase-js";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -30,18 +32,66 @@ const BlackDarkTheme: Theme = {
   },
 };
 
+function useProtectedRoute(session: Session | null) {
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    const inAuthGroup = segments[0] === 'auth';
+
+    console.log('Auth state changed:', { 
+      hasSession: !!session, 
+      currentRoute: segments.join('/'),
+      inAuthGroup 
+    });
+
+    if (!session && !inAuthGroup) {
+      // User is not signed in and not on auth screen, redirect to auth
+      console.log('Redirecting to auth screen');
+      router.replace('/auth');
+    } else if (session && inAuthGroup) {
+      // User is signed in but on auth screen, redirect to home
+      console.log('Redirecting to home screen');
+      router.replace('/(tabs)/(home)');
+    }
+  }, [session, segments]);
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
   const { isConnected } = useNetworkState();
+  const [session, setSession] = useState<Session | null>(null);
+  const [isReady, setIsReady] = useState(false);
+
+  useProtectedRoute(session);
 
   useEffect(() => {
-    if (loaded) {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session check:', !!session);
+      setSession(session);
+      setIsReady(true);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('Auth state changed:', _event, !!session);
+      setSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loaded && isReady) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [loaded, isReady]);
 
   useEffect(() => {
     if (isConnected === false) {
@@ -52,7 +102,7 @@ export default function RootLayout() {
     }
   }, [isConnected]);
 
-  if (!loaded) {
+  if (!loaded || !isReady) {
     return null;
   }
 
