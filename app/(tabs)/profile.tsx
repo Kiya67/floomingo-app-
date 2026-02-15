@@ -11,7 +11,7 @@ import { useRouter } from "expo-router";
 interface Profile {
   id: string;
   email: string;
-  full_name: string;
+  display_name: string;
   username: string | null;
   bio: string | null;
   avatar_url: string | null;
@@ -88,7 +88,7 @@ export default function ProfileScreen() {
     return initials.toUpperCase();
   };
 
-  const displayName = profile?.full_name || 'User';
+  const displayName = profile?.display_name || 'User';
   const displayUsername = profile?.username || '';
   const displayBio = profile?.bio || 'No bio yet';
   const initials = getInitials(displayName);

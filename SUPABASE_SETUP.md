@@ -12,7 +12,7 @@ You need to create a `profiles` table in your Supabase database with the followi
 CREATE TABLE profiles (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
-  full_name TEXT NOT NULL,
+  display_name TEXT NOT NULL,
   username TEXT UNIQUE,
   bio TEXT,
   avatar_url TEXT,
@@ -54,30 +54,110 @@ You need to create two storage buckets in your Supabase project for image upload
 - **File Size Limit**: 5MB recommended
 - **Allowed MIME Types**: image/jpeg, image/png, image/jpg
 
-### Storage Policies
+### Storage Policies (CRITICAL - MUST BE SET UP)
 
-For both buckets, create the following policies:
+⚠️ **IMPORTANT**: The storage buckets MUST have proper RLS policies or uploads will fail with "row-level security policy" errors.
+
+For **BOTH** the `avatars` and `covers` buckets, you need to create the following policies in the Supabase Dashboard:
+
+#### Step-by-step instructions:
+
+1. Go to **Storage** in your Supabase Dashboard
+2. Click on the bucket name (`avatars` or `covers`)
+3. Click on **Policies** tab
+4. Click **New Policy**
+5. Create the following policies:
+
+**Policy 1: Allow authenticated users to upload**
+```sql
+-- Policy name: "Users can upload their own images"
+-- Allowed operation: INSERT
+-- Policy definition:
+(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
+```
+
+**Policy 2: Allow public read access**
+```sql
+-- Policy name: "Public read access"
+-- Allowed operation: SELECT
+-- Policy definition:
+bucket_id = 'avatars'
+```
+
+**Policy 3: Allow users to update their own images**
+```sql
+-- Policy name: "Users can update their own images"
+-- Allowed operation: UPDATE
+-- Policy definition:
+(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
+```
+
+**Policy 4: Allow users to delete their own images**
+```sql
+-- Policy name: "Users can delete their own images"
+-- Allowed operation: DELETE
+-- Policy definition:
+(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
+```
+
+**Repeat the same 4 policies for the `covers` bucket** (just replace `'avatars'` with `'covers'` in the policy definitions).
+
+### Alternative: SQL Script for Storage Policies
+
+If you prefer to use SQL, you can run this in the Supabase SQL Editor:
 
 ```sql
--- Allow authenticated users to upload their own images
-CREATE POLICY "Users can upload their own images"
+-- Policies for avatars bucket
+CREATE POLICY "Users can upload avatars"
   ON storage.objects FOR INSERT
-  WITH CHECK (auth.uid()::text = (storage.foldername(name))[1]);
+  WITH CHECK (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
 
--- Allow public read access
-CREATE POLICY "Public read access"
+CREATE POLICY "Public read access for avatars"
   ON storage.objects FOR SELECT
-  USING (true);
+  USING (bucket_id = 'avatars');
 
--- Allow users to update their own images
-CREATE POLICY "Users can update their own images"
+CREATE POLICY "Users can update their avatars"
   ON storage.objects FOR UPDATE
-  USING (auth.uid()::text = (storage.foldername(name))[1]);
+  USING (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
 
--- Allow users to delete their own images
-CREATE POLICY "Users can delete their own images"
+CREATE POLICY "Users can delete their avatars"
   ON storage.objects FOR DELETE
-  USING (auth.uid()::text = (storage.foldername(name))[1]);
+  USING (
+    bucket_id = 'avatars' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Policies for covers bucket
+CREATE POLICY "Users can upload covers"
+  ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'covers' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Public read access for covers"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'covers');
+
+CREATE POLICY "Users can update their covers"
+  ON storage.objects FOR UPDATE
+  USING (
+    bucket_id = 'covers' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+CREATE POLICY "Users can delete their covers"
+  ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'covers' AND
+    auth.uid()::text = (storage.foldername(name))[1]
+  );
 ```
 
 ## Configuration
@@ -91,7 +171,7 @@ The Supabase URL and Anon Key are already configured in `app.json`:
 - **Sign Up**: Creates a new user account and profile in the `profiles` table
 - **Sign In**: Authenticates existing users
 - **Edit Profile**: Users can update their profile information including:
-  - Full Name (required)
+  - Name (required) - stored as `display_name`
   - Username (optional)
   - Bio (optional)
   - Profile Photo (avatar) - stored in `avatars` bucket
@@ -111,3 +191,19 @@ The Supabase URL and Anon Key are already configured in `app.json`:
 3. After signing in, navigate to the Profile tab to view your profile
 4. Tap "Edit Profile" to update your information and upload photos
 5. Profile and cover photos are automatically uploaded to Supabase storage
+
+## Troubleshooting
+
+### "new row violates row-level security policy" error when uploading images
+
+This means the storage bucket policies are not set up correctly. Follow the **Storage Policies** section above to create the required policies for both `avatars` and `covers` buckets.
+
+### "Could not find the 'full_name' column" error
+
+The database schema uses `display_name` instead of `full_name`. Make sure your `profiles` table has a `display_name` column (not `full_name`).
+
+### Images not displaying after upload
+
+1. Make sure the storage buckets are set to **Public**
+2. Verify that the "Public read access" policy is created for both buckets
+3. Check that the image URLs are being saved correctly in the `avatar_url` and `cover_url` columns

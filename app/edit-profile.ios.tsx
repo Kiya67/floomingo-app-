@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 interface Profile {
   id: string;
   email: string;
-  full_name: string;
+  display_name: string;
   username: string | null;
   bio: string | null;
   avatar_url: string | null;
@@ -41,7 +41,7 @@ export default function EditProfileScreen() {
   const [uploadingCover, setUploadingCover] = useState(false);
 
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [fullName, setFullName] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export default function EditProfileScreen() {
       } else {
         console.log('Profile fetched:', data);
         setProfile(data);
-        setFullName(data.full_name || '');
+        setDisplayName(data.display_name || '');
         setUsername(data.username || '');
         setBio(data.bio || '');
         setAvatarUrl(data.avatar_url);
@@ -132,7 +132,7 @@ export default function EditProfileScreen() {
       }
 
       const fileExt = uri.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       const bucket = type === 'avatar' ? 'avatars' : 'covers';
 
       const response = await fetch(uri);
@@ -191,8 +191,8 @@ export default function EditProfileScreen() {
   const handleSave = async () => {
     console.log('User tapped save profile');
 
-    if (!fullName.trim()) {
-      Alert.alert('Error', 'Full name is required');
+    if (!displayName.trim()) {
+      Alert.alert('Error', 'Name is required');
       return;
     }
 
@@ -207,7 +207,7 @@ export default function EditProfileScreen() {
       }
 
       console.log('Updating profile:', {
-        full_name: fullName,
+        display_name: displayName,
         username: username || null,
         bio: bio || null,
         avatar_url: avatarUrl,
@@ -217,7 +217,7 @@ export default function EditProfileScreen() {
       const { error } = await supabase
         .from('profiles')
         .update({
-          full_name: fullName,
+          display_name: displayName,
           username: username || null,
           bio: bio || null,
           avatar_url: avatarUrl,
@@ -250,7 +250,7 @@ export default function EditProfileScreen() {
     return initials.toUpperCase();
   };
 
-  const initials = getInitials(fullName || 'U');
+  const initials = getInitials(displayName || 'U');
 
   if (loading) {
     return (
@@ -347,13 +347,13 @@ export default function EditProfileScreen() {
         {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputContainer}>
-            <Text style={[styles.label, { color: textColor }]}>Full Name *</Text>
+            <Text style={[styles.label, { color: textColor }]}>Name *</Text>
             <TextInput
               style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
-              placeholder="Enter your full name"
+              placeholder="Enter your name"
               placeholderTextColor={textSecondaryColor}
-              value={fullName}
-              onChangeText={setFullName}
+              value={displayName}
+              onChangeText={setDisplayName}
               autoCapitalize="words"
             />
           </View>
