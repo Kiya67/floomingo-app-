@@ -2,10 +2,11 @@
 import React, { useEffect, useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
+import { VideoGridItem } from "@/components/VideoGridItem";
 
 interface Profile {
   id: string;
@@ -16,6 +17,20 @@ interface Profile {
   avatar_url: string | null;
   cover_url: string | null;
 }
+
+interface Post {
+  id: string;
+  user_id: string;
+  video_url: string;
+  caption: string;
+  place_id: string | null;
+  place_name: string | null;
+  location_type: string | null;
+  created_at: string;
+}
+
+const { width } = Dimensions.get('window');
+const gridItemSize = (width - 48) / 3;
 
 function resolveImageSource(source: string | number | any) {
   if (!source) return { uri: '' };
@@ -30,6 +45,7 @@ export default function ProfileScreen() {
   const isDark = colorScheme === 'dark';
   
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
@@ -41,6 +57,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     fetchProfile();
+    fetchUserPosts();
   }, []);
 
   const fetchProfile = async () => {
@@ -75,10 +92,38 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchUserPosts = async () => {
+    console.log('Fetching user posts');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.log('No user found');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user posts:', error);
+      } else {
+        console.log('User posts fetched successfully:', data?.length || 0);
+        setPosts(data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchUserPosts:', error);
+    }
+  };
+
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
     setRefreshing(true);
     await fetchProfile();
+    await fetchUserPosts();
     setRefreshing(false);
   };
 
@@ -105,7 +150,7 @@ export default function ProfileScreen() {
   const displayBio = profile?.bio || 'No bio yet';
   const initials = getInitials(displayName);
 
-  const postsCount = '0';
+  const postsCount = posts.length.toString();
   const followersCount = '0';
   const followingCount = '0';
 
@@ -133,7 +178,6 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* Cover Photo - Extended to top */}
         <View style={styles.coverContainer}>
           {profile?.cover_url ? (
             <Image source={resolveImageSource(profile.cover_url)} style={styles.coverImage} />
@@ -141,7 +185,6 @@ export default function ProfileScreen() {
             <View style={[styles.coverPlaceholder, { backgroundColor: cardColor }]} />
           )}
           
-          {/* Settings Icon Overlay */}
           <TouchableOpacity 
             style={styles.settingsOverlay}
             onPress={handleSettings}
@@ -156,7 +199,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Profile Info */}
         <View style={styles.profileSection}>
           {profile?.avatar_url ? (
             <Image source={resolveImageSource(profile.avatar_url)} style={styles.avatarLarge} />
@@ -176,7 +218,6 @@ export default function ProfileScreen() {
             </Text>
           ) : null}
 
-          {/* Stats */}
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={[styles.statNumber, { color: textColor }]}>{postsCount}</Text>
@@ -192,7 +233,6 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Action Button - Edit Profile only */}
           <TouchableOpacity 
             style={[styles.editButton, { backgroundColor: primaryColor }]}
             onPress={handleEditProfile}
@@ -201,26 +241,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Highlights Section */}
-        <View style={styles.highlightsSection}>
-          <Text style={[styles.sectionTitle, { color: textColor }]}>Travel Highlights</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.highlightsScroll}>
-            {['Europe', 'Asia', 'Americas', 'Africa'].map((continent, index) => (
-              <View key={index} style={styles.highlightItem}>
-                <View style={[styles.highlightCircle, { backgroundColor: cardColor }]}>
-                  <IconSymbol 
-                    android_material_icon_name="add" 
-                    size={32} 
-                    color={textSecondaryColor}
-                  />
-                </View>
-                <Text style={[styles.highlightLabel, { color: textColor }]}>{continent}</Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Posts Grid Placeholder */}
         <View style={styles.postsSection}>
           <View style={styles.tabBar}>
             <TouchableOpacity style={styles.tab}>
@@ -239,11 +259,29 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           
-          <View style={styles.postsGrid}>
-            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              Your travel videos will appear here
-            </Text>
-          </View>
+          {posts.length === 0 ? (
+            <View style={styles.emptyPostsContainer}>
+              <IconSymbol 
+                android_material_icon_name="videocam" 
+                size={48} 
+                color={textSecondaryColor}
+              />
+              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+                Your travel videos will appear here
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.gridContainer}>
+              {posts.map((post) => (
+                <VideoGridItem
+                  key={post.id}
+                  videoUrl={post.video_url}
+                  size={gridItemSize}
+                  cardColor={cardColor}
+                />
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </View>
@@ -355,35 +393,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  highlightsSection: {
-    marginTop: 32,
-    paddingHorizontal: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  highlightsScroll: {
-    marginBottom: 24,
-  },
-  highlightItem: {
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  highlightCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  highlightLabel: {
-    fontSize: 12,
-  },
   postsSection: {
-    marginTop: 16,
+    marginTop: 32,
   },
   tabBar: {
     flexDirection: 'row',
@@ -395,14 +406,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
-  postsGrid: {
-    padding: 16,
-    minHeight: 200,
-    justifyContent: 'center',
+  emptyPostsContainer: {
+    padding: 40,
     alignItems: 'center',
   },
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
+    marginTop: 16,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 12,
+    gap: 6,
   },
 });

@@ -1,47 +1,29 @@
 
-import React from "react";
-import { StyleSheet, View, Text, ScrollView, Image, TouchableOpacity, useColorScheme } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
+import { supabase } from "@/lib/supabase";
+import { VideoGridItem } from "@/components/VideoGridItem";
 
-// Helper to resolve image sources
-function resolveImageSource(source: string | number | any): any {
-  if (!source) return { uri: '' };
-  if (typeof source === 'string') return { uri: source };
-  return source;
+interface Post {
+  id: string;
+  user_id: string;
+  video_url: string;
+  caption: string;
+  place_id: string | null;
+  place_name: string | null;
+  location_type: string | null;
+  created_at: string;
+  profiles?: {
+    display_name: string;
+    avatar_url: string | null;
+  };
 }
 
-// Sample travel posts data
-const travelPosts = [
-  {
-    id: '1',
-    author: 'Sarah Chen',
-    location: 'Santorini, Greece',
-    image: 'https://images.unsplash.com/photo-1613395877344-13d4a8e0d49e?w=800',
-    caption: 'Watching the sunset over the Aegean Sea. Pure magic! ✨',
-    likes: 234,
-    comments: 18,
-  },
-  {
-    id: '2',
-    author: 'Marco Silva',
-    location: 'Kyoto, Japan',
-    image: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=800',
-    caption: 'Lost in the beauty of Fushimi Inari shrine 🎋',
-    likes: 456,
-    comments: 32,
-  },
-  {
-    id: '3',
-    author: 'Emma Wilson',
-    location: 'Banff, Canada',
-    image: 'https://images.unsplash.com/photo-1503614472-8c93d56e92ce?w=800',
-    caption: 'Mountain mornings hit different 🏔️',
-    likes: 189,
-    comments: 12,
-  },
-];
+const { width } = Dimensions.get('window');
+const gridItemSize = (width - 48) / 3;
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -53,120 +35,118 @@ export default function HomeScreen() {
   const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchPosts();
+  }, []);
+
+  const fetchPosts = async () => {
+    console.log('Fetching posts from database');
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles (
+            display_name,
+            avatar_url
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching posts:', error);
+      } else {
+        console.log('Posts fetched successfully:', data?.length || 0);
+        setPosts(data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchPosts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    console.log('User pulled to refresh posts');
+    setRefreshing(true);
+    await fetchPosts();
+    setRefreshing(false);
+  };
+
+  const emptyText = 'No videos yet. Be the first to post!';
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, { color: textColor }]}>Wanderlust</Text>
+          <IconSymbol 
+            ios_icon_name="bell"
+            android_material_icon_name="notifications" 
+            size={24} 
+            color={textColor}
+          />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={primaryColor} />
+          <Text style={[styles.loadingText, { color: textColor }]}>Loading videos...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: textColor }]}>Wanderlust</Text>
         <IconSymbol 
-          ios_icon_name="bell.fill"
+          ios_icon_name="bell"
           android_material_icon_name="notifications" 
           size={24} 
           color={textColor}
         />
       </View>
 
-      {/* Feed */}
-      <ScrollView style={styles.feed} showsVerticalScrollIndicator={false}>
-        {travelPosts.map((post) => {
-          const likesText = `${post.likes}`;
-          const commentsText = `${post.comments}`;
-          
-          return (
-            <View key={post.id} style={[styles.postCard, { backgroundColor: cardColor }]}>
-              {/* Post Header */}
-              <View style={styles.postHeader}>
-                <View style={styles.postAuthorInfo}>
-                  <View style={[styles.avatar, { backgroundColor: primaryColor }]}>
-                    <Text style={styles.avatarText}>{post.author[0]}</Text>
-                  </View>
-                  <View>
-                    <Text style={[styles.authorName, { color: textColor }]}>{post.author}</Text>
-                    <View style={styles.locationRow}>
-                      <IconSymbol 
-                        ios_icon_name="location.fill"
-                        android_material_icon_name="location-on" 
-                        size={14} 
-                        color={textSecondaryColor}
-                      />
-                      <Text style={[styles.location, { color: textSecondaryColor }]}>{post.location}</Text>
-                    </View>
-                  </View>
-                </View>
-                <IconSymbol 
-                  ios_icon_name="ellipsis"
-                  android_material_icon_name="more-vert" 
-                  size={24} 
-                  color={textSecondaryColor}
-                />
-              </View>
-
-              {/* Post Image */}
-              <Image 
-                source={resolveImageSource(post.image)} 
-                style={styles.postImage}
-                resizeMode="cover"
+      <ScrollView 
+        style={styles.feed} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={primaryColor}
+            colors={[primaryColor]}
+          />
+        }
+      >
+        {posts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol 
+              ios_icon_name="video.fill"
+              android_material_icon_name="videocam" 
+              size={64} 
+              color={textSecondaryColor}
+            />
+            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              {emptyText}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.gridContainer}>
+            {posts.map((post) => (
+              <VideoGridItem
+                key={post.id}
+                videoUrl={post.video_url}
+                size={gridItemSize}
+                cardColor={cardColor}
               />
-
-              {/* Post Actions */}
-              <View style={styles.postActions}>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <IconSymbol 
-                      ios_icon_name="heart"
-                      android_material_icon_name="favorite-border" 
-                      size={24} 
-                      color={textColor}
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <IconSymbol 
-                      ios_icon_name="bubble.right"
-                      android_material_icon_name="chat-bubble-outline" 
-                      size={24} 
-                      color={textColor}
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.actionButton}>
-                    <IconSymbol 
-                      ios_icon_name="paperplane"
-                      android_material_icon_name="send" 
-                      size={24} 
-                      color={textColor}
-                    />
-                  </TouchableOpacity>
-                </View>
-                <TouchableOpacity>
-                  <IconSymbol 
-                    ios_icon_name="bookmark"
-                    android_material_icon_name="bookmark-border" 
-                    size={24} 
-                    color={textColor}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Post Stats */}
-              <View style={styles.postStats}>
-                <Text style={[styles.likes, { color: textColor }]}>{likesText}</Text>
-                <Text style={[styles.likesLabel, { color: textColor }]}> likes</Text>
-              </View>
-
-              {/* Post Caption */}
-              <View style={styles.captionContainer}>
-                <Text style={[styles.captionAuthor, { color: textColor }]}>{post.author}</Text>
-                <Text style={[styles.caption, { color: textColor }]}> {post.caption}</Text>
-              </View>
-
-              {/* Comments Link */}
-              <TouchableOpacity>
-                <Text style={[styles.viewComments, { color: textSecondaryColor }]}>
-                  View all {commentsText} comments
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        })}
+            ))}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -187,96 +167,33 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+  },
   feed: {
     flex: 1,
   },
-  postCard: {
-    marginBottom: 24,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  postHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-  },
-  postAuthorInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  emptyContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    paddingVertical: 80,
   },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+  emptyText: {
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
   },
-  authorName: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  locationRow: {
+  gridContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  location: {
-    fontSize: 13,
-    marginLeft: 2,
-  },
-  postImage: {
-    width: '100%',
-    height: 400,
-  },
-  postActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 12,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-  },
-  actionButton: {
-    marginRight: 16,
-  },
-  postStats: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-  likes: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  likesLabel: {
-    fontSize: 14,
-  },
-  captionContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingTop: 8,
     flexWrap: 'wrap',
-  },
-  captionAuthor: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  caption: {
-    fontSize: 14,
-  },
-  viewComments: {
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 12,
+    padding: 12,
+    gap: 6,
   },
 });

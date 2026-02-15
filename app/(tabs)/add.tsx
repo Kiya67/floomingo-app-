@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, Sc
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '@/lib/supabase';
 
 export default function AddScreen() {
   const router = useRouter();
@@ -54,7 +55,7 @@ export default function AddScreen() {
       mediaTypes: ['videos'],
       allowsEditing: true,
       quality: 1,
-      videoMaxDuration: 60,
+      videoMaxDuration: 120, // 2 minutes = 120 seconds
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -77,7 +78,7 @@ export default function AddScreen() {
       mediaTypes: ['videos'],
       allowsEditing: true,
       quality: 1,
-      videoMaxDuration: 60,
+      videoMaxDuration: 120, // 2 minutes = 120 seconds
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -108,18 +109,81 @@ export default function AddScreen() {
         place_name: selectedPlaceName,
         location_type: selectedLocationType,
       });
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
       
-      // TODO: Backend Integration - POST /api/posts with multipart form data
-      // Body: { video: File, caption: string, place_id: string, place_name: string, location_type: string }
-      // Returns: { id, videoUrl, caption, place_id, place_name, location_type, createdAt }
+      if (!user) {
+        Alert.alert('Error', 'You must be logged in to post');
+        return;
+      }
+
+      // Upload video to Supabase storage
+      const fileExt = videoUri.split('.').pop() || 'mp4';
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      
+      // Fetch the video file
+      const response = await fetch(videoUri);
+      const blob = await response.blob();
+      
+      console.log('Uploading video to storage:', fileName);
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, blob, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: `video/${fileExt}`,
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        Alert.alert('Upload Error', uploadError.message);
+        return;
+      }
+
+      console.log('Video uploaded successfully:', uploadData);
+
+      // Get public URL for the video
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      console.log('Video public URL:', publicUrl);
+
+      // Insert post into database
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .insert({
+          user_id: user.id,
+          video_url: publicUrl,
+          caption: caption.trim(),
+          place_id: selectedPlaceId || null,
+          place_name: selectedPlaceName || null,
+          location_type: selectedLocationType || null,
+        })
+        .select()
+        .single();
+
+      if (postError) {
+        console.error('Post creation error:', postError);
+        Alert.alert('Error', 'Failed to create post: ' + postError.message);
+        return;
+      }
+
+      console.log('Post created successfully:', postData);
       
       Alert.alert('Success', 'Video posted successfully!');
       
+      // Reset form
       setVideoUri(null);
       setCaption('');
       setSelectedPlaceId('');
       setSelectedPlaceName('');
       setSelectedLocationType('');
+      
+      // Navigate to home to see the new post
+      router.push('/(tabs)/(home)');
     } catch (error) {
       console.error('Error posting video:', error);
       Alert.alert('Error', 'Failed to post video. Please try again.');
@@ -162,6 +226,9 @@ export default function AddScreen() {
               />
               <Text style={[styles.placeholderText, { color: textSecondaryColor }]}>
                 No video selected
+              </Text>
+              <Text style={[styles.placeholderSubtext, { color: textSecondaryColor }]}>
+                Up to 2 minutes
               </Text>
             </View>
 
@@ -332,6 +399,10 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 16,
     marginTop: 16,
+  },
+  placeholderSubtext: {
+    fontSize: 14,
+    marginTop: 4,
   },
   buttonRow: {
     flexDirection: 'row',
