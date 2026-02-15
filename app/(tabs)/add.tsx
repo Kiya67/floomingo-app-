@@ -1,12 +1,15 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { colors } from "@/styles/commonStyles";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
 
 export default function AddScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -18,8 +21,24 @@ export default function AddScreen() {
 
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
-  const [location, setLocation] = useState('');
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string>('');
+  const [selectedPlaceName, setSelectedPlaceName] = useState<string>('');
+  const [selectedLocationType, setSelectedLocationType] = useState<'city' | 'place' | ''>('');
   const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
+      console.log('Location selected from search:', {
+        placeId: params.selectedPlaceId,
+        placeName: params.selectedPlaceName,
+        locationType: params.selectedLocationType,
+      });
+      
+      setSelectedPlaceId(params.selectedPlaceId as string);
+      setSelectedPlaceName(params.selectedPlaceName as string);
+      setSelectedLocationType(params.selectedLocationType as 'city' | 'place');
+    }
+  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
@@ -83,17 +102,24 @@ export default function AddScreen() {
     setUploading(true);
     
     try {
-      console.log('Uploading video with caption:', caption, 'and location:', location);
+      console.log('Uploading video with data:', {
+        caption,
+        place_id: selectedPlaceId,
+        place_name: selectedPlaceName,
+        location_type: selectedLocationType,
+      });
       
-      // TODO: Backend Integration - POST /api/videos with multipart form data
-      // Body: { video: File, caption: string, location: string }
-      // Returns: { id, videoUrl, caption, location, createdAt }
+      // TODO: Backend Integration - POST /api/posts with multipart form data
+      // Body: { video: File, caption: string, place_id: string, place_name: string, location_type: string }
+      // Returns: { id, videoUrl, caption, place_id, place_name, location_type, createdAt }
       
       Alert.alert('Success', 'Video posted successfully!');
       
       setVideoUri(null);
       setCaption('');
-      setLocation('');
+      setSelectedPlaceId('');
+      setSelectedPlaceName('');
+      setSelectedLocationType('');
     } catch (error) {
       console.error('Error posting video:', error);
       Alert.alert('Error', 'Failed to post video. Please try again.');
@@ -106,7 +132,14 @@ export default function AddScreen() {
     console.log('User tapped Clear button');
     setVideoUri(null);
     setCaption('');
-    setLocation('');
+    setSelectedPlaceId('');
+    setSelectedPlaceName('');
+    setSelectedLocationType('');
+  };
+
+  const handleOpenLocationSearch = () => {
+    console.log('User tapped location field, opening search');
+    router.push('/search-location');
   };
 
   const captionPlaceholder = 'Share your travel story...';
@@ -218,17 +251,25 @@ export default function AddScreen() {
               />
               <Text style={[styles.inputLabel, { color: textColor }]}>Location</Text>
             </View>
-            <TextInput
-              style={[styles.locationInput, { 
-                backgroundColor: cardColor, 
-                color: textColor,
+            <TouchableOpacity
+              style={[styles.locationButton, { 
+                backgroundColor: cardColor,
                 borderColor: isDark ? '#333' : '#E5E7EB'
               }]}
-              placeholder={locationPlaceholder}
-              placeholderTextColor={textSecondaryColor}
-              value={location}
-              onChangeText={setLocation}
-            />
+              onPress={handleOpenLocationSearch}
+            >
+              <Text style={[
+                styles.locationButtonText,
+                { color: selectedPlaceName ? textColor : textSecondaryColor }
+              ]}>
+                {selectedPlaceName || locationPlaceholder}
+              </Text>
+              <IconSymbol 
+                android_material_icon_name="arrow-forward" 
+                size={20} 
+                color={textSecondaryColor}
+              />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -364,11 +405,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 100,
   },
-  locationInput: {
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
+  },
+  locationButtonText: {
     fontSize: 16,
+    flex: 1,
   },
   postButton: {
     flexDirection: 'row',
