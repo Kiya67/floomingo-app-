@@ -10,7 +10,6 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  useColorScheme,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,9 +18,6 @@ import { supabase } from '@/lib/supabase';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AuthScreen() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -133,7 +129,7 @@ export default function AuthScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <LinearGradient
-        colors={isDark ? ['#000000', '#1a0a0a', '#2d0d0d'] : ['#FFB6C1', '#FFA07A', '#FF8C69', '#FF7F50']}
+        colors={['#FFB6C1', '#FFA07A', '#FF8C69', '#FF7F50']}
         style={styles.gradient}
       >
         <SafeAreaView style={styles.safeArea}>
@@ -148,10 +144,10 @@ export default function AuthScreen() {
             >
               <View style={styles.content}>
                 <View style={styles.header}>
-                  <Text style={[styles.title, isDark && styles.titleDark]}>
+                  <Text style={styles.title}>
                     {modeText}
                   </Text>
-                  <Text style={[styles.subtitle, isDark && styles.subtitleDark]}>
+                  <Text style={styles.subtitle}>
                     {isSignUp ? 'Create your travel account' : 'Welcome back, traveler'}
                   </Text>
                 </View>
@@ -159,13 +155,13 @@ export default function AuthScreen() {
                 <View style={styles.form}>
                   {isSignUp && (
                     <View style={styles.inputContainer}>
-                      <Text style={[styles.label, isDark && styles.labelDark]}>
+                      <Text style={styles.label}>
                         Full Name
                       </Text>
                       <TextInput
-                        style={[styles.input, isDark && styles.inputDark]}
+                        style={styles.input}
                         placeholder="John Doe"
-                        placeholderTextColor={isDark ? '#999' : '#666'}
+                        placeholderTextColor="#666"
                         value={fullName}
                         onChangeText={setFullName}
                         autoCapitalize="words"
@@ -175,13 +171,13 @@ export default function AuthScreen() {
 
                   {isSignUp && (
                     <View style={styles.inputContainer}>
-                      <Text style={[styles.label, isDark && styles.labelDark]}>
+                      <Text style={styles.label}>
                         Username (optional)
                       </Text>
                       <TextInput
-                        style={[styles.input, isDark && styles.inputDark]}
+                        style={styles.input}
                         placeholder="johndoe"
-                        placeholderTextColor={isDark ? '#999' : '#666'}
+                        placeholderTextColor="#666"
                         value={username}
                         onChangeText={setUsername}
                         autoCapitalize="none"
@@ -190,13 +186,13 @@ export default function AuthScreen() {
                   )}
 
                   <View style={styles.inputContainer}>
-                    <Text style={[styles.label, isDark && styles.labelDark]}>
+                    <Text style={styles.label}>
                       Email
                     </Text>
                     <TextInput
-                      style={[styles.input, isDark && styles.inputDark]}
+                      style={styles.input}
                       placeholder="you@example.com"
-                      placeholderTextColor={isDark ? '#999' : '#666'}
+                      placeholderTextColor="#666"
                       value={email}
                       onChangeText={setEmail}
                       autoCapitalize="none"
@@ -206,13 +202,13 @@ export default function AuthScreen() {
                   </View>
 
                   <View style={styles.inputContainer}>
-                    <Text style={[styles.label, isDark && styles.labelDark]}>
+                    <Text style={styles.label}>
                       Password
                     </Text>
                     <TextInput
-                      style={[styles.input, isDark && styles.inputDark]}
+                      style={styles.input}
                       placeholder="••••••••"
-                      placeholderTextColor={isDark ? '#999' : '#666'}
+                      placeholderTextColor="#666"
                       value={password}
                       onChangeText={setPassword}
                       secureTextEntry
@@ -223,13 +219,13 @@ export default function AuthScreen() {
 
                   {isSignUp && (
                     <View style={styles.inputContainer}>
-                      <Text style={[styles.label, isDark && styles.labelDark]}>
+                      <Text style={styles.label}>
                         Bio (optional)
                       </Text>
                       <TextInput
-                        style={[styles.input, styles.textArea, isDark && styles.inputDark]}
+                        style={[styles.input, styles.textArea]}
                         placeholder="Tell us about yourself..."
-                        placeholderTextColor={isDark ? '#999' : '#666'}
+                        placeholderTextColor="#666"
                         value={bio}
                         onChangeText={setBio}
                         multiline
@@ -251,11 +247,11 @@ export default function AuthScreen() {
                   </TouchableOpacity>
 
                   <View style={styles.switchContainer}>
-                    <Text style={[styles.switchText, isDark && styles.switchTextDark]}>
+                    <Text style={styles.switchText}>
                       {switchText}
                     </Text>
                     <TouchableOpacity onPress={toggleMode}>
-                      <Text style={[styles.switchAction, isDark && styles.switchActionDark]}>
+                      <Text style={styles.switchAction}>
                         {switchActionText}
                       </Text>
                     </TouchableOpacity>
@@ -303,18 +299,11 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
-  titleDark: {
-    color: '#FFFFFF',
-  },
   subtitle: {
     fontSize: 16,
     color: '#FFFFFF',
     opacity: 0.9,
     textAlign: 'center',
-  },
-  subtitleDark: {
-    color: '#FFFFFF',
-    opacity: 0.8,
   },
   form: {
     width: '100%',
@@ -331,9 +320,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  labelDark: {
-    color: '#FFFFFF',
-  },
   input: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
@@ -342,11 +328,6 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  inputDark: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    color: '#FFFFFF',
-    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   textArea: {
     height: 80,
@@ -384,17 +365,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     opacity: 0.9,
   },
-  switchTextDark: {
-    color: '#FFFFFF',
-    opacity: 0.8,
-  },
   switchAction: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#FFFFFF',
     textDecorationLine: 'underline',
-  },
-  switchActionDark: {
-    color: '#FFFFFF',
   },
 });
