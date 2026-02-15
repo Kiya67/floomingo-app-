@@ -21,12 +21,11 @@ import { Session } from "@supabase/supabase-js";
 
 SplashScreen.preventAutoHideAsync();
 
-// Custom dark theme with pure black background
 const BlackDarkTheme: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: '#000000', // Pure black background
+    background: '#000000',
     card: '#1A1A1A',
     border: '#333333',
   },
@@ -37,6 +36,10 @@ function useProtectedRoute(session: Session | null) {
   const router = useRouter();
 
   useEffect(() => {
+    if (!session) {
+      return;
+    }
+
     const inAuthGroup = segments[0] === 'auth';
 
     console.log('Auth state changed:', { 
@@ -45,13 +48,8 @@ function useProtectedRoute(session: Session | null) {
       inAuthGroup 
     });
 
-    if (!session && !inAuthGroup) {
-      // User is not signed in and not on auth screen, redirect to auth
-      console.log('Redirecting to auth screen');
-      router.replace('/auth');
-    } else if (session && inAuthGroup) {
-      // User is signed in but on auth screen, redirect to home
-      console.log('Redirecting to home screen');
+    if (session && inAuthGroup) {
+      console.log('User is signed in, redirecting to home');
       router.replace('/(tabs)/(home)');
     }
   }, [session, segments]);
@@ -69,14 +67,12 @@ export default function RootLayout() {
   useProtectedRoute(session);
 
   useEffect(() => {
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       console.log('Initial session check:', !!session);
       setSession(session);
       setIsReady(true);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       console.log('Auth state changed:', _event, !!session);
       setSession(session);
@@ -106,6 +102,22 @@ export default function RootLayout() {
     return null;
   }
 
+  if (!session) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
+          <WidgetProvider>
+            <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
+            <Stack>
+              <Stack.Screen name="auth" options={{ headerShown: false }} />
+            </Stack>
+            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+          </WidgetProvider>
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
@@ -113,7 +125,6 @@ export default function RootLayout() {
           <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="auth" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
           <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
