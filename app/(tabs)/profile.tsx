@@ -3,9 +3,10 @@ import React, { useEffect, useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
+import { useRouter } from "expo-router";
 
 interface Profile {
   id: string;
@@ -14,9 +15,17 @@ interface Profile {
   username: string | null;
   bio: string | null;
   avatar_url: string | null;
+  cover_url: string | null;
+}
+
+function resolveImageSource(source: string | number | any) {
+  if (!source) return { uri: '' };
+  if (typeof source === 'string') return { uri: source };
+  return source;
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const theme = useTheme();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -66,6 +75,11 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleEditProfile = () => {
+    console.log('User tapped Edit Profile button');
+    router.push('/edit-profile');
+  };
+
   const getInitials = (name: string) => {
     const nameParts = name.split(' ');
     const firstInitial = nameParts[0]?.charAt(0) || '';
@@ -77,7 +91,6 @@ export default function ProfileScreen() {
   const displayName = profile?.full_name || 'User';
   const displayUsername = profile?.username || '';
   const displayBio = profile?.bio || 'No bio yet';
-  const displayEmail = profile?.email || '';
   const initials = getInitials(displayName);
 
   const postsCount = '0';
@@ -108,11 +121,24 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Cover Photo */}
+        <View style={styles.coverContainer}>
+          {profile?.cover_url ? (
+            <Image source={resolveImageSource(profile.cover_url)} style={styles.coverImage} />
+          ) : (
+            <View style={[styles.coverPlaceholder, { backgroundColor: cardColor }]} />
+          )}
+        </View>
+
         {/* Profile Info */}
         <View style={styles.profileSection}>
-          <View style={[styles.avatarLarge, { backgroundColor: primaryColor }]}>
-            <Text style={styles.avatarLargeText}>{initials}</Text>
-          </View>
+          {profile?.avatar_url ? (
+            <Image source={resolveImageSource(profile.avatar_url)} style={styles.avatarLarge} />
+          ) : (
+            <View style={[styles.avatarLarge, { backgroundColor: primaryColor }]}>
+              <Text style={styles.avatarLargeText}>{initials}</Text>
+            </View>
+          )}
           
           <Text style={[styles.name, { color: textColor }]}>{displayName}</Text>
           {displayUsername ? (
@@ -120,9 +146,6 @@ export default function ProfileScreen() {
           ) : null}
           <Text style={[styles.bio, { color: textSecondaryColor }]}>
             {displayBio}
-          </Text>
-          <Text style={[styles.email, { color: textSecondaryColor }]}>
-            {displayEmail}
           </Text>
 
           {/* Stats */}
@@ -143,7 +166,10 @@ export default function ProfileScreen() {
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={[styles.editButton, { backgroundColor: primaryColor }]}>
+            <TouchableOpacity 
+              style={[styles.editButton, { backgroundColor: primaryColor }]}
+              onPress={handleEditProfile}
+            >
               <Text style={styles.editButtonText}>Edit Profile</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.shareButton, { backgroundColor: cardColor }]}>
@@ -229,10 +255,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
+  coverContainer: {
+    height: 150,
+    width: '100%',
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    width: '100%',
+    height: '100%',
+  },
   profileSection: {
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 20,
+    marginTop: -50,
   },
   avatarLarge: {
     width: 100,
@@ -241,6 +279,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
   },
   avatarLargeText: {
     color: '#FFFFFF',
@@ -261,10 +301,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 4,
-  },
-  email: {
-    fontSize: 12,
-    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',
