@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "@react-navigation/native";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
@@ -32,6 +32,7 @@ export default function ProfileScreen() {
   
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
@@ -75,9 +76,21 @@ export default function ProfileScreen() {
     }
   };
 
+  const onRefresh = async () => {
+    console.log('User pulled to refresh profile');
+    setRefreshing(true);
+    await fetchProfile();
+    setRefreshing(false);
+  };
+
   const handleEditProfile = () => {
     console.log('User tapped Edit Profile button');
     router.push('/edit-profile');
+  };
+
+  const handleSettings = () => {
+    console.log('User tapped Settings button');
+    router.push('/settings');
   };
 
   const getInitials = (name: string) => {
@@ -90,7 +103,6 @@ export default function ProfileScreen() {
 
   const displayName = profile?.display_name || 'User';
   const displayUsername = profile?.username || '';
-  const displayBio = profile?.bio || 'No bio yet';
   const initials = getInitials(displayName);
 
   const postsCount = '0';
@@ -110,16 +122,28 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: textColor }]}>Profile</Text>
-          <IconSymbol 
-            ios_icon_name="gearshape.fill"
-            android_material_icon_name="settings" 
-            size={24} 
-            color={textColor}
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={primaryColor}
+            colors={[primaryColor]}
           />
+        }
+      >
+        {/* Header - Settings button only */}
+        <View style={styles.header}>
+          <View style={styles.headerSpacer} />
+          <TouchableOpacity onPress={handleSettings}>
+            <IconSymbol 
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings" 
+              size={24} 
+              color={textColor}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Cover Photo */}
@@ -145,9 +169,11 @@ export default function ProfileScreen() {
           {displayUsername ? (
             <Text style={[styles.username, { color: textSecondaryColor }]}>@{displayUsername}</Text>
           ) : null}
-          <Text style={[styles.bio, { color: textSecondaryColor }]}>
-            {displayBio}
-          </Text>
+          {profile?.bio ? (
+            <Text style={[styles.bio, { color: textSecondaryColor }]}>
+              {profile.bio}
+            </Text>
+          ) : null}
 
           {/* Stats */}
           <View style={styles.statsContainer}>
@@ -165,23 +191,13 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={[styles.editButton, { backgroundColor: primaryColor }]}
-              onPress={handleEditProfile}
-            >
-              <Text style={styles.editButtonText}>Edit Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.shareButton, { backgroundColor: cardColor }]}>
-              <IconSymbol 
-                ios_icon_name="square.and.arrow.up"
-                android_material_icon_name="share" 
-                size={20} 
-                color={textColor}
-              />
-            </TouchableOpacity>
-          </View>
+          {/* Action Button - Edit Profile only */}
+          <TouchableOpacity 
+            style={[styles.editButton, { backgroundColor: primaryColor }]}
+            onPress={handleEditProfile}
+          >
+            <Text style={styles.editButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Highlights Section */}
@@ -256,9 +272,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  headerSpacer: {
+    width: 24,
   },
   coverContainer: {
     height: 150,
@@ -306,6 +321,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 4,
+    paddingHorizontal: 24,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -325,13 +341,8 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 14,
   },
-  actionButtons: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 12,
-  },
   editButton: {
-    flex: 1,
+    width: '100%',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -340,13 +351,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
-  },
-  shareButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   highlightsSection: {
     marginTop: 32,
