@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, Sc
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '@/lib/supabase';
 
 export default function AddScreen() {
@@ -113,10 +114,10 @@ export default function AddScreen() {
 
       console.log('Authenticated user ID:', user.id);
 
-      const fileExt = videoUri.split('.').pop() || 'mp4';
+      const fileExt = videoUri.split('.').pop()?.split('?')[0] || 'mp4';
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
-      console.log('Preparing video file for upload');
+      console.log('Preparing video file for upload, fileName:', fileName);
       
       let uploadData;
       let uploadError;
@@ -126,6 +127,10 @@ export default function AddScreen() {
         const response = await fetch(videoUri);
         const blob = await response.blob();
         console.log('Video blob size:', blob.size, 'bytes');
+        
+        if (blob.size === 0) {
+          throw new Error('Video file is empty (0 bytes). Please try selecting a different video.');
+        }
         
         const result = await supabase.storage
           .from('videos')
@@ -138,16 +143,46 @@ export default function AddScreen() {
         uploadData = result.data;
         uploadError = result.error;
       } else {
-        console.log('Native platform: Uploading video from URI:', videoUri);
+        console.log('Native platform: Reading video file from URI:', videoUri);
+        
+        const fileInfo = await FileSystem.getInfoAsync(videoUri);
+        console.log('File info:', fileInfo);
+        
+        if (!fileInfo.exists) {
+          throw new Error('Video file does not exist at the specified URI');
+        }
+        
+        if (fileInfo.size === 0) {
+          throw new Error('Video file is empty (0 bytes). Please try selecting a different video.');
+        }
+        
+        console.log('Reading video file as base64, size:', fileInfo.size, 'bytes');
+        const base64 = await FileSystem.readAsStringAsync(videoUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        console.log('Base64 string length:', base64.length);
+        
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: `video/${fileExt}` });
+        
+        console.log('Created blob from base64, size:', blob.size, 'bytes');
+        
+        if (blob.size === 0) {
+          throw new Error('Failed to create video blob. Please try again.');
+        }
+        
         const result = await supabase.storage
           .from('videos')
-          .upload(fileName, {
-            uri: videoUri,
-            type: `video/${fileExt}`,
-            name: fileName,
-          } as any, {
+          .upload(fileName, blob, {
             cacheControl: '3600',
             upsert: false,
+            contentType: `video/${fileExt}`,
           });
         
         uploadData = result.data;
@@ -202,9 +237,9 @@ export default function AddScreen() {
       
       console.log('Navigating to home tab');
       router.push('/(tabs)/(home)');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Unexpected error posting video:', error);
-      Alert.alert('Error', 'Failed to post video. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to post video. Please try again.');
     } finally {
       setUploading(false);
     }
