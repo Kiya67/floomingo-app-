@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Modal, Pressable } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
@@ -26,7 +26,6 @@ export default function AddScreen() {
   const [selectedPlaceName, setSelectedPlaceName] = useState<string>('');
   const [selectedLocationType, setSelectedLocationType] = useState<string>('');
   const [uploading, setUploading] = useState(false);
-  const [showVideoPicker, setShowVideoPicker] = useState(false);
 
   useEffect(() => {
     if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
@@ -44,7 +43,6 @@ export default function AddScreen() {
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
-    setShowVideoPicker(false);
     
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -76,45 +74,11 @@ export default function AddScreen() {
     }
   };
 
-  const recordVideo = async () => {
-    console.log('User tapped Record Video button');
-    setShowVideoPicker(false);
-    
-    try {
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        console.log('Camera permission denied');
-        Alert.alert('Permission Required', 'Permission to access camera is required!');
-        return;
-      }
-
-      console.log('Launching camera for video recording');
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['videos'],
-        quality: 1,
-        videoMaxDuration: 120,
-      });
-
-      console.log('Camera result:', { canceled: result.canceled, assetsCount: result.assets?.length });
-
-      if (!result.canceled && result.assets && result.assets[0]) {
-        console.log('Video recorded successfully:', result.assets[0].uri);
-        setVideoUri(result.assets[0].uri);
-      } else {
-        console.log('Video recording was canceled or no assets returned');
-      }
-    } catch (error) {
-      console.error('Error recording video:', error);
-      Alert.alert('Error', 'Failed to record video. Please try again.');
-    }
-  };
-
   const handlePost = async () => {
     console.log('User tapped Post button');
     
     if (!videoUri) {
-      Alert.alert('No Video', 'Please select or record a video first');
+      Alert.alert('No Video', 'Please select a video first');
       return;
     }
 
@@ -220,15 +184,6 @@ export default function AddScreen() {
     }
   };
 
-  const handleClear = () => {
-    console.log('User tapped Clear button');
-    setVideoUri(null);
-    setCaption('');
-    setSelectedPlaceId('');
-    setSelectedPlaceName('');
-    setSelectedLocationType('');
-  };
-
   const handleOpenLocationSearch = () => {
     console.log('User tapped location field, opening search');
     router.push('/search-location');
@@ -248,7 +203,7 @@ export default function AddScreen() {
           <View style={styles.videoPickerSection}>
             <TouchableOpacity 
               style={[styles.videoPlaceholder, { backgroundColor: cardColor }]}
-              onPress={() => setShowVideoPicker(true)}
+              onPress={pickVideo}
             >
               <IconSymbol 
                 ios_icon_name="video.fill"
@@ -257,7 +212,7 @@ export default function AddScreen() {
                 color={primaryColor}
               />
               <Text style={[styles.placeholderText, { color: textColor }]}>
-                Tap to add video
+                Tap to select video
               </Text>
               <Text style={[styles.placeholderSubtext, { color: textSecondaryColor }]}>
                 Up to 2 minutes
@@ -280,7 +235,7 @@ export default function AddScreen() {
 
             <TouchableOpacity 
               style={[styles.changeButton, { borderColor: primaryColor }]}
-              onPress={() => setShowVideoPicker(true)}
+              onPress={pickVideo}
             >
               <IconSymbol 
                 ios_icon_name="pencil"
@@ -381,65 +336,6 @@ export default function AddScreen() {
           </TouchableOpacity>
         )}
       </ScrollView>
-
-      <Modal
-        visible={showVideoPicker}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowVideoPicker(false)}
-      >
-        <Pressable 
-          style={styles.modalOverlay}
-          onPress={() => setShowVideoPicker(false)}
-        >
-          <Pressable 
-            style={[styles.modalContent, { backgroundColor: cardColor }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalTitle, { color: textColor }]}>Add Video</Text>
-            
-            <TouchableOpacity 
-              style={[styles.modalButton, { borderBottomColor: isDark ? '#333' : '#E5E7EB' }]}
-              onPress={pickVideo}
-            >
-              <IconSymbol 
-                ios_icon_name="photo.on.rectangle"
-                android_material_icon_name="photo-library" 
-                size={24} 
-                color={primaryColor}
-              />
-              <Text style={[styles.modalButtonText, { color: textColor }]}>Choose from Library</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.modalButton, { borderBottomColor: isDark ? '#333' : '#E5E7EB' }]}
-              onPress={recordVideo}
-            >
-              <IconSymbol 
-                ios_icon_name="video.fill"
-                android_material_icon_name="videocam" 
-                size={24} 
-                color={primaryColor}
-              />
-              <Text style={[styles.modalButtonText, { color: textColor }]}>Record Video</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.modalButton}
-              onPress={() => setShowVideoPicker(false)}
-            >
-              <IconSymbol 
-                ios_icon_name="xmark"
-                android_material_icon_name="close" 
-                size={24} 
-                color={textSecondaryColor}
-              />
-              <Text style={[styles.modalButtonText, { color: textSecondaryColor }]}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -559,42 +455,5 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
-    paddingBottom: 40,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#999',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  modalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    gap: 16,
-    borderBottomWidth: 1,
-  },
-  modalButtonText: {
-    fontSize: 17,
-    fontWeight: '500',
   },
 });
