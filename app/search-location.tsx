@@ -14,15 +14,27 @@ import { Stack, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
+import { supabase } from '@/lib/supabase';
 
 interface Prediction {
   place_id: string;
   main_text: string;
+  secondary_text?: string;
   description: string;
-  location_type: 'city' | 'place';
+  location_type: string;
 }
 
-type SearchMode = 'city' | 'place';
+type SearchMode = 'any' | 'city' | 'place' | 'country' | 'region' | 'address' | 'airport';
+
+const SEARCH_MODE_OPTIONS: { value: SearchMode; label: string }[] = [
+  { value: 'any', label: 'All (recommended)' },
+  { value: 'city', label: 'Cities' },
+  { value: 'place', label: 'Places (businesses/landmarks)' },
+  { value: 'country', label: 'Countries' },
+  { value: 'region', label: 'Regions/States' },
+  { value: 'address', label: 'Addresses' },
+  { value: 'airport', label: 'Airports' },
+];
 
 export default function SearchLocationScreen() {
   const router = useRouter();
@@ -36,9 +48,10 @@ export default function SearchLocationScreen() {
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
   const [searchText, setSearchText] = useState('');
-  const [mode, setMode] = useState<SearchMode>('city');
+  const [mode, setMode] = useState<SearchMode>('any');
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const searchLocations = useCallback(async (input: string, searchMode: SearchMode) => {
     if (!input.trim()) {
@@ -50,51 +63,40 @@ export default function SearchLocationScreen() {
     console.log('Searching locations with input:', input, 'mode:', searchMode);
 
     try {
-      const autocompleteResponse = await fetch(
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'apikey': Constants.expoConfig?.extra?.supabaseAnonKey || '',
+      };
+
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const body: { input: string; mode: string } = {
+        input: input,
+        mode: searchMode,
+      };
+
+      console.log('API request body:', body);
+
+      const response = await fetch(
         'https://ilobeaszwnfbwebemmji.supabase.co/functions/v1/places_autocomplete',
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            input: input,
-            mode: searchMode,
-            country: 'us',
-          }),
+          headers,
+          body: JSON.stringify(body),
         }
       );
 
-      const autocompleteData = await autocompleteResponse.json();
-      console.log('Autocomplete response:', autocompleteData);
+      const data = await response.json();
+      console.log('API response:', data);
 
-      if (autocompleteData.predictions && autocompleteData.predictions.length > 0) {
-        setPredictions(autocompleteData.predictions);
+      if (data.predictions && data.predictions.length > 0) {
+        setPredictions(data.predictions);
       } else {
-        console.log('No autocomplete results, trying fallback search');
-        
-        const fallbackResponse = await fetch(
-          'https://ilobeaszwnfbwebemmji.supabase.co/functions/v1/places-search',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              input: input,
-              country: 'us',
-            }),
-          }
-        );
-
-        const fallbackData = await fallbackResponse.json();
-        console.log('Fallback search response:', fallbackData);
-
-        if (fallbackData.results && fallbackData.results.length > 0) {
-          setPredictions(fallbackData.results);
-        } else {
-          setPredictions([]);
-        }
+        setPredictions([]);
       }
     } catch (error) {
       console.error('Error searching locations:', error);
@@ -122,25 +124,34 @@ export default function SearchLocationScreen() {
   const handleSelectLocation = (prediction: Prediction) => {
     console.log('User selected location:', prediction);
     
-    router.back();
-    
-    if (router.canGoBack()) {
-      router.setParams({
-        selectedPlaceId: prediction.place_id,
-        selectedPlaceName: prediction.main_text || prediction.description,
-        selectedLocationType: prediction.location_type,
-      });
-    }
+    const placeName = prediction.main_text || prediction.description;
+    const placeId = prediction.place_id;
+    const locationType = prediction.location_type;
+
+    console.log('Navigating back with params:', {
+      selectedPlaceId: placeId,
+      selectedPlaceName: placeName,
+      selectedLocationType: locationType,
+    });
+
+    router.push({
+      pathname: '/(tabs)/add',
+      params: {
+        selectedPlaceId: placeId,
+        selectedPlaceName: placeName,
+        selectedLocationType: locationType,
+      },
+    });
   };
 
   const handleModeChange = (newMode: SearchMode) => {
     console.log('User changed mode to:', newMode);
     setMode(newMode);
+    setShowDropdown(false);
   };
 
-  const searchPlaceholder = 'Search city or place...';
-  const citiesLabel = 'Cities';
-  const placesLabel = 'Places';
+  const selectedModeLabel = SEARCH_MODE_OPTIONS.find(opt => opt.value === mode)?.label || 'All (recommended)';
+  const searchPlaceholder = 'Search location...';
   const noResultsText = 'No results found';
   const startTypingText = 'Start typing to search for a location';
 
@@ -155,7 +166,56 @@ export default function SearchLocationScreen() {
       />
 
       <View style={styles.content}>
-        <View style={[styles.searchContainer, { backgroundColor: cardColor }]}>
+        <View style={styles.dropdownSection}>
+          <Text style={[styles.dropdownLabel, { color: textColor }]}>Search type</Text>
+          <TouchableOpacity
+            style={[styles.dropdownButton, { backgroundColor: cardColor, borderColor: isDark ? '#333' : '#E5E7EB' }]}
+            onPress={() => setShowDropdown(!showDropdown)}
+          >
+            <Text style={[styles.dropdownButtonText, { color: textColor }]}>
+              {selectedModeLabel}
+            </Text>
+            <IconSymbol
+              android_material_icon_name={showDropdown ? "arrow-upward" : "arrow-downward"}
+              size={20}
+              color={textSecondaryColor}
+            />
+          </TouchableOpacity>
+
+          {showDropdown && (
+            <View style={[styles.dropdownMenu, { backgroundColor: cardColor, borderColor: isDark ? '#333' : '#E5E7EB' }]}>
+              <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                {SEARCH_MODE_OPTIONS.map((option, index) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.dropdownItem,
+                      mode === option.value && { backgroundColor: isDark ? '#333' : '#F3F4F6' },
+                      index < SEARCH_MODE_OPTIONS.length - 1 && { borderBottomWidth: 1, borderBottomColor: isDark ? '#333' : '#E5E7EB' },
+                    ]}
+                    onPress={() => handleModeChange(option.value)}
+                  >
+                    <Text style={[
+                      styles.dropdownItemText,
+                      { color: mode === option.value ? primaryColor : textColor }
+                    ]}>
+                      {option.label}
+                    </Text>
+                    {mode === option.value && (
+                      <IconSymbol
+                        android_material_icon_name="check"
+                        size={20}
+                        color={primaryColor}
+                      />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+
+        <View style={[styles.searchContainer, { backgroundColor: cardColor, borderColor: isDark ? '#333' : '#E5E7EB' }]}>
           <IconSymbol
             android_material_icon_name="search"
             size={20}
@@ -180,44 +240,6 @@ export default function SearchLocationScreen() {
               />
             </TouchableOpacity>
           )}
-        </View>
-
-        <View style={styles.segmentedControl}>
-          <TouchableOpacity
-            style={[
-              styles.segmentButton,
-              mode === 'city' && { backgroundColor: primaryColor },
-              mode !== 'city' && { backgroundColor: cardColor },
-            ]}
-            onPress={() => handleModeChange('city')}
-          >
-            <Text
-              style={[
-                styles.segmentText,
-                mode === 'city' ? { color: '#FFFFFF' } : { color: textColor },
-              ]}
-            >
-              {citiesLabel}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.segmentButton,
-              mode === 'place' && { backgroundColor: primaryColor },
-              mode !== 'place' && { backgroundColor: cardColor },
-            ]}
-            onPress={() => handleModeChange('place')}
-          >
-            <Text
-              style={[
-                styles.segmentText,
-                mode === 'place' ? { color: '#FFFFFF' } : { color: textColor },
-              ]}
-            >
-              {placesLabel}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
@@ -256,7 +278,7 @@ export default function SearchLocationScreen() {
           {!loading &&
             predictions.map((prediction, index) => {
               const mainText = prediction.main_text || prediction.description;
-              const secondaryText = prediction.description;
+              const secondaryText = prediction.secondary_text || prediction.description;
               
               return (
                 <TouchableOpacity
@@ -302,33 +324,61 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
   },
+  dropdownSection: {
+    marginBottom: 16,
+  },
+  dropdownLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  dropdownMenu: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxHeight: 250,
+    overflow: 'hidden',
+  },
+  dropdownScroll: {
+    maxHeight: 250,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    flex: 1,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
+    borderWidth: 1,
     gap: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     paddingVertical: 4,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 8,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: '600',
   },
   resultsList: {
     flex: 1,

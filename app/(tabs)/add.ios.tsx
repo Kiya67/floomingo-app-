@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Modal } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Modal, Pressable } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
@@ -24,7 +24,7 @@ export default function AddScreen() {
   const [caption, setCaption] = useState('');
   const [selectedPlaceId, setSelectedPlaceId] = useState<string>('');
   const [selectedPlaceName, setSelectedPlaceName] = useState<string>('');
-  const [selectedLocationType, setSelectedLocationType] = useState<'city' | 'place' | ''>('');
+  const [selectedLocationType, setSelectedLocationType] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [showVideoPicker, setShowVideoPicker] = useState(false);
 
@@ -38,7 +38,7 @@ export default function AddScreen() {
       
       setSelectedPlaceId(params.selectedPlaceId as string);
       setSelectedPlaceName(params.selectedPlaceName as string);
-      setSelectedLocationType(params.selectedLocationType as 'city' | 'place');
+      setSelectedLocationType(params.selectedLocationType as string);
     }
   }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
 
@@ -388,12 +388,15 @@ export default function AddScreen() {
         animationType="slide"
         onRequestClose={() => setShowVideoPicker(false)}
       >
-        <TouchableOpacity 
+        <Pressable 
           style={styles.modalOverlay}
-          activeOpacity={1}
           onPress={() => setShowVideoPicker(false)}
         >
-          <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
+          <Pressable 
+            style={[styles.modalContent, { backgroundColor: cardColor }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.modalHandle} />
             <Text style={[styles.modalTitle, { color: textColor }]}>Add Video</Text>
             
             <TouchableOpacity 
@@ -434,8 +437,8 @@ export default function AddScreen() {
               />
               <Text style={[styles.modalButtonText, { color: textSecondaryColor }]}>Cancel</Text>
             </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -563,10 +566,18 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
     paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#999',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
