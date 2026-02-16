@@ -60,7 +60,27 @@ export default function HomeScreen() {
         console.error('Error fetching posts:', error);
       } else {
         console.log('Posts fetched successfully:', data?.length || 0);
-        setPosts(data || []);
+        
+        // Convert video paths to public URLs
+        const postsWithUrls = (data || []).map(post => {
+          let videoUrl = post.video_url;
+          
+          // If video_url is just a path (not a full URL), convert it to a public URL
+          if (videoUrl && !videoUrl.startsWith('http')) {
+            const { data: urlData } = supabase.storage
+              .from('videos')
+              .getPublicUrl(videoUrl);
+            videoUrl = urlData.publicUrl;
+            console.log('Converted video path to public URL:', videoUrl);
+          }
+          
+          return {
+            ...post,
+            video_url: videoUrl
+          };
+        });
+        
+        setPosts(postsWithUrls);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);

@@ -126,18 +126,22 @@ export default function AddScreen() {
         console.log('Web platform: Fetching video blob from URI:', videoUri);
         const response = await fetch(videoUri);
         const blob = await response.blob();
-        console.log('Video blob size:', blob.size, 'bytes');
+        console.log('Video blob size:', blob.size, 'bytes, type:', blob.type);
         
         if (blob.size === 0) {
           throw new Error('Video file is empty (0 bytes). Please try selecting a different video.');
         }
+        
+        // Ensure proper content type
+        const contentType = blob.type || `video/${fileExt}`;
+        console.log('Using content-type:', contentType);
         
         const result = await supabase.storage
           .from('videos')
           .upload(fileName, blob, {
             cacheControl: '3600',
             upsert: false,
-            contentType: `video/${fileExt}`,
+            contentType: contentType,
           });
         
         uploadData = result.data;
@@ -163,15 +167,17 @@ export default function AddScreen() {
         
         console.log('Base64 string length:', base64.length);
         
+        // Convert base64 to blob properly
         const byteCharacters = atob(base64);
         const byteNumbers = new Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {
           byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
         const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: `video/${fileExt}` });
+        const contentType = `video/${fileExt}`;
+        const blob = new Blob([byteArray], { type: contentType });
         
-        console.log('Created blob from base64, size:', blob.size, 'bytes');
+        console.log('Created blob from base64, size:', blob.size, 'bytes, type:', blob.type);
         
         if (blob.size === 0) {
           throw new Error('Failed to create video blob. Please try again.');
@@ -182,7 +188,7 @@ export default function AddScreen() {
           .upload(fileName, blob, {
             cacheControl: '3600',
             upsert: false,
-            contentType: `video/${fileExt}`,
+            contentType: contentType,
           });
         
         uploadData = result.data;
@@ -198,18 +204,16 @@ export default function AddScreen() {
 
       console.log('Video uploaded successfully to storage:', uploadData);
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
+      // Store just the path, not the full URL
+      const videoPath = uploadData.path;
+      console.log('Video storage path:', videoPath);
 
-      console.log('Video public URL generated:', publicUrl);
-
-      console.log('Creating post record in database');
+      console.log('Creating post record in database with path (not full URL)');
       const { data: postData, error: postError } = await supabase
         .from('posts')
         .insert({
           user_id: user.id,
-          video_url: publicUrl,
+          video_url: videoPath, // Store path, not full URL
           caption: caption.trim(),
           place_id: selectedPlaceId || null,
           place_name: selectedPlaceName || null,
@@ -314,7 +318,7 @@ export default function AddScreen() {
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
               <IconSymbol 
-                ios_icon_name="text.alignleft"
+                ios_icon_name="doc.text"
                 android_material_icon_name="description" 
                 size={20} 
                 color={textColor}

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -16,29 +16,43 @@ interface VideoGridItemProps {
 export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: VideoGridItemProps) {
   const router = useRouter();
   const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const isMountedRef = useRef(true);
   
-  const player = useVideoPlayer(videoUrl, (player) => {
-    player.loop = true;
-    player.muted = true;
-    player.volume = 0;
+  // Ensure video URL is properly formatted
+  const formattedVideoUrl = videoUrl?.startsWith('http') ? videoUrl : '';
+  
+  console.log('VideoGridItem rendering with URL:', formattedVideoUrl);
+  
+  const player = useVideoPlayer(formattedVideoUrl, (player) => {
+    if (formattedVideoUrl) {
+      player.loop = true;
+      player.muted = true;
+      player.volume = 0;
+    }
   });
 
   useEffect(() => {
-    console.log('VideoGridItem mounted for:', videoUrl);
+    isMountedRef.current = true;
+    console.log('VideoGridItem mounted for:', formattedVideoUrl);
     
-    let isMounted = true;
+    if (!formattedVideoUrl) {
+      console.error('Invalid video URL provided to VideoGridItem');
+      return;
+    }
+    
     let playTimeout: NodeJS.Timeout;
-    let retryTimeout: NodeJS.Timeout;
+    let retryCount = 0;
+    const maxRetries = 5;
     
     const attemptPlay = async () => {
-      if (!isMounted || !player) {
+      if (!isMountedRef.current || !player) {
         console.log('Component unmounted or player not available');
         return;
       }
 
       try {
         const status = player.status;
-        console.log('Player status:', status);
+        console.log(`VideoGridItem attempt ${retryCount + 1}: Player status:`, status);
 
         if (status === 'readyToPlay') {
           console.log('Player ready, starting playback');
@@ -46,36 +60,55 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
           setIsPlayerReady(true);
           console.log('Video playback started successfully');
         } else if (status === 'idle' || status === 'loading') {
-          console.log('Player still loading, will retry...');
-          retryTimeout = setTimeout(attemptPlay, 500);
+          if (retryCount < maxRetries) {
+            retryCount++;
+            const delay = 300 * Math.pow(1.5, retryCount - 1);
+            console.log(`Player still loading, retrying in ${delay}ms...`);
+            playTimeout = setTimeout(attemptPlay, delay);
+          } else {
+            console.error('Max retries reached, player failed to load');
+          }
         } else if (status === 'error') {
-          console.log('Player in error state, attempting to replace player');
-          player.replace(videoUrl);
-          retryTimeout = setTimeout(attemptPlay, 800);
+          console.error('Player in error state for URL:', formattedVideoUrl);
+          if (retryCount < maxRetries) {
+            retryCount++;
+            console.log('Attempting to replace player source...');
+            try {
+              await player.replace(formattedVideoUrl);
+              playTimeout = setTimeout(attemptPlay, 800);
+            } catch (replaceError) {
+              console.error('Error replacing player source:', replaceError);
+            }
+          } else {
+            console.error('Max retries reached, cannot recover from error state');
+          }
         }
       } catch (error) {
-        console.log('Error attempting playback:', error);
-        retryTimeout = setTimeout(attemptPlay, 1000);
+        console.error('Error attempting playback:', error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          playTimeout = setTimeout(attemptPlay, 1000);
+        }
       }
     };
     
-    playTimeout = setTimeout(attemptPlay, 400);
+    // Initial delay before first attempt
+    playTimeout = setTimeout(attemptPlay, 500);
     
     return () => {
       console.log('VideoGridItem unmounting');
-      isMounted = false;
+      isMountedRef.current = false;
       if (playTimeout) clearTimeout(playTimeout);
-      if (retryTimeout) clearTimeout(retryTimeout);
       
       try {
         if (player && player.playing) {
           player.pause();
         }
       } catch (error) {
-        console.log('Error pausing video (safe to ignore):', error);
+        console.log('Error pausing video on unmount (safe to ignore):', error);
       }
     };
-  }, [player, videoUrl]);
+  }, [player, formattedVideoUrl]);
 
   const handlePress = () => {
     console.log('User tapped video grid item, opening full screen:', postId);
@@ -92,20 +125,35 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
       activeOpacity={0.8}
       onPress={handlePress}
     >
-      <VideoView
-        style={styles.videoThumbnail}
-        player={player}
-        nativeControls={false}
-        contentFit="cover"
-      />
-      <View style={styles.videoOverlay}>
-        <IconSymbol 
-          ios_icon_name="play.fill"
-          android_material_icon_name="play-arrow" 
-          size={32} 
-          color="#FFFFFF"
-        />
-      </View>
+      {formattedVideoUrl ? (
+        <>
+          <VideoView
+            style={styles.videoThumbnail}
+            player={player}
+            nativeControls={false}
+            contentFit="cover"
+            allowsFullscreen={false}
+            allowsPictureInPicture={false}
+          />
+          <View style={styles.videoOverlay}>
+            <IconSymbol 
+              ios_icon_name="play.fill"
+              android_material_icon_name="play-arrow" 
+              size={32} 
+              color="#FFFFFF"
+            />
+          </View>
+        </>
+      ) : (
+        <View style={styles.errorContainer}>
+          <IconSymbol 
+            ios_icon_name="exclamationmark.triangle.fill"
+            android_material_icon_name="error" 
+            size={24} 
+            color="#999"
+          />
+        </View>
+      )}
     </TouchableOpacity>
   );
 }
@@ -129,5 +177,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

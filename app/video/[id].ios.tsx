@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -35,6 +35,7 @@ export default function VideoFullScreenScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const isMountedRef = useRef(true);
 
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
@@ -64,7 +65,21 @@ export default function VideoFullScreenScreen() {
         console.error('Error fetching post:', error);
       } else {
         console.log('Post fetched successfully:', data);
-        setPost(data);
+        
+        // Convert video path to public URL if needed
+        let videoUrl = data.video_url;
+        if (videoUrl && !videoUrl.startsWith('http')) {
+          const { data: urlData } = supabase.storage
+            .from('videos')
+            .getPublicUrl(videoUrl);
+          videoUrl = urlData.publicUrl;
+          console.log('Converted video path to public URL:', videoUrl);
+        }
+        
+        setPost({
+          ...data,
+          video_url: videoUrl
+        });
       }
     } catch (error) {
       console.error('Error in fetchPost:', error);
@@ -74,7 +89,12 @@ export default function VideoFullScreenScreen() {
   }, [id]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     fetchPost();
+    
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [fetchPost]);
 
   const player = useVideoPlayer(post?.video_url || '', (player) => {
@@ -85,34 +105,61 @@ export default function VideoFullScreenScreen() {
   });
 
   useEffect(() => {
-    if (player && post?.video_url) {
-      console.log('Starting video playback in full screen');
-      const playVideo = async () => {
+    if (player && post?.video_url && isMountedRef.current) {
+      console.log('Starting video playback in full screen for URL:', post.video_url);
+      
+      let playTimeout: NodeJS.Timeout;
+      let retryCount = 0;
+      const maxRetries = 5;
+      
+      const attemptPlay = async () => {
+        if (!isMountedRef.current) return;
+        
         try {
-          await new Promise(resolve => setTimeout(resolve, 300));
-          if (player.status === 'readyToPlay') {
+          const status = player.status;
+          console.log(`Full screen video attempt ${retryCount + 1}: Player status:`, status);
+          
+          if (status === 'readyToPlay') {
             await player.play();
-            await player.setVolume(1);
+            player.volume = 1;
             console.log('Full screen video playback started with sound');
+          } else if (status === 'idle' || status === 'loading') {
+            if (retryCount < maxRetries) {
+              retryCount++;
+              const delay = 300 * Math.pow(1.5, retryCount - 1);
+              playTimeout = setTimeout(attemptPlay, delay);
+            }
+          } else if (status === 'error') {
+            console.error('Player in error state');
+            if (retryCount < maxRetries) {
+              retryCount++;
+              await player.replace(post.video_url);
+              playTimeout = setTimeout(attemptPlay, 800);
+            }
           }
         } catch (error) {
-          console.log('Error starting video playback:', error);
+          console.error('Error starting video playback:', error);
+          if (retryCount < maxRetries) {
+            retryCount++;
+            playTimeout = setTimeout(attemptPlay, 1000);
+          }
         }
       };
       
-      playVideo();
-    }
-    
-    return () => {
-      console.log('Pausing video playback on unmount');
-      try {
-        if (player && player.playing) {
-          player.pause();
+      playTimeout = setTimeout(attemptPlay, 500);
+      
+      return () => {
+        if (playTimeout) clearTimeout(playTimeout);
+        console.log('Pausing video playback on unmount');
+        try {
+          if (player && player.playing) {
+            player.pause();
+          }
+        } catch (error) {
+          console.log('Error pausing video (safe to ignore):', error);
         }
-      } catch (error) {
-        console.log('Error pausing video (safe to ignore):', error);
-      }
-    };
+      };
+    }
   }, [player, post?.video_url]);
 
   const handleClose = () => {
@@ -198,6 +245,8 @@ export default function VideoFullScreenScreen() {
           player={player}
           nativeControls={false}
           contentFit="contain"
+          allowsFullscreen={false}
+          allowsPictureInPicture={false}
         />
       </TouchableOpacity>
 
