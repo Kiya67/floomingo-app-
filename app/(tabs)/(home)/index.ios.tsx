@@ -49,7 +49,7 @@ export default function HomeScreen() {
         .from('posts')
         .select(`
           *,
-          profiles (
+          profiles!posts_user_id_fkey (
             display_name,
             avatar_url
           )

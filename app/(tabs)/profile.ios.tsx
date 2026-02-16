@@ -1,12 +1,12 @@
 
 import React, { useEffect, useState } from "react";
-import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions } from "react-native";
 import { colors } from "@/styles/commonStyles";
+import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "expo-router";
-import { VideoGridItem } from "@/components/VideoGridItem";
+import { IconSymbol } from "@/components/IconSymbol";
 
 interface Profile {
   id: string;
@@ -33,27 +33,31 @@ const { width } = Dimensions.get('window');
 const gridItemSize = (width - 48) / 3;
 
 function resolveImageSource(source: string | number | any) {
-  if (!source) return { uri: '' };
-  if (typeof source === 'string') return { uri: source };
+  if (!source) {
+    return { uri: '' };
+  }
+  if (typeof source === 'string') {
+    return { uri: source };
+  }
   return source;
 }
 
 export default function ProfileScreen() {
-  const router = useRouter();
   const theme = useTheme();
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -66,8 +70,7 @@ export default function ProfileScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        console.log('No user found');
-        setLoading(false);
+        console.error('No authenticated user');
         return;
       }
 
@@ -87,8 +90,6 @@ export default function ProfileScreen() {
       }
     } catch (error) {
       console.error('Error in fetchProfile:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -98,7 +99,7 @@ export default function ProfileScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        console.log('No user found');
+        console.error('No authenticated user');
         return;
       }
 
@@ -109,13 +110,15 @@ export default function ProfileScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching user posts:', error);
+        console.error('Error fetching posts:', error);
       } else {
         console.log('User posts fetched successfully:', data?.length || 0);
         setPosts(data || []);
       }
     } catch (error) {
       console.error('Error in fetchUserPosts:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -138,21 +141,25 @@ export default function ProfileScreen() {
   };
 
   const getInitials = (name: string) => {
+    if (!name) {
+      return '?';
+    }
     const nameParts = name.split(' ');
-    const firstInitial = nameParts[0]?.charAt(0) || '';
-    const lastInitial = nameParts[1]?.charAt(0) || '';
+    const firstInitial = nameParts[0]?.[0] || '';
+    const lastInitial = nameParts[1]?.[0] || '';
     const initials = firstInitial + lastInitial;
     return initials.toUpperCase();
   };
 
   const displayName = profile?.display_name || 'User';
-  const displayUsername = profile?.username || '';
-  const displayBio = profile?.bio || 'No bio yet';
+  const username = profile?.username || '';
+  const bio = profile?.bio || '';
+  const avatarUrl = profile?.avatar_url || '';
+  const coverUrl = profile?.cover_url || '';
   const initials = getInitials(displayName);
-
-  const postsCount = posts.length.toString();
-  const followersCount = '0';
-  const followingCount = '0';
+  const postsCount = posts.length;
+  const postsCountText = postsCount.toString();
+  const emptyText = 'No travel videos yet';
 
   if (loading) {
     return (
@@ -178,100 +185,98 @@ export default function ProfileScreen() {
           />
         }
       >
-        <View style={styles.coverContainer}>
-          {profile?.cover_url ? (
-            <Image source={resolveImageSource(profile.cover_url)} style={styles.coverImage} />
+        <View style={styles.coverSection}>
+          {coverUrl ? (
+            <Image 
+              source={resolveImageSource(coverUrl)} 
+              style={styles.coverImage}
+            />
           ) : (
-            <View style={[styles.coverPlaceholder, { backgroundColor: cardColor }]} />
+            <View style={[styles.coverPlaceholder, { backgroundColor: primaryColor }]} />
           )}
           
           <TouchableOpacity 
-            style={styles.settingsOverlay}
+            style={[styles.settingsButton, { backgroundColor: cardColor }]}
             onPress={handleSettings}
           >
-            <View style={styles.settingsIconContainer}>
-              <IconSymbol 
-                ios_icon_name="gearshape.fill"
-                android_material_icon_name="settings" 
-                size={24} 
-                color="#FFFFFF"
-              />
-            </View>
+            <IconSymbol 
+              ios_icon_name="gearshape.fill"
+              android_material_icon_name="settings" 
+              size={24} 
+              color={textColor}
+            />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.profileSection}>
-          {profile?.avatar_url ? (
-            <Image source={resolveImageSource(profile.avatar_url)} style={styles.avatarLarge} />
-          ) : (
-            <View style={[styles.avatarLarge, { backgroundColor: primaryColor }]}>
-              <Text style={styles.avatarLargeText}>{initials}</Text>
+        <View style={styles.profileInfo}>
+          <View style={styles.avatarSection}>
+            {avatarUrl ? (
+              <Image 
+                source={resolveImageSource(avatarUrl)} 
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatarPlaceholder, { backgroundColor: primaryColor }]}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.nameSection}>
+            <Text style={[styles.displayName, { color: textColor }]}>{displayName}</Text>
+            {username ? (
+              <Text style={[styles.username, { color: textSecondaryColor }]}>@{username}</Text>
+            ) : null}
+          </View>
+
+          {bio ? (
+            <View style={styles.bioSection}>
+              <Text style={[styles.bio, { color: textColor }]}>{bio}</Text>
             </View>
-          )}
-          
-          <Text style={[styles.name, { color: textColor }]}>{displayName}</Text>
-          {displayUsername ? (
-            <Text style={[styles.username, { color: textSecondaryColor }]}>@{displayUsername}</Text>
-          ) : null}
-          {profile?.bio ? (
-            <Text style={[styles.bio, { color: textSecondaryColor }]}>
-              {profile.bio}
-            </Text>
           ) : null}
 
-          <View style={styles.statsContainer}>
+          <View style={styles.statsSection}>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: textColor }]}>{postsCount}</Text>
+              <Text style={[styles.statValue, { color: textColor }]}>{postsCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: textColor }]}>{followersCount}</Text>
-              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: textColor }]}>{followingCount}</Text>
-              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
             </View>
           </View>
 
           <TouchableOpacity 
-            style={[styles.editButton, { backgroundColor: primaryColor }]}
+            style={[styles.editButton, { borderColor: primaryColor }]}
             onPress={handleEditProfile}
           >
-            <Text style={styles.editButtonText}>Edit Profile</Text>
+            <IconSymbol 
+              ios_icon_name="pencil"
+              android_material_icon_name="edit" 
+              size={20} 
+              color={primaryColor}
+            />
+            <Text style={[styles.editButtonText, { color: primaryColor }]}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.postsSection}>
-          <View style={styles.tabBar}>
-            <TouchableOpacity style={styles.tab}>
-              <IconSymbol 
-                ios_icon_name="square.grid.3x3"
-                android_material_icon_name="grid-on" 
-                size={24} 
-                color={primaryColor}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.tab}>
-              <IconSymbol 
-                ios_icon_name="bookmark"
-                android_material_icon_name="bookmark-border" 
-                size={24} 
-                color={textSecondaryColor}
-              />
-            </TouchableOpacity>
+          <View style={styles.postsSectionHeader}>
+            <IconSymbol 
+              ios_icon_name="video.fill"
+              android_material_icon_name="videocam" 
+              size={24} 
+              color={textColor}
+            />
+            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Videos</Text>
           </View>
-          
+
           {posts.length === 0 ? (
-            <View style={styles.emptyPostsContainer}>
+            <View style={styles.emptyContainer}>
               <IconSymbol 
                 ios_icon_name="video.fill"
                 android_material_icon_name="videocam" 
-                size={48} 
+                size={64} 
                 color={textSecondaryColor}
               />
               <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-                Your travel videos will appear here
+                {emptyText}
               </Text>
             </View>
           ) : (
@@ -305,10 +310,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
   },
-  coverContainer: {
-    height: 280,
-    width: '100%',
+  coverSection: {
     position: 'relative',
+    height: 280,
   },
   coverImage: {
     width: '100%',
@@ -318,111 +322,127 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  settingsOverlay: {
+  settingsButton: {
     position: 'absolute',
-    top: 48,
+    top: 16,
     right: 16,
-    zIndex: 10,
-  },
-  settingsIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  profileSection: {
-    alignItems: 'center',
+  profileInfo: {
     paddingHorizontal: 16,
-    marginTop: -50,
+    marginTop: -40,
   },
-  avatarLarge: {
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
     borderWidth: 4,
     borderColor: '#FFFFFF',
   },
-  avatarLargeText: {
-    color: '#FFFFFF',
-    fontSize: 40,
-    fontWeight: 'bold',
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  name: {
-    fontSize: 22,
+  avatarInitials: {
+    fontSize: 36,
     fontWeight: 'bold',
-    marginBottom: 4,
+    color: '#FFFFFF',
+  },
+  nameSection: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  displayName: {
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   username: {
     fontSize: 16,
-    marginBottom: 8,
+    marginTop: 4,
+  },
+  bioSection: {
+    marginBottom: 16,
   },
   bio: {
-    fontSize: 14,
+    fontSize: 16,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 4,
-    paddingHorizontal: 24,
+    lineHeight: 22,
   },
-  statsContainer: {
+  statsSection: {
     flexDirection: 'row',
-    marginTop: 24,
-    marginBottom: 24,
-    width: '100%',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 40,
   },
   statItem: {
     alignItems: 'center',
   },
-  statNumber: {
+  statValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
+    marginTop: 4,
   },
   editButton: {
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 8,
+    marginBottom: 24,
   },
   editButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
   },
   postsSection: {
-    marginTop: 32,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
-  tabBar: {
+  postsSectionHeader: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
   },
-  emptyPostsContainer: {
-    padding: 40,
+  postsSectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  emptyContainer: {
     alignItems: 'center',
+    paddingVertical: 60,
   },
   emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
+    fontSize: 16,
     marginTop: 16,
+    textAlign: 'center',
   },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 12,
     gap: 6,
   },
 });

@@ -46,23 +46,33 @@ export default function AddScreen() {
     console.log('User tapped Pick Video button');
     setShowVideoPicker(false);
     
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission Required', 'Permission to access media library is required!');
-      return;
-    }
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        console.log('Media library permission denied');
+        Alert.alert('Permission Required', 'Permission to access media library is required!');
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['videos'],
-      allowsEditing: true,
-      quality: 1,
-      videoMaxDuration: 120,
-    });
+      console.log('Launching image library picker for videos');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        quality: 1,
+        videoMaxDuration: 120,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      console.log('Video selected:', result.assets[0].uri);
-      setVideoUri(result.assets[0].uri);
+      console.log('Image picker result:', { canceled: result.canceled, assetsCount: result.assets?.length });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        console.log('Video selected successfully:', result.assets[0].uri);
+        setVideoUri(result.assets[0].uri);
+      } else {
+        console.log('Video selection was canceled or no assets returned');
+      }
+    } catch (error) {
+      console.error('Error picking video:', error);
+      Alert.alert('Error', 'Failed to pick video. Please try again.');
     }
   };
 
@@ -70,23 +80,33 @@ export default function AddScreen() {
     console.log('User tapped Record Video button');
     setShowVideoPicker(false);
     
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission Required', 'Permission to access camera is required!');
-      return;
-    }
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        console.log('Camera permission denied');
+        Alert.alert('Permission Required', 'Permission to access camera is required!');
+        return;
+      }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['videos'],
-      allowsEditing: true,
-      quality: 1,
-      videoMaxDuration: 120,
-    });
+      console.log('Launching camera for video recording');
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        quality: 1,
+        videoMaxDuration: 120,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      console.log('Video recorded:', result.assets[0].uri);
-      setVideoUri(result.assets[0].uri);
+      console.log('Camera result:', { canceled: result.canceled, assetsCount: result.assets?.length });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        console.log('Video recorded successfully:', result.assets[0].uri);
+        setVideoUri(result.assets[0].uri);
+      } else {
+        console.log('Video recording was canceled or no assets returned');
+      }
+    } catch (error) {
+      console.error('Error recording video:', error);
+      Alert.alert('Error', 'Failed to record video. Please try again.');
     }
   };
 
@@ -106,7 +126,9 @@ export default function AddScreen() {
     setUploading(true);
     
     try {
-      console.log('Uploading video with data:', {
+      console.log('Starting video upload process');
+      console.log('Upload data:', {
+        videoUri,
         caption,
         place_id: selectedPlaceId,
         place_name: selectedPlaceName,
@@ -116,17 +138,23 @@ export default function AddScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
+        console.error('No authenticated user found');
         Alert.alert('Error', 'You must be logged in to post');
+        setUploading(false);
         return;
       }
+
+      console.log('Authenticated user ID:', user.id);
 
       const fileExt = videoUri.split('.').pop() || 'mp4';
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
+      console.log('Fetching video blob from URI:', videoUri);
       const response = await fetch(videoUri);
       const blob = await response.blob();
       
-      console.log('Uploading video to storage:', fileName);
+      console.log('Video blob size:', blob.size, 'bytes');
+      console.log('Uploading to Supabase storage:', fileName);
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('videos')
@@ -137,19 +165,21 @@ export default function AddScreen() {
         });
 
       if (uploadError) {
-        console.error('Upload error:', uploadError);
+        console.error('Supabase upload error:', uploadError);
         Alert.alert('Upload Error', uploadError.message);
+        setUploading(false);
         return;
       }
 
-      console.log('Video uploaded successfully:', uploadData);
+      console.log('Video uploaded successfully to storage:', uploadData);
 
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
-      console.log('Video public URL:', publicUrl);
+      console.log('Video public URL generated:', publicUrl);
 
+      console.log('Creating post record in database');
       const { data: postData, error: postError } = await supabase
         .from('posts')
         .insert({
@@ -166,10 +196,11 @@ export default function AddScreen() {
       if (postError) {
         console.error('Post creation error:', postError);
         Alert.alert('Error', 'Failed to create post: ' + postError.message);
+        setUploading(false);
         return;
       }
 
-      console.log('Post created successfully:', postData);
+      console.log('Post created successfully in database:', postData);
       
       Alert.alert('Success', 'Video posted successfully!');
       
@@ -179,9 +210,10 @@ export default function AddScreen() {
       setSelectedPlaceName('');
       setSelectedLocationType('');
       
+      console.log('Navigating to home tab');
       router.push('/(tabs)/(home)');
     } catch (error) {
-      console.error('Error posting video:', error);
+      console.error('Unexpected error posting video:', error);
       Alert.alert('Error', 'Failed to post video. Please try again.');
     } finally {
       setUploading(false);
