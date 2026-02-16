@@ -22,6 +22,7 @@ interface Post {
   id: string;
   user_id: string;
   video_url: string;
+  thumbnail_url: string;
   caption: string;
   place_id: string | null;
   place_name: string | null;
@@ -281,13 +282,16 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {posts.map((post) => (
+              {posts.map((post, index) => (
                 <VideoGridItem
                   key={post.id}
-                  postId={post.id}
-                  videoUrl={post.video_url}
+                  post={post}
                   size={gridItemSize}
-                  cardColor={cardColor}
+                  shouldPlay={false}
+                  onPress={() => {
+                    console.log('User tapped video:', post.id);
+                    router.push(`/video/${post.id}`);
+                  }}
                 />
               ))}
             </View>
