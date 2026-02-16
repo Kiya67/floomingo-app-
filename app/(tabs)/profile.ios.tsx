@@ -284,6 +284,7 @@ export default function ProfileScreen() {
               {posts.map((post) => (
                 <VideoGridItem
                   key={post.id}
+                  postId={post.id}
                   videoUrl={post.video_url}
                   size={gridItemSize}
                   cardColor={cardColor}
