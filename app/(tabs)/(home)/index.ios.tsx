@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 12,
-    paddingTop: 24,
+    paddingTop: 60,
     gap: 6,
   },
 });

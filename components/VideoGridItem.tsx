@@ -28,43 +28,45 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
     
     let isMounted = true;
     let playTimeout: NodeJS.Timeout;
+    let retryTimeout: NodeJS.Timeout;
     
-    const initializePlayer = async () => {
-      try {
-        if (!player) {
-          console.log('Player not initialized yet');
-          return;
-        }
+    const attemptPlay = async () => {
+      if (!isMounted || !player) {
+        console.log('Component unmounted or player not available');
+        return;
+      }
 
-        playTimeout = setTimeout(async () => {
-          if (!isMounted) return;
-          
-          try {
-            if (player.status === 'readyToPlay' || player.status === 'idle') {
-              console.log('Starting video playback, status:', player.status);
-              await player.play();
-              setIsPlayerReady(true);
-              console.log('Video playback started successfully');
-            } else {
-              console.log('Player not ready, status:', player.status);
-            }
-          } catch (error) {
-            console.log('Error starting playback:', error);
-          }
-        }, 300);
+      try {
+        const status = player.status;
+        console.log('Player status:', status);
+
+        if (status === 'readyToPlay') {
+          console.log('Player ready, starting playback');
+          await player.play();
+          setIsPlayerReady(true);
+          console.log('Video playback started successfully');
+        } else if (status === 'idle' || status === 'loading') {
+          console.log('Player still loading, will retry...');
+          retryTimeout = setTimeout(attemptPlay, 500);
+        } else if (status === 'error') {
+          console.log('Player in error state, attempting to replace player');
+          player.replace(videoUrl);
+          retryTimeout = setTimeout(attemptPlay, 800);
+        }
       } catch (error) {
-        console.log('Error initializing player:', error);
+        console.log('Error attempting playback:', error);
+        retryTimeout = setTimeout(attemptPlay, 1000);
       }
     };
     
-    initializePlayer();
+    playTimeout = setTimeout(attemptPlay, 400);
     
     return () => {
       console.log('VideoGridItem unmounting');
       isMounted = false;
-      if (playTimeout) {
-        clearTimeout(playTimeout);
-      }
+      if (playTimeout) clearTimeout(playTimeout);
+      if (retryTimeout) clearTimeout(retryTimeout);
+      
       try {
         if (player && player.playing) {
           player.pause();

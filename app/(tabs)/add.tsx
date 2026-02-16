@@ -4,7 +4,7 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
 import { colors } from "@/styles/commonStyles";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
 
@@ -27,19 +27,22 @@ export default function AddScreen() {
   const [selectedLocationType, setSelectedLocationType] = useState<string>('');
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-      console.log('Location selected from search:', {
-        placeId: params.selectedPlaceId,
-        placeName: params.selectedPlaceName,
-        locationType: params.selectedLocationType,
-      });
-      
-      setSelectedPlaceId(params.selectedPlaceId as string);
-      setSelectedPlaceName(params.selectedPlaceName as string);
-      setSelectedLocationType(params.selectedLocationType as string);
-    }
-  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Add screen focused, checking for location params');
+      if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
+        console.log('Location selected from search:', {
+          placeId: params.selectedPlaceId,
+          placeName: params.selectedPlaceName,
+          locationType: params.selectedLocationType,
+        });
+        
+        setSelectedPlaceId(params.selectedPlaceId as string);
+        setSelectedPlaceName(params.selectedPlaceName as string);
+        setSelectedLocationType(params.selectedLocationType as string);
+      }
+    }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType])
+  );
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
@@ -209,6 +212,7 @@ export default function AddScreen() {
 
   const handleOpenLocationSearch = () => {
     console.log('User tapped location field, opening search');
+    console.log('Current state before navigation:', { videoUri, caption, selectedPlaceName });
     router.push('/search-location');
   };
 
