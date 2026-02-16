@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text, Image } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useRouter } from 'expo-router';
@@ -11,11 +11,13 @@ interface VideoGridItemProps {
   onPress?: () => void;
   size: number;
   cardColor: string;
+  shouldPlay?: boolean; // NEW: Control whether this video should play
 }
 
-export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: VideoGridItemProps) {
+export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor, shouldPlay = false }: VideoGridItemProps) {
   const router = useRouter();
   const [hasError, setHasError] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
   const retryCountRef = useRef(0);
   const maxRetries = 3;
@@ -23,7 +25,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
   // Ensure video URL is properly formatted
   const formattedVideoUrl = videoUrl?.startsWith('http') ? videoUrl : '';
   
-  console.log('VideoGridItem rendering with URL:', formattedVideoUrl);
+  console.log(`VideoGridItem [${postId}] rendering - shouldPlay: ${shouldPlay}, URL: ${formattedVideoUrl}`);
   
   // ALWAYS call useVideoPlayer unconditionally (pass empty string if no URL)
   // This ensures hooks are called in the same order every render
@@ -50,10 +52,24 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
       return;
     }
     
+    // If shouldPlay is false, pause the video and show thumbnail
+    if (!shouldPlay) {
+      console.log(`VideoGridItem [${postId}] shouldPlay=false, pausing video`);
+      try {
+        if (player.playing) {
+          player.pause();
+        }
+        setIsPlaying(false);
+      } catch (error) {
+        console.error(`VideoGridItem [${postId}] error pausing:`, error);
+      }
+      return;
+    }
+    
     let playTimeout: NodeJS.Timeout;
     
     const attemptPlay = async () => {
-      if (!isMountedRef.current || !player) {
+      if (!isMountedRef.current || !player || !shouldPlay) {
         return;
       }
 
@@ -64,6 +80,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
         if (status === 'readyToPlay') {
           console.log(`VideoGridItem [${postId}] ready, starting playback`);
           await player.play();
+          setIsPlaying(true);
           console.log(`VideoGridItem [${postId}] playback started`);
           return;
         }
@@ -132,7 +149,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
         // Safe to ignore
       }
     };
-  }, [player, formattedVideoUrl, postId]);
+  }, [player, formattedVideoUrl, postId, shouldPlay]);
 
   const handlePress = () => {
     console.log('User tapped video grid item, opening full screen:', postId);
@@ -159,13 +176,15 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
             allowsFullscreen={false}
             allowsPictureInPicture={false}
           />
-          <View style={styles.videoOverlay}>
-            <IconSymbol 
-              android_material_icon_name="play-arrow" 
-              size={32} 
-              color="#FFFFFF"
-            />
-          </View>
+          {!isPlaying && (
+            <View style={styles.videoOverlay}>
+              <IconSymbol 
+                android_material_icon_name="play-arrow" 
+                size={32} 
+                color="#FFFFFF"
+              />
+            </View>
+          )}
         </>
       ) : (
         <View style={styles.errorContainer}>
@@ -199,7 +218,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   errorContainer: {
     flex: 1,

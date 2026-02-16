@@ -21,8 +21,9 @@ interface Post {
   };
 }
 
-const { width } = Dimensions.get('window');
-const gridItemSize = (width - 48) / 3;
+const windowWidth = Dimensions.get('window').width;
+const gridItemSize = (windowWidth - 48) / 3;
+const MAX_PLAYING_VIDEOS = 2; // Only 2 videos play at a time
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -136,13 +137,14 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.gridContainer}>
-            {posts.map((post) => (
+            {posts.map((post, index) => (
               <VideoGridItem
                 key={post.id}
                 postId={post.id}
                 videoUrl={post.video_url}
                 size={gridItemSize}
                 cardColor={cardColor}
+                shouldPlay={index < MAX_PLAYING_VIDEOS}
               />
             ))}
           </View>
