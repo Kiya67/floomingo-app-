@@ -29,6 +29,7 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
   const isDark = colorScheme === 'dark';
   const cardColor = isDark ? colors.cardDark : colors.card;
   
+  // Initialize all hooks BEFORE any conditional returns
   const [hasError, setHasError] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
@@ -36,10 +37,8 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
   const maxRetries = 2;
   
   // Ensure video URL is properly formatted
-  const formattedVideoUrl = post.video_url?.startsWith('http') ? post.video_url : '';
-  const formattedThumbnailUrl = post.thumbnail_url?.startsWith('http') ? post.thumbnail_url : '';
-  
-  console.log(`VideoGridItem [${post.id}] rendering - shouldPlay: ${shouldPlay}`);
+  const formattedVideoUrl = post?.video_url?.startsWith('http') ? post.video_url : '';
+  const formattedThumbnailUrl = post?.thumbnail_url?.startsWith('http') ? post.thumbnail_url : '';
   
   // ALWAYS call useVideoPlayer unconditionally
   const player = useVideoPlayer(formattedVideoUrl || '', (player) => {
@@ -53,8 +52,12 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
     retryCountRef.current = 0;
     setHasError(false);
     
-    if (!formattedVideoUrl) {
-      console.error(`VideoGridItem [${post.id}] Invalid video URL`);
+    if (!post || !formattedVideoUrl) {
+      if (!post) {
+        console.error('VideoGridItem: post is undefined');
+      } else {
+        console.error(`VideoGridItem [${post.id}] Invalid video URL`);
+      }
       setHasError(true);
       return;
     }
@@ -64,6 +67,8 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
       setHasError(true);
       return;
     }
+    
+    console.log(`VideoGridItem [${post.id}] rendering - shouldPlay: ${shouldPlay}`);
     
     // If shouldPlay is false, pause the video and show thumbnail
     if (!shouldPlay) {
@@ -161,7 +166,23 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
         // Safe to ignore
       }
     };
-  }, [player, formattedVideoUrl, post.id, shouldPlay]);
+  }, [player, formattedVideoUrl, post, shouldPlay]);
+
+  // NOW we can do conditional rendering after all hooks are called
+  if (!post) {
+    return (
+      <View style={[styles.gridItem, { width: size, height: size * 1.5, backgroundColor: cardColor }]}>
+        <View style={styles.errorContainer}>
+          <IconSymbol 
+            android_material_icon_name="error" 
+            size={24} 
+            color="#999"
+          />
+          <Text style={styles.errorText}>Video unavailable</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <TouchableOpacity 
