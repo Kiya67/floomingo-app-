@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { IconSymbol } from '@/components/IconSymbol';
 import { useRouter } from 'expo-router';
@@ -15,88 +15,112 @@ interface VideoGridItemProps {
 
 export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: VideoGridItemProps) {
   const router = useRouter();
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const isMountedRef = useRef(true);
+  const retryCountRef = useRef(0);
+  const maxRetries = 3;
   
   // Ensure video URL is properly formatted
   const formattedVideoUrl = videoUrl?.startsWith('http') ? videoUrl : '';
   
   console.log('VideoGridItem rendering with URL:', formattedVideoUrl);
   
-  const player = useVideoPlayer(formattedVideoUrl, (player) => {
-    if (formattedVideoUrl) {
-      player.loop = true;
-      player.muted = true;
-      player.volume = 0;
-    }
+  // ALWAYS call useVideoPlayer unconditionally (pass empty string if no URL)
+  // This ensures hooks are called in the same order every render
+  const player = useVideoPlayer(formattedVideoUrl || '', (player) => {
+    player.loop = true;
+    player.muted = true;
+    player.volume = 0;
   });
 
   useEffect(() => {
     isMountedRef.current = true;
-    console.log('VideoGridItem mounted for:', formattedVideoUrl);
+    retryCountRef.current = 0;
+    setHasError(false);
     
     if (!formattedVideoUrl) {
       console.error('Invalid video URL provided to VideoGridItem');
+      setHasError(true);
+      return;
+    }
+    
+    if (!player) {
+      console.error('Player not initialized');
+      setHasError(true);
       return;
     }
     
     let playTimeout: NodeJS.Timeout;
-    let retryCount = 0;
-    const maxRetries = 5;
     
     const attemptPlay = async () => {
       if (!isMountedRef.current || !player) {
-        console.log('Component unmounted or player not available');
         return;
       }
 
       try {
         const status = player.status;
-        console.log(`VideoGridItem attempt ${retryCount + 1}: Player status:`, status);
+        console.log(`VideoGridItem [${postId}] attempt ${retryCountRef.current + 1}: status=${status}`);
 
         if (status === 'readyToPlay') {
-          console.log('Player ready, starting playback');
+          console.log(`VideoGridItem [${postId}] ready, starting playback`);
           await player.play();
-          setIsPlayerReady(true);
-          console.log('Video playback started successfully');
-        } else if (status === 'idle' || status === 'loading') {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const delay = 300 * Math.pow(1.5, retryCount - 1);
-            console.log(`Player still loading, retrying in ${delay}ms...`);
-            playTimeout = setTimeout(attemptPlay, delay);
-          } else {
-            console.error('Max retries reached, player failed to load');
-          }
-        } else if (status === 'error') {
-          console.error('Player in error state for URL:', formattedVideoUrl);
-          if (retryCount < maxRetries) {
-            retryCount++;
-            console.log('Attempting to replace player source...');
+          console.log(`VideoGridItem [${postId}] playback started`);
+          return;
+        }
+        
+        if (status === 'error') {
+          console.error(`VideoGridItem [${postId}] player in error state`);
+          
+          if (retryCountRef.current < maxRetries) {
+            retryCountRef.current++;
+            const delay = 1000 * retryCountRef.current;
+            console.log(`VideoGridItem [${postId}] retrying in ${delay}ms (attempt ${retryCountRef.current}/${maxRetries})`);
+            
+            // Try to replace the source
             try {
               await player.replace(formattedVideoUrl);
-              playTimeout = setTimeout(attemptPlay, 800);
+              playTimeout = setTimeout(attemptPlay, delay);
             } catch (replaceError) {
-              console.error('Error replacing player source:', replaceError);
+              console.error(`VideoGridItem [${postId}] replace failed:`, replaceError);
+              setHasError(true);
             }
           } else {
-            console.error('Max retries reached, cannot recover from error state');
+            console.error(`VideoGridItem [${postId}] max retries reached, giving up`);
+            setHasError(true);
           }
+          return;
         }
+        
+        if (status === 'idle' || status === 'loading') {
+          if (retryCountRef.current < maxRetries) {
+            retryCountRef.current++;
+            const delay = 500 * retryCountRef.current;
+            console.log(`VideoGridItem [${postId}] still loading, checking again in ${delay}ms`);
+            playTimeout = setTimeout(attemptPlay, delay);
+          } else {
+            console.error(`VideoGridItem [${postId}] loading timeout`);
+            setHasError(true);
+          }
+          return;
+        }
+        
       } catch (error) {
-        console.error('Error attempting playback:', error);
-        if (retryCount < maxRetries) {
-          retryCount++;
+        console.error(`VideoGridItem [${postId}] playback error:`, error);
+        
+        if (retryCountRef.current < maxRetries) {
+          retryCountRef.current++;
           playTimeout = setTimeout(attemptPlay, 1000);
+        } else {
+          setHasError(true);
         }
       }
     };
     
-    // Initial delay before first attempt
-    playTimeout = setTimeout(attemptPlay, 500);
+    // Start attempting playback after a short delay
+    playTimeout = setTimeout(attemptPlay, 800);
     
     return () => {
-      console.log('VideoGridItem unmounting');
+      console.log(`VideoGridItem [${postId}] unmounting`);
       isMountedRef.current = false;
       if (playTimeout) clearTimeout(playTimeout);
       
@@ -105,10 +129,10 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
           player.pause();
         }
       } catch (error) {
-        console.log('Error pausing video on unmount (safe to ignore):', error);
+        // Safe to ignore
       }
     };
-  }, [player, formattedVideoUrl]);
+  }, [player, formattedVideoUrl, postId]);
 
   const handlePress = () => {
     console.log('User tapped video grid item, opening full screen:', postId);
@@ -125,7 +149,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
       activeOpacity={0.8}
       onPress={handlePress}
     >
-      {formattedVideoUrl ? (
+      {formattedVideoUrl && !hasError && player ? (
         <>
           <VideoView
             style={styles.videoThumbnail}
@@ -152,6 +176,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
             size={24} 
             color="#999"
           />
+          <Text style={styles.errorText}>Video unavailable</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -182,5 +207,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
   },
 });
