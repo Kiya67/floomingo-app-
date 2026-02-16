@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
@@ -7,7 +7,10 @@ import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/lib/supabase';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function AddScreen() {
   const router = useRouter();
@@ -23,10 +26,12 @@ export default function AddScreen() {
 
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
-  const [selectedPlaceId, setSelectedPlaceId] = useState<string>('');
-  const [selectedPlaceName, setSelectedPlaceName] = useState<string>('');
-  const [selectedLocationType, setSelectedLocationType] = useState<string>('');
-  const [uploading, setUploading] = useState(false);
+  const [selectedPlace, setSelectedPlace] = useState<{
+    place_id: string;
+    main_text: string;
+    location_type: string;
+  } | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -38,9 +43,11 @@ export default function AddScreen() {
           locationType: params.selectedLocationType,
         });
         
-        setSelectedPlaceId(params.selectedPlaceId as string);
-        setSelectedPlaceName(params.selectedPlaceName as string);
-        setSelectedLocationType(params.selectedLocationType as string);
+        setSelectedPlace({
+          place_id: params.selectedPlaceId as string,
+          main_text: params.selectedPlaceName as string,
+          location_type: params.selectedLocationType as string,
+        });
       }
     }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType])
   );
@@ -78,185 +85,213 @@ export default function AddScreen() {
     }
   };
 
+  // Helper to convert base64 to Blob
+  const base64ToBlob = (base64: string, contentType: string): Blob => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: contentType });
+  };
+
   const handlePost = async () => {
     console.log('User tapped Post button');
     
+    // Step 1: Validate
     if (!videoUri) {
-      Alert.alert('No Video', 'Please select a video first');
+      Alert.alert('Select a video', 'Please select a video to post');
       return;
     }
 
-    if (!caption.trim()) {
-      Alert.alert('No Caption', 'Please add a caption for your video');
-      return;
-    }
-
-    setUploading(true);
+    // Disable Post button + show loading
+    setIsPosting(true);
     
     try {
-      console.log('Starting video upload process');
-      console.log('Upload data:', {
-        videoUri,
-        caption,
-        place_id: selectedPlaceId,
-        place_name: selectedPlaceName,
-        location_type: selectedLocationType,
-      });
-
+      console.log('Starting post creation process');
+      
+      // Get authenticated user
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
         console.error('No authenticated user found');
         Alert.alert('Error', 'You must be logged in to post');
-        setUploading(false);
+        setIsPosting(false);
         return;
       }
 
       console.log('Authenticated user ID:', user.id);
 
-      const fileExt = videoUri.split('.').pop()?.split('?')[0] || 'mp4';
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+      // Step 2: Create IDs + paths
+      const postId = uuidv4();
+      const videoPath = `${user.id}/${postId}.mp4`;
+      const thumbPath = `${user.id}/${postId}.jpg`;
       
-      console.log('Preparing video file for upload, fileName:', fileName);
-      
-      let uploadData;
-      let uploadError;
+      console.log('Generated postId:', postId);
+      console.log('Video path:', videoPath);
+      console.log('Thumbnail path:', thumbPath);
 
+      // Step 3: Upload VIDEO to Supabase Storage
+      console.log('Step 3: Uploading video to Supabase Storage');
+      
+      let videoBlob: Blob;
+      
       if (Platform.OS === 'web') {
-        console.log('Web platform: Fetching video blob from URI:', videoUri);
+        console.log('Web platform: Fetching video blob from URI');
         const response = await fetch(videoUri);
-        const blob = await response.blob();
-        console.log('Video blob size:', blob.size, 'bytes, type:', blob.type);
-        
-        if (blob.size === 0) {
-          throw new Error('Video file is empty (0 bytes). Please try selecting a different video.');
-        }
-        
-        // Ensure proper content type
-        const contentType = blob.type || `video/${fileExt}`;
-        console.log('Using content-type:', contentType);
-        
-        const result = await supabase.storage
-          .from('videos')
-          .upload(fileName, blob, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: contentType,
-          });
-        
-        uploadData = result.data;
-        uploadError = result.error;
+        videoBlob = await response.blob();
       } else {
-        console.log('Native platform: Reading video file from URI:', videoUri);
-        
+        console.log('Native platform: Reading video file as base64');
         const fileInfo = await FileSystem.getInfoAsync(videoUri);
-        console.log('File info:', fileInfo);
+        console.log('Video file info:', fileInfo);
         
         if (!fileInfo.exists) {
-          throw new Error('Video file does not exist at the specified URI');
+          throw new Error('Video file does not exist');
         }
         
-        if (fileInfo.size === 0) {
-          throw new Error('Video file is empty (0 bytes). Please try selecting a different video.');
-        }
-        
-        console.log('Reading video file as base64, size:', fileInfo.size, 'bytes');
         const base64 = await FileSystem.readAsStringAsync(videoUri, {
           encoding: FileSystem.EncodingType.Base64,
         });
         
-        console.log('Base64 string length:', base64.length);
-        
-        // Convert base64 to blob properly
-        const byteCharacters = atob(base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const contentType = `video/${fileExt}`;
-        const blob = new Blob([byteArray], { type: contentType });
-        
-        console.log('Created blob from base64, size:', blob.size, 'bytes, type:', blob.type);
-        
-        if (blob.size === 0) {
-          throw new Error('Failed to create video blob. Please try again.');
-        }
-        
-        const result = await supabase.storage
-          .from('videos')
-          .upload(fileName, blob, {
-            cacheControl: '3600',
-            upsert: false,
-            contentType: contentType,
-          });
-        
-        uploadData = result.data;
-        uploadError = result.error;
+        videoBlob = base64ToBlob(base64, 'video/mp4');
+      }
+      
+      console.log('Video blob size:', videoBlob.size, 'bytes');
+      
+      if (videoBlob.size === 0) {
+        throw new Error('Video file is empty (0 bytes)');
+      }
+      
+      const { data: videoUploadData, error: videoUploadError } = await supabase.storage
+        .from('videos')
+        .upload(videoPath, videoBlob, {
+          contentType: 'video/mp4',
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (videoUploadError) {
+        console.error('Video upload error:', videoUploadError);
+        throw videoUploadError;
       }
 
-      if (uploadError) {
-        console.error('Supabase upload error:', uploadError);
-        Alert.alert('Upload Error', uploadError.message);
-        setUploading(false);
-        return;
+      console.log('Video uploaded successfully:', videoUploadData);
+
+      // Get public URL for video
+      const { data: videoPublicUrlData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(videoPath);
+      
+      const video_public_url = videoPublicUrlData.publicUrl;
+      console.log('Video public URL:', video_public_url);
+
+      // Step 4: Generate THUMBNAIL (client side)
+      console.log('Step 4: Generating thumbnail from video');
+      
+      const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
+        time: 0, // First frame
+      });
+      
+      console.log('Thumbnail generated:', thumbnailUri);
+
+      // Step 5: Upload THUMBNAIL to Supabase Storage
+      console.log('Step 5: Uploading thumbnail to Supabase Storage');
+      
+      let thumbnailBlob: Blob;
+      
+      if (Platform.OS === 'web') {
+        const response = await fetch(thumbnailUri);
+        thumbnailBlob = await response.blob();
+      } else {
+        const base64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        thumbnailBlob = base64ToBlob(base64, 'image/jpeg');
+      }
+      
+      console.log('Thumbnail blob size:', thumbnailBlob.size, 'bytes');
+      
+      if (thumbnailBlob.size === 0) {
+        throw new Error('Thumbnail file is empty (0 bytes)');
+      }
+      
+      const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
+        .from('thumbnails')
+        .upload(thumbPath, thumbnailBlob, {
+          contentType: 'image/jpeg',
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (thumbnailUploadError) {
+        console.error('Thumbnail upload error:', thumbnailUploadError);
+        throw thumbnailUploadError;
       }
 
-      console.log('Video uploaded successfully to storage:', uploadData);
+      console.log('Thumbnail uploaded successfully:', thumbnailUploadData);
 
-      // Store just the path, not the full URL
-      const videoPath = uploadData.path;
-      console.log('Video storage path:', videoPath);
+      // Get public URL for thumbnail
+      const { data: thumbnailPublicUrlData } = supabase.storage
+        .from('thumbnails')
+        .getPublicUrl(thumbPath);
+      
+      const thumbnail_public_url = thumbnailPublicUrlData.publicUrl;
+      console.log('Thumbnail public URL:', thumbnail_public_url);
 
-      console.log('Creating post record in database with path (not full URL)');
-      const { data: postData, error: postError } = await supabase
+      // Step 6: Insert DB row into posts
+      console.log('Step 6: Inserting post into database');
+      
+      const { error: insertError } = await supabase
         .from('posts')
         .insert({
+          id: postId,
           user_id: user.id,
-          video_url: videoPath, // Store path, not full URL
-          caption: caption.trim(),
-          place_id: selectedPlaceId || null,
-          place_name: selectedPlaceName || null,
-          location_type: selectedLocationType || null,
-        })
-        .select()
-        .single();
+          video_url: video_public_url,
+          thumbnail_url: thumbnail_public_url,
+          caption: caption.trim() || null,
+          place_id: selectedPlace?.place_id || null,
+          place_name: selectedPlace?.main_text || null,
+          location_type: selectedPlace?.location_type || null,
+        });
 
-      if (postError) {
-        console.error('Post creation error:', postError);
-        Alert.alert('Error', 'Failed to create post: ' + postError.message);
-        setUploading(false);
-        return;
+      if (insertError) {
+        console.error('Post insert error:', insertError);
+        throw insertError;
       }
 
-      console.log('Post created successfully in database:', postData);
+      console.log('Post created successfully in database');
+
+      // Step 7: Success UX
+      Alert.alert('Posted!', 'Your video has been posted successfully');
       
-      Alert.alert('Success', 'Video posted successfully!');
-      
+      // Clear fields
       setVideoUri(null);
       setCaption('');
-      setSelectedPlaceId('');
-      setSelectedPlaceName('');
-      setSelectedLocationType('');
+      setSelectedPlace(null);
       
-      console.log('Navigating to home tab');
-      router.push('/(tabs)/(home)');
+      // Navigate to Home
+      console.log('Navigating to Home tab');
+      router.replace('/(tabs)/(home)');
+      
     } catch (error: any) {
-      console.error('Unexpected error posting video:', error);
+      // Step 8: Error handling
+      console.error('Error posting video:', error);
       Alert.alert('Error', error.message || 'Failed to post video. Please try again.');
     } finally {
-      setUploading(false);
+      // Re-enable Post button + stop loading
+      setIsPosting(false);
     }
   };
 
   const handleOpenLocationSearch = () => {
     console.log('User tapped location field, opening search');
-    console.log('Current state before navigation:', { videoUri, caption, selectedPlaceName });
     router.push('/search-location');
   };
 
   const captionPlaceholder = 'Share your travel story...';
-  const locationPlaceholder = 'Add location';
+  const locationPlaceholder = 'Add location (optional)';
+  const selectedPlaceText = selectedPlace?.main_text || locationPlaceholder;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
@@ -324,6 +359,7 @@ export default function AddScreen() {
                 color={textColor}
               />
               <Text style={[styles.inputLabel, { color: textColor }]}>Caption</Text>
+              <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
             <TextInput
               style={[styles.captionInput, { 
@@ -350,6 +386,7 @@ export default function AddScreen() {
                 color={textColor}
               />
               <Text style={[styles.inputLabel, { color: textColor }]}>Location</Text>
+              <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
             <TouchableOpacity
               style={[styles.locationButton, { 
@@ -360,9 +397,9 @@ export default function AddScreen() {
             >
               <Text style={[
                 styles.locationButtonText,
-                { color: selectedPlaceName ? '#FF69B4' : textSecondaryColor }
+                { color: selectedPlace ? primaryColor : textSecondaryColor }
               ]}>
-                {selectedPlaceName || locationPlaceholder}
+                {selectedPlaceText}
               </Text>
               <IconSymbol 
                 ios_icon_name="chevron.right"
@@ -374,33 +411,31 @@ export default function AddScreen() {
           </View>
         </View>
 
-        {videoUri && (
-          <TouchableOpacity 
-            style={[styles.postButton, { 
-              backgroundColor: primaryColor,
-              opacity: uploading ? 0.6 : 1
-            }]}
-            onPress={handlePost}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <>
-                <ActivityIndicator color="#FFFFFF" />
-                <Text style={styles.postButtonText}>Uploading...</Text>
-              </>
-            ) : (
-              <>
-                <IconSymbol 
-                  ios_icon_name="paperplane.fill"
-                  android_material_icon_name="send" 
-                  size={24} 
-                  color="#FFFFFF"
-                />
-                <Text style={styles.postButtonText}>Post Video</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity 
+          style={[styles.postButton, { 
+            backgroundColor: videoUri ? primaryColor : '#999',
+            opacity: isPosting ? 0.6 : 1
+          }]}
+          onPress={handlePost}
+          disabled={!videoUri || isPosting}
+        >
+          {isPosting ? (
+            <>
+              <ActivityIndicator color="#FFFFFF" />
+              <Text style={styles.postButtonText}>Posting...</Text>
+            </>
+          ) : (
+            <>
+              <IconSymbol 
+                ios_icon_name="paperplane.fill"
+                android_material_icon_name="send" 
+                size={24} 
+                color="#FFFFFF"
+              />
+              <Text style={styles.postButtonText}>Post</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -487,6 +522,10 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  optionalLabel: {
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   captionInput: {
     borderRadius: 12,

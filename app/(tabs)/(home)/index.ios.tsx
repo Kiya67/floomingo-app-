@@ -1,15 +1,17 @@
 
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl } from "react-native";
+import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl, TouchableOpacity } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
 import { VideoGridItem } from "@/components/VideoGridItem";
+import { useRouter } from "expo-router";
 
 interface Post {
   id: string;
   user_id: string;
   video_url: string;
+  thumbnail_url: string;
   caption: string;
   place_id: string | null;
   place_name: string | null;
@@ -26,6 +28,7 @@ const gridItemSize = (windowWidth - 48) / 3;
 const MAX_PLAYING_VIDEOS = 2; // Only 2 videos play at a time
 
 export default function HomeScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -61,27 +64,7 @@ export default function HomeScreen() {
         console.error('Error fetching posts:', error);
       } else {
         console.log('Posts fetched successfully:', data?.length || 0);
-        
-        // Convert video paths to public URLs
-        const postsWithUrls = (data || []).map(post => {
-          let videoUrl = post.video_url;
-          
-          // If video_url is just a path (not a full URL), convert it to a public URL
-          if (videoUrl && !videoUrl.startsWith('http')) {
-            const { data: urlData } = supabase.storage
-              .from('videos')
-              .getPublicUrl(videoUrl);
-            videoUrl = urlData.publicUrl;
-            console.log('Converted video path to public URL:', videoUrl);
-          }
-          
-          return {
-            ...post,
-            video_url: videoUrl
-          };
-        });
-        
-        setPosts(postsWithUrls);
+        setPosts(data || []);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
@@ -95,6 +78,11 @@ export default function HomeScreen() {
     setRefreshing(true);
     await fetchPosts();
     setRefreshing(false);
+  };
+
+  const handleGridItemPress = (post: Post) => {
+    console.log('User tapped grid item, opening full screen:', post.id);
+    router.push(`/video/${post.id}`);
   };
 
   const emptyText = 'No videos yet. Be the first to post!';
@@ -141,10 +129,9 @@ export default function HomeScreen() {
             {posts.map((post, index) => (
               <VideoGridItem
                 key={post.id}
-                postId={post.id}
-                videoUrl={post.video_url}
+                post={post}
                 size={gridItemSize}
-                cardColor={cardColor}
+                onPress={() => handleGridItemPress(post)}
                 shouldPlay={index < MAX_PLAYING_VIDEOS}
               />
             ))}
