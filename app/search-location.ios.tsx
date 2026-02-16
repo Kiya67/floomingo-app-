@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   useColorScheme,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
@@ -39,6 +39,7 @@ const SEARCH_MODE_OPTIONS: { value: SearchMode; label: string }[] = [
 
 export default function SearchLocationScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -128,21 +129,36 @@ export default function SearchLocationScreen() {
     const placeName = prediction.main_text || prediction.description;
     const placeId = prediction.place_id;
     const locationType = prediction.location_type;
+    const returnTo = (params.returnTo as string) || 'add';
 
     console.log('Navigating back with params:', {
-      selectedPlaceId: placeId,
-      selectedPlaceName: placeName,
-      selectedLocationType: locationType,
+      placeId,
+      placeName,
+      locationType,
+      returnTo,
     });
 
-    router.push({
-      pathname: '/(tabs)/add',
-      params: {
-        selectedPlaceId: placeId,
-        selectedPlaceName: placeName,
-        selectedLocationType: locationType,
-      },
-    });
+    if (returnTo === 'home-filter') {
+      // Return to home filter modal
+      router.push({
+        pathname: '/(tabs)/(home)',
+        params: {
+          filterPlaceId: placeId,
+          filterPlaceName: placeName,
+          filterLocationType: locationType,
+        },
+      });
+    } else {
+      // Return to add screen
+      router.push({
+        pathname: '/(tabs)/add',
+        params: {
+          selectedPlaceId: placeId,
+          selectedPlaceName: placeName,
+          selectedLocationType: locationType,
+        },
+      });
+    }
   };
 
   const handleModeChange = (newMode: SearchMode) => {

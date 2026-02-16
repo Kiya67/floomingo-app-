@@ -5,7 +5,8 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
 import { VideoGridItem } from "@/components/VideoGridItem";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { FilterModal } from "@/components/FilterModal";
 
 interface Post {
   id: string;
@@ -29,27 +30,46 @@ const MAX_PLAYING_VIDEOS = 2;
 
 export default function HomeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
-  const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+
+  // Filter state
+  const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
+  const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
+  const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
+
+  // Calculate active filters count
+  const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
+
+  // Listen for filter params from location search
+  useEffect(() => {
+    if (params.filterPlaceId) {
+      console.log('Received filter location from search:', params.filterPlaceName);
+      setFilterPlaceId(params.filterPlaceId as string);
+      setFilterPlaceName(params.filterPlaceName as string);
+      setFilterModalVisible(true);
+    }
+  }, [params.filterPlaceId, params.filterPlaceName]);
 
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [filterPlaceId, filterKeywords]);
 
   const fetchPosts = async () => {
-    console.log('Fetching posts from database');
+    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('posts')
         .select(`
           *,
@@ -57,17 +77,48 @@ export default function HomeScreen() {
             display_name,
             avatar_url
           )
-        `)
-        .order('created_at', { ascending: false });
+        `);
+
+      // Apply location filter
+      if (filterPlaceId) {
+        console.log('Applying place_id filter:', filterPlaceId);
+        query = query.eq('place_id', filterPlaceId);
+      }
+
+      // Apply keyword filter (client-side for now)
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching posts:', error);
+        setPosts([]);
       } else {
-        console.log('Posts fetched successfully:', data?.length || 0);
-        setPosts(data || []);
+        let filteredData = data || [];
+
+        // Apply keyword filter client-side
+        if (filterKeywords && filterKeywords.trim()) {
+          const keywords = filterKeywords
+            .toLowerCase()
+            .split(/[\s,]+/)
+            .filter(k => k.length > 0);
+          
+          console.log('Applying keyword filters:', keywords);
+
+          filteredData = filteredData.filter(post => {
+            const caption = (post.caption || '').toLowerCase();
+            const placeName = (post.place_name || '').toLowerCase();
+            const searchText = `${caption} ${placeName}`;
+
+            // All keywords must be present
+            return keywords.every(keyword => searchText.includes(keyword));
+          });
+        }
+
+        console.log('Posts fetched successfully:', filteredData.length);
+        setPosts(filteredData);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
+      setPosts([]);
     } finally {
       setLoading(false);
     }
@@ -87,13 +138,33 @@ export default function HomeScreen() {
 
   const handleFilterPress = () => {
     console.log('User tapped filter icon');
+    setFilterModalVisible(true);
   };
 
   const handleFavoritePress = () => {
     console.log('User tapped favorite icon');
+    // TODO: Implement favorites functionality
   };
 
-  const emptyText = 'No videos yet. Be the first to post!';
+  const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
+    console.log('Applying filters:', { placeId, placeName, keywords });
+    setFilterPlaceId(placeId);
+    setFilterPlaceName(placeName);
+    setFilterKeywords(keywords);
+    setFilterModalVisible(false);
+  };
+
+  const handleClearFilters = () => {
+    console.log('Clearing all filters');
+    setFilterPlaceId(null);
+    setFilterPlaceName(null);
+    setFilterKeywords(null);
+    setFilterModalVisible(false);
+  };
+
+  const emptyText = activeFiltersCount > 0 
+    ? 'No videos found. Try clearing filters.' 
+    : 'No videos yet. Be the first to post!';
 
   if (loading) {
     return (
@@ -125,11 +196,18 @@ export default function HomeScreen() {
           onPress={handleFilterPress}
           activeOpacity={0.7}
         >
-          <IconSymbol 
-            android_material_icon_name="filter-list" 
-            size={28} 
-            color={textColor}
-          />
+          <View>
+            <IconSymbol 
+              android_material_icon_name="filter-list" 
+              size={28} 
+              color={textColor}
+            />
+            {activeFiltersCount > 0 && (
+              <View style={[styles.badge, { backgroundColor: primaryColor }]}>
+                <Text style={styles.badgeText}>{activeFiltersCount}</Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -170,6 +248,16 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      <FilterModal
+        visible={filterModalVisible}
+        onClose={() => setFilterModalVisible(false)}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        initialPlaceId={filterPlaceId}
+        initialPlaceName={filterPlaceName}
+        initialKeywords={filterKeywords}
+      />
     </View>
   );
 }
@@ -193,6 +281,22 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   loadingContainer: {
     flex: 1,
