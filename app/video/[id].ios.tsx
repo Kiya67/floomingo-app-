@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -23,6 +23,12 @@ interface Post {
 }
 
 const { width, height } = Dimensions.get('window');
+
+function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+  if (!source) return { uri: '' };
+  if (typeof source === 'string') return { uri: source };
+  return source as ImageSourcePropType;
+}
 
 export default function VideoFullScreenScreen() {
   const { id } = useLocalSearchParams();
@@ -126,8 +132,19 @@ export default function VideoFullScreenScreen() {
   };
 
   const displayName = post?.profiles?.display_name || 'Unknown User';
+  const avatarUrl = post?.profiles?.avatar_url || '';
   const caption = post?.caption || '';
   const placeName = post?.place_name || '';
+
+  const getInitials = (name: string) => {
+    const names = name.split(' ');
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
+  const initials = getInitials(displayName);
 
   if (loading) {
     return (
@@ -202,7 +219,19 @@ export default function VideoFullScreenScreen() {
 
           <View style={styles.bottomInfo}>
             <View style={styles.infoContent}>
-              <Text style={styles.displayName}>{displayName}</Text>
+              <View style={styles.userRow}>
+                {avatarUrl ? (
+                  <Image 
+                    source={resolveImageSource(avatarUrl)} 
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  </View>
+                )}
+                <Text style={styles.displayName}>{displayName}</Text>
+              </View>
               {caption ? (
                 <Text style={styles.caption}>{caption}</Text>
               ) : null}
@@ -303,6 +332,30 @@ const styles = StyleSheet.create({
   },
   infoContent: {
     gap: 8,
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333',
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF69B4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   displayName: {
     fontSize: 18,

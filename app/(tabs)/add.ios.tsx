@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   videoPlaceholder: {
-    height: 280,
+    height: 400,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   videoPreview: {
-    height: 200,
+    height: 280,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
