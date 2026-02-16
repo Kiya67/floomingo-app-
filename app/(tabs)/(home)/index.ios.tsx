@@ -25,7 +25,7 @@ interface Post {
 
 const windowWidth = Dimensions.get('window').width;
 const gridItemSize = (windowWidth - 48) / 3;
-const MAX_PLAYING_VIDEOS = 2; // Only 2 videos play at a time
+const MAX_PLAYING_VIDEOS = 2;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -85,6 +85,14 @@ export default function HomeScreen() {
     router.push(`/video/${post.id}`);
   };
 
+  const handleFilterPress = () => {
+    console.log('User tapped filter icon');
+  };
+
+  const handleFavoritePress = () => {
+    console.log('User tapped favorite icon');
+  };
+
   const emptyText = 'No videos yet. Be the first to post!';
 
   if (loading) {
@@ -100,6 +108,33 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
+      <View style={[styles.headerBar, { backgroundColor: bgColor }]}>
+        <TouchableOpacity 
+          style={styles.iconButton}
+          onPress={handleFavoritePress}
+          activeOpacity={0.7}
+        >
+          <IconSymbol 
+            ios_icon_name="heart.fill"
+            android_material_icon_name="favorite" 
+            size={28} 
+            color={primaryColor}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.iconButton}
+          onPress={handleFilterPress}
+          activeOpacity={0.7}
+        >
+          <IconSymbol 
+            ios_icon_name="line.3.horizontal.decrease.circle"
+            android_material_icon_name="filter-list" 
+            size={28} 
+            color={textColor}
+          />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView 
         style={styles.feed} 
         showsVerticalScrollIndicator={false}
@@ -146,6 +181,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -173,7 +224,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 12,
-    paddingTop: 60,
+    paddingTop: 12,
     gap: 6,
   },
 });

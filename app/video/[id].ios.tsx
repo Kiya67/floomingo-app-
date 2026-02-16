@@ -66,7 +66,6 @@ export default function VideoFullScreenScreen() {
       } else {
         console.log('Post fetched successfully:', data);
         
-        // Convert video path to public URL if needed
         let videoUrl = data.video_url;
         if (videoUrl && !videoUrl.startsWith('http')) {
           const { data: urlData } = supabase.storage
@@ -110,7 +109,7 @@ export default function VideoFullScreenScreen() {
       
       let playTimeout: NodeJS.Timeout;
       let retryCount = 0;
-      const maxRetries = 5;
+      const maxRetries = 3;
       
       const attemptPlay = async () => {
         if (!isMountedRef.current) return;
@@ -126,16 +125,11 @@ export default function VideoFullScreenScreen() {
           } else if (status === 'idle' || status === 'loading') {
             if (retryCount < maxRetries) {
               retryCount++;
-              const delay = 300 * Math.pow(1.5, retryCount - 1);
+              const delay = 500 * retryCount;
               playTimeout = setTimeout(attemptPlay, delay);
             }
           } else if (status === 'error') {
-            console.error('Player in error state');
-            if (retryCount < maxRetries) {
-              retryCount++;
-              await player.replace(post.video_url);
-              playTimeout = setTimeout(attemptPlay, 800);
-            }
+            console.error('Player in error state - stopping retry attempts');
           }
         } catch (error) {
           console.error('Error starting video playback:', error);
