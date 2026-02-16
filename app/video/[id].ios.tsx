@@ -82,13 +82,21 @@ export default function VideoFullScreenScreen() {
   useEffect(() => {
     if (player && post?.video_url) {
       console.log('Starting video playback in full screen');
-      player.play();
+      try {
+        player.play();
+      } catch (error) {
+        console.log('Error starting video playback:', error);
+      }
     }
     
     return () => {
-      if (player) {
-        console.log('Pausing video playback on unmount');
-        player.pause();
+      console.log('Pausing video playback on unmount');
+      try {
+        if (player && player.playing) {
+          player.pause();
+        }
+      } catch (error) {
+        console.log('Error pausing video (safe to ignore):', error);
       }
     };
   }, [player, post?.video_url]);

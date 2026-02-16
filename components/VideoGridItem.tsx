@@ -24,11 +24,29 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
 
   useEffect(() => {
     console.log('VideoGridItem mounted, starting playback for:', videoUrl);
-    player.play();
+    
+    // Small delay to ensure player is ready
+    const playTimeout = setTimeout(() => {
+      try {
+        if (player) {
+          player.play();
+        }
+      } catch (error) {
+        console.log('Error starting video playback:', error);
+      }
+    }, 100);
     
     return () => {
       console.log('VideoGridItem unmounting, pausing playback');
-      player.pause();
+      clearTimeout(playTimeout);
+      try {
+        // Check if player exists and is in a valid state before pausing
+        if (player && player.playing) {
+          player.pause();
+        }
+      } catch (error) {
+        console.log('Error pausing video (safe to ignore):', error);
+      }
     };
   }, [player, videoUrl]);
 
