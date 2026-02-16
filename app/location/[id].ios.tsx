@@ -55,15 +55,27 @@ export default function LocationDetailsScreen() {
   const fetchLocationDetails = useCallback(async () => {
     console.log('Fetching location details for place_id:', id);
     try {
-      const { data, error } = await supabase.functions.invoke('place-details', {
+      const { data, error } = await supabase.functions.invoke('places-details', {
         body: JSON.stringify({ place_id: id }),
       });
 
       if (error) {
         console.error('Error fetching location details:', error);
+        console.log('Attempting fallback to place-details function');
+        
+        const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke('place-details', {
+          body: JSON.stringify({ place_id: id }),
+        });
+        
+        if (fallbackError) {
+          console.error('Fallback also failed:', fallbackError);
+        } else {
+          console.log('Fallback location details fetched:', fallbackData);
+          setLocationDetails(fallbackData?.result || fallbackData || null);
+        }
       } else {
         console.log('Location details fetched:', data);
-        setLocationDetails(data?.result || null);
+        setLocationDetails(data?.result || data || null);
       }
     } catch (error) {
       console.error('Error in fetchLocationDetails:', error);

@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -15,31 +15,56 @@ interface VideoGridItemProps {
 
 export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: VideoGridItemProps) {
   const router = useRouter();
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
   
   const player = useVideoPlayer(videoUrl, (player) => {
     player.loop = true;
     player.muted = true;
+    player.volume = 0;
   });
 
   useEffect(() => {
-    console.log('VideoGridItem mounted, starting playback for:', videoUrl);
+    console.log('VideoGridItem mounted for:', videoUrl);
     
-    const playVideo = async () => {
+    let isMounted = true;
+    let playTimeout: NodeJS.Timeout;
+    
+    const initializePlayer = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        if (player && player.status === 'readyToPlay') {
-          await player.play();
-          console.log('Video playback started successfully');
+        if (!player) {
+          console.log('Player not initialized yet');
+          return;
         }
+
+        playTimeout = setTimeout(async () => {
+          if (!isMounted) return;
+          
+          try {
+            if (player.status === 'readyToPlay' || player.status === 'idle') {
+              console.log('Starting video playback, status:', player.status);
+              await player.play();
+              setIsPlayerReady(true);
+              console.log('Video playback started successfully');
+            } else {
+              console.log('Player not ready, status:', player.status);
+            }
+          } catch (error) {
+            console.log('Error starting playback:', error);
+          }
+        }, 300);
       } catch (error) {
-        console.log('Error starting video playback:', error);
+        console.log('Error initializing player:', error);
       }
     };
     
-    playVideo();
+    initializePlayer();
     
     return () => {
-      console.log('VideoGridItem unmounting, pausing playback');
+      console.log('VideoGridItem unmounting');
+      isMounted = false;
+      if (playTimeout) {
+        clearTimeout(playTimeout);
+      }
       try {
         if (player && player.playing) {
           player.pause();
