@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Modal } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
@@ -26,6 +26,7 @@ export default function AddScreen() {
   const [selectedPlaceName, setSelectedPlaceName] = useState<string>('');
   const [selectedLocationType, setSelectedLocationType] = useState<'city' | 'place' | ''>('');
   const [uploading, setUploading] = useState(false);
+  const [showVideoPicker, setShowVideoPicker] = useState(false);
 
   useEffect(() => {
     if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
@@ -43,6 +44,7 @@ export default function AddScreen() {
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
+    setShowVideoPicker(false);
     
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     
@@ -55,7 +57,7 @@ export default function AddScreen() {
       mediaTypes: ['videos'],
       allowsEditing: true,
       quality: 1,
-      videoMaxDuration: 120, // 2 minutes = 120 seconds
+      videoMaxDuration: 120,
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -66,6 +68,7 @@ export default function AddScreen() {
 
   const recordVideo = async () => {
     console.log('User tapped Record Video button');
+    setShowVideoPicker(false);
     
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     
@@ -78,7 +81,7 @@ export default function AddScreen() {
       mediaTypes: ['videos'],
       allowsEditing: true,
       quality: 1,
-      videoMaxDuration: 120, // 2 minutes = 120 seconds
+      videoMaxDuration: 120,
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -110,7 +113,6 @@ export default function AddScreen() {
         location_type: selectedLocationType,
       });
 
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
@@ -118,11 +120,9 @@ export default function AddScreen() {
         return;
       }
 
-      // Upload video to Supabase storage
       const fileExt = videoUri.split('.').pop() || 'mp4';
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
-      // Fetch the video file
       const response = await fetch(videoUri);
       const blob = await response.blob();
       
@@ -144,14 +144,12 @@ export default function AddScreen() {
 
       console.log('Video uploaded successfully:', uploadData);
 
-      // Get public URL for the video
       const { data: { publicUrl } } = supabase.storage
         .from('videos')
         .getPublicUrl(fileName);
 
       console.log('Video public URL:', publicUrl);
 
-      // Insert post into database
       const { data: postData, error: postError } = await supabase
         .from('posts')
         .insert({
@@ -175,14 +173,12 @@ export default function AddScreen() {
       
       Alert.alert('Success', 'Video posted successfully!');
       
-      // Reset form
       setVideoUri(null);
       setCaption('');
       setSelectedPlaceId('');
       setSelectedPlaceName('');
       setSelectedLocationType('');
       
-      // Navigate to home to see the new post
       router.push('/(tabs)/(home)');
     } catch (error) {
       console.error('Error posting video:', error);
@@ -212,51 +208,28 @@ export default function AddScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Create Video Post</Text>
+        <Text style={[styles.headerTitle, { color: textColor }]}>Create Post</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {!videoUri ? (
           <View style={styles.videoPickerSection}>
-            <View style={[styles.videoPlaceholder, { backgroundColor: cardColor }]}>
+            <TouchableOpacity 
+              style={[styles.videoPlaceholder, { backgroundColor: cardColor }]}
+              onPress={() => setShowVideoPicker(true)}
+            >
               <IconSymbol 
                 android_material_icon_name="videocam" 
                 size={64} 
-                color={textSecondaryColor}
+                color={primaryColor}
               />
-              <Text style={[styles.placeholderText, { color: textSecondaryColor }]}>
-                No video selected
+              <Text style={[styles.placeholderText, { color: textColor }]}>
+                Tap to add video
               </Text>
               <Text style={[styles.placeholderSubtext, { color: textSecondaryColor }]}>
                 Up to 2 minutes
               </Text>
-            </View>
-
-            <View style={styles.buttonRow}>
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: primaryColor }]}
-                onPress={pickVideo}
-              >
-                <IconSymbol 
-                  android_material_icon_name="photo-library" 
-                  size={24} 
-                  color="#FFFFFF"
-                />
-                <Text style={styles.actionButtonText}>Choose Video</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: primaryColor }]}
-                onPress={recordVideo}
-              >
-                <IconSymbol 
-                  android_material_icon_name="videocam" 
-                  size={24} 
-                  color="#FFFFFF"
-                />
-                <Text style={styles.actionButtonText}>Record Video</Text>
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.videoSelectedSection}>
@@ -267,17 +240,19 @@ export default function AddScreen() {
                 color={primaryColor}
               />
               <Text style={[styles.videoSelectedText, { color: textColor }]}>
-                Video selected
-              </Text>
-              <Text style={[styles.videoUriText, { color: textSecondaryColor }]} numberOfLines={1}>
-                {videoUri}
+                Video ready to post
               </Text>
             </View>
 
             <TouchableOpacity 
               style={[styles.changeButton, { borderColor: primaryColor }]}
-              onPress={handleClear}
+              onPress={() => setShowVideoPicker(true)}
             >
+              <IconSymbol 
+                android_material_icon_name="edit" 
+                size={20} 
+                color={primaryColor}
+              />
               <Text style={[styles.changeButtonText, { color: primaryColor }]}>Change Video</Text>
             </TouchableOpacity>
           </View>
@@ -350,7 +325,10 @@ export default function AddScreen() {
             disabled={uploading}
           >
             {uploading ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <>
+                <ActivityIndicator color="#FFFFFF" />
+                <Text style={styles.postButtonText}>Uploading...</Text>
+              </>
             ) : (
               <>
                 <IconSymbol 
@@ -364,6 +342,59 @@ export default function AddScreen() {
           </TouchableOpacity>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showVideoPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowVideoPicker(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowVideoPicker(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Add Video</Text>
+            
+            <TouchableOpacity 
+              style={[styles.modalButton, { borderBottomColor: isDark ? '#333' : '#E5E7EB' }]}
+              onPress={pickVideo}
+            >
+              <IconSymbol 
+                android_material_icon_name="photo-library" 
+                size={24} 
+                color={primaryColor}
+              />
+              <Text style={[styles.modalButtonText, { color: textColor }]}>Choose from Library</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.modalButton, { borderBottomColor: isDark ? '#333' : '#E5E7EB' }]}
+              onPress={recordVideo}
+            >
+              <IconSymbol 
+                android_material_icon_name="videocam" 
+                size={24} 
+                color={primaryColor}
+              />
+              <Text style={[styles.modalButtonText, { color: textColor }]}>Record Video</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.modalButton}
+              onPress={() => setShowVideoPicker(false)}
+            >
+              <IconSymbol 
+                android_material_icon_name="close" 
+                size={24} 
+                color={textSecondaryColor}
+              />
+              <Text style={[styles.modalButtonText, { color: textSecondaryColor }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -375,11 +406,9 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
   },
   content: {
@@ -390,37 +419,22 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   videoPlaceholder: {
-    height: 240,
+    height: 280,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#999',
   },
   placeholderText: {
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: '600',
     marginTop: 16,
   },
   placeholderSubtext: {
     fontSize: 14,
     marginTop: 4,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  actionButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
   videoSelectedSection: {
     marginTop: 24,
@@ -438,16 +452,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 16,
   },
-  videoUriText: {
-    fontSize: 12,
-    marginTop: 8,
-    textAlign: 'center',
-  },
   changeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 2,
-    alignItems: 'center',
+    gap: 8,
   },
   changeButtonText: {
     fontSize: 16,
@@ -502,5 +514,34 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 16,
+    borderBottomWidth: 1,
+  },
+  modalButtonText: {
+    fontSize: 17,
+    fontWeight: '500',
   },
 });

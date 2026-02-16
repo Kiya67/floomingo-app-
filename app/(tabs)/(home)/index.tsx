@@ -1,7 +1,6 @@
 
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
@@ -81,34 +80,17 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: textColor }]}>Wanderlust</Text>
-          <IconSymbol 
-            android_material_icon_name="notifications" 
-            size={24} 
-            color={textColor}
-          />
-        </View>
+      <View style={[styles.container, { backgroundColor: bgColor }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
           <Text style={[styles.loadingText, { color: textColor }]}>Loading videos...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Wanderlust</Text>
-        <IconSymbol 
-          android_material_icon_name="notifications" 
-          size={24} 
-          color={textColor}
-        />
-      </View>
-
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
       <ScrollView 
         style={styles.feed} 
         showsVerticalScrollIndicator={false}
@@ -145,24 +127,13 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
   },
   loadingContainer: {
     flex: 1,
