@@ -85,17 +85,6 @@ export default function AddScreen() {
     }
   };
 
-  // Helper to convert base64 to Blob
-  const base64ToBlob = (base64: string, contentType: string): Blob => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: contentType });
-  };
-
   const handlePost = async () => {
     console.log('User tapped Post button');
     
@@ -135,37 +124,22 @@ export default function AddScreen() {
       // Step 3: Upload VIDEO to Supabase Storage
       console.log('Step 3: Uploading video to Supabase Storage');
       
-      let videoBlob: Blob;
+      // Use FormData for file uploads (works on all platforms)
+      const videoFormData = new FormData();
       
-      if (Platform.OS === 'web') {
-        console.log('Web platform: Fetching video blob from URI');
-        const response = await fetch(videoUri);
-        videoBlob = await response.blob();
-      } else {
-        console.log('Native platform: Reading video file as base64');
-        const fileInfo = await FileSystem.getInfoAsync(videoUri);
-        console.log('Video file info:', fileInfo);
-        
-        if (!fileInfo.exists) {
-          throw new Error('Video file does not exist');
-        }
-        
-        const base64 = await FileSystem.readAsStringAsync(videoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        videoBlob = base64ToBlob(base64, 'video/mp4');
-      }
+      const videoFile = {
+        uri: videoUri,
+        type: 'video/mp4',
+        name: `${postId}.mp4`,
+      } as any;
       
-      console.log('Video blob size:', videoBlob.size, 'bytes');
+      videoFormData.append('file', videoFile);
       
-      if (videoBlob.size === 0) {
-        throw new Error('Video file is empty (0 bytes)');
-      }
+      console.log('Uploading video via FormData');
       
       const { data: videoUploadData, error: videoUploadError } = await supabase.storage
         .from('videos')
-        .upload(videoPath, videoBlob, {
+        .upload(videoPath, videoFormData, {
           contentType: 'video/mp4',
           cacheControl: '3600',
           upsert: false,
@@ -198,27 +172,21 @@ export default function AddScreen() {
       // Step 5: Upload THUMBNAIL to Supabase Storage
       console.log('Step 5: Uploading thumbnail to Supabase Storage');
       
-      let thumbnailBlob: Blob;
+      const thumbnailFormData = new FormData();
       
-      if (Platform.OS === 'web') {
-        const response = await fetch(thumbnailUri);
-        thumbnailBlob = await response.blob();
-      } else {
-        const base64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        thumbnailBlob = base64ToBlob(base64, 'image/jpeg');
-      }
+      const thumbnailFile = {
+        uri: thumbnailUri,
+        type: 'image/jpeg',
+        name: `${postId}.jpg`,
+      } as any;
       
-      console.log('Thumbnail blob size:', thumbnailBlob.size, 'bytes');
+      thumbnailFormData.append('file', thumbnailFile);
       
-      if (thumbnailBlob.size === 0) {
-        throw new Error('Thumbnail file is empty (0 bytes)');
-      }
+      console.log('Uploading thumbnail via FormData');
       
       const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
         .from('thumbnails')
-        .upload(thumbPath, thumbnailBlob, {
+        .upload(thumbPath, thumbnailFormData, {
           contentType: 'image/jpeg',
           cacheControl: '3600',
           upsert: false,
@@ -307,6 +275,7 @@ export default function AddScreen() {
               onPress={pickVideo}
             >
               <IconSymbol 
+                ios_icon_name="video.fill"
                 android_material_icon_name="videocam" 
                 size={64} 
                 color={primaryColor}
@@ -323,6 +292,7 @@ export default function AddScreen() {
           <View style={styles.videoSelectedSection}>
             <View style={[styles.videoPreview, { backgroundColor: cardColor }]}>
               <IconSymbol 
+                ios_icon_name="checkmark.circle.fill"
                 android_material_icon_name="check-circle" 
                 size={64} 
                 color={primaryColor}
@@ -337,6 +307,7 @@ export default function AddScreen() {
               onPress={pickVideo}
             >
               <IconSymbol 
+                ios_icon_name="pencil"
                 android_material_icon_name="edit" 
                 size={20} 
                 color={primaryColor}
@@ -350,6 +321,7 @@ export default function AddScreen() {
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
               <IconSymbol 
+                ios_icon_name="doc.text"
                 android_material_icon_name="description" 
                 size={20} 
                 color={textColor}
@@ -376,6 +348,7 @@ export default function AddScreen() {
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
               <IconSymbol 
+                ios_icon_name="location.fill"
                 android_material_icon_name="location-on" 
                 size={20} 
                 color={textColor}
@@ -397,6 +370,7 @@ export default function AddScreen() {
                 {selectedPlaceText}
               </Text>
               <IconSymbol 
+                ios_icon_name="chevron.right"
                 android_material_icon_name="arrow-forward" 
                 size={20} 
                 color={textSecondaryColor}
@@ -421,6 +395,7 @@ export default function AddScreen() {
           ) : (
             <>
               <IconSymbol 
+                ios_icon_name="paperplane.fill"
                 android_material_icon_name="send" 
                 size={24} 
                 color="#FFFFFF"

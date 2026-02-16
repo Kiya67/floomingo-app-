@@ -104,56 +104,70 @@ export default function VideoFullScreenScreen() {
   });
 
   useEffect(() => {
-    if (player && post?.video_url && isMountedRef.current) {
-      console.log('Starting video playback in full screen for URL:', post.video_url);
+    if (!player || !post?.video_url || !isMountedRef.current) {
+      return;
+    }
+
+    console.log('Setting up video playback for URL:', post.video_url);
+    
+    let playTimeout: NodeJS.Timeout | null = null;
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    const attemptPlay = async () => {
+      if (!isMountedRef.current) {
+        console.log('Component unmounted, stopping playback attempts');
+        return;
+      }
       
-      let playTimeout: NodeJS.Timeout;
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      const attemptPlay = async () => {
-        if (!isMountedRef.current) return;
+      try {
+        const status = player.status;
+        console.log(`Full screen video attempt ${retryCount + 1}: Player status:`, status);
         
-        try {
-          const status = player.status;
-          console.log(`Full screen video attempt ${retryCount + 1}: Player status:`, status);
-          
-          if (status === 'readyToPlay') {
-            await player.play();
-            player.volume = 1;
-            console.log('Full screen video playback started with sound');
-          } else if (status === 'idle' || status === 'loading') {
-            if (retryCount < maxRetries) {
-              retryCount++;
-              const delay = 500 * retryCount;
-              playTimeout = setTimeout(attemptPlay, delay);
-            }
-          } else if (status === 'error') {
-            console.error('Player in error state - stopping retry attempts');
-          }
-        } catch (error) {
-          console.error('Error starting video playback:', error);
+        if (status === 'readyToPlay') {
+          console.log('Player ready, starting playback');
+          player.play();
+          player.volume = 1;
+          console.log('Full screen video playback started with sound');
+        } else if (status === 'idle' || status === 'loading') {
           if (retryCount < maxRetries) {
             retryCount++;
-            playTimeout = setTimeout(attemptPlay, 1000);
+            const delay = 500 * retryCount;
+            console.log(`Player not ready (${status}), retrying in ${delay}ms`);
+            playTimeout = setTimeout(attemptPlay, delay);
+          } else {
+            console.log('Max retries reached, player still not ready');
           }
+        } else if (status === 'error') {
+          console.error('Player in error state - video may be corrupted or unavailable');
         }
-      };
-      
-      playTimeout = setTimeout(attemptPlay, 500);
-      
-      return () => {
-        if (playTimeout) clearTimeout(playTimeout);
-        console.log('Pausing video playback on unmount');
-        try {
-          if (player && player.playing) {
-            player.pause();
-          }
-        } catch (error) {
-          console.log('Error pausing video (safe to ignore):', error);
+      } catch (error) {
+        console.error('Error in attemptPlay:', error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          playTimeout = setTimeout(attemptPlay, 1000);
         }
-      };
-    }
+      }
+    };
+    
+    // Start attempting playback after a short delay
+    playTimeout = setTimeout(attemptPlay, 300);
+    
+    return () => {
+      console.log('Cleaning up video playback');
+      if (playTimeout) {
+        clearTimeout(playTimeout);
+        playTimeout = null;
+      }
+      try {
+        if (player && player.playing) {
+          player.pause();
+          console.log('Video paused on cleanup');
+        }
+      } catch (error) {
+        console.log('Error pausing video during cleanup (safe to ignore):', error);
+      }
+    };
   }, [player, post?.video_url]);
 
   const handleClose = () => {

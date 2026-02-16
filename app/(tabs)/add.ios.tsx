@@ -85,17 +85,6 @@ export default function AddScreen() {
     }
   };
 
-  // Helper to convert base64 to Blob
-  const base64ToBlob = (base64: string, contentType: string): Blob => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: contentType });
-  };
-
   const handlePost = async () => {
     console.log('User tapped Post button');
     
@@ -132,40 +121,27 @@ export default function AddScreen() {
       console.log('Video path:', videoPath);
       console.log('Thumbnail path:', thumbPath);
 
-      // Step 3: Upload VIDEO to Supabase Storage
-      console.log('Step 3: Uploading video to Supabase Storage');
+      // Step 3: Upload VIDEO to Supabase Storage (iOS native approach)
+      console.log('Step 3: Uploading video to Supabase Storage (iOS)');
       
-      let videoBlob: Blob;
+      // For iOS, we need to use FormData with the file URI directly
+      const videoFormData = new FormData();
       
-      if (Platform.OS === 'web') {
-        console.log('Web platform: Fetching video blob from URI');
-        const response = await fetch(videoUri);
-        videoBlob = await response.blob();
-      } else {
-        console.log('Native platform: Reading video file as base64');
-        const fileInfo = await FileSystem.getInfoAsync(videoUri);
-        console.log('Video file info:', fileInfo);
-        
-        if (!fileInfo.exists) {
-          throw new Error('Video file does not exist');
-        }
-        
-        const base64 = await FileSystem.readAsStringAsync(videoUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
-        videoBlob = base64ToBlob(base64, 'video/mp4');
-      }
+      // Create file object for FormData
+      const videoFile = {
+        uri: videoUri,
+        type: 'video/mp4',
+        name: `${postId}.mp4`,
+      } as any;
       
-      console.log('Video blob size:', videoBlob.size, 'bytes');
+      videoFormData.append('file', videoFile);
       
-      if (videoBlob.size === 0) {
-        throw new Error('Video file is empty (0 bytes)');
-      }
+      console.log('Uploading video via FormData');
       
+      // Use Supabase storage upload with FormData
       const { data: videoUploadData, error: videoUploadError } = await supabase.storage
         .from('videos')
-        .upload(videoPath, videoBlob, {
+        .upload(videoPath, videoFormData, {
           contentType: 'video/mp4',
           cacheControl: '3600',
           upsert: false,
@@ -195,30 +171,24 @@ export default function AddScreen() {
       
       console.log('Thumbnail generated:', thumbnailUri);
 
-      // Step 5: Upload THUMBNAIL to Supabase Storage
-      console.log('Step 5: Uploading thumbnail to Supabase Storage');
+      // Step 5: Upload THUMBNAIL to Supabase Storage (iOS native approach)
+      console.log('Step 5: Uploading thumbnail to Supabase Storage (iOS)');
       
-      let thumbnailBlob: Blob;
+      const thumbnailFormData = new FormData();
       
-      if (Platform.OS === 'web') {
-        const response = await fetch(thumbnailUri);
-        thumbnailBlob = await response.blob();
-      } else {
-        const base64 = await FileSystem.readAsStringAsync(thumbnailUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        thumbnailBlob = base64ToBlob(base64, 'image/jpeg');
-      }
+      const thumbnailFile = {
+        uri: thumbnailUri,
+        type: 'image/jpeg',
+        name: `${postId}.jpg`,
+      } as any;
       
-      console.log('Thumbnail blob size:', thumbnailBlob.size, 'bytes');
+      thumbnailFormData.append('file', thumbnailFile);
       
-      if (thumbnailBlob.size === 0) {
-        throw new Error('Thumbnail file is empty (0 bytes)');
-      }
+      console.log('Uploading thumbnail via FormData');
       
       const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
         .from('thumbnails')
-        .upload(thumbPath, thumbnailBlob, {
+        .upload(thumbPath, thumbnailFormData, {
           contentType: 'image/jpeg',
           cacheControl: '3600',
           upsert: false,
