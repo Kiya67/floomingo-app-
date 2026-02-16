@@ -19,28 +19,28 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
   const player = useVideoPlayer(videoUrl, (player) => {
     player.loop = true;
     player.muted = true;
-    player.play();
   });
 
   useEffect(() => {
     console.log('VideoGridItem mounted, starting playback for:', videoUrl);
     
-    // Small delay to ensure player is ready
-    const playTimeout = setTimeout(() => {
+    const playVideo = async () => {
       try {
-        if (player) {
-          player.play();
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (player && player.status === 'readyToPlay') {
+          await player.play();
+          console.log('Video playback started successfully');
         }
       } catch (error) {
         console.log('Error starting video playback:', error);
       }
-    }, 100);
+    };
+    
+    playVideo();
     
     return () => {
       console.log('VideoGridItem unmounting, pausing playback');
-      clearTimeout(playTimeout);
       try {
-        // Check if player exists and is in a valid state before pausing
         if (player && player.playing) {
           player.pause();
         }
@@ -61,7 +61,7 @@ export function VideoGridItem({ videoUrl, postId, onPress, size, cardColor }: Vi
 
   return (
     <TouchableOpacity 
-      style={[styles.gridItem, { width: size, height: size, backgroundColor: cardColor }]}
+      style={[styles.gridItem, { width: size, height: size * 1.5, backgroundColor: cardColor }]}
       activeOpacity={0.8}
       onPress={handlePress}
     >

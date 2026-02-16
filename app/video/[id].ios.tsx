@@ -75,18 +75,26 @@ export default function VideoFullScreenScreen() {
     if (post?.video_url) {
       player.loop = true;
       player.muted = false;
-      player.play();
     }
   });
 
   useEffect(() => {
     if (player && post?.video_url) {
       console.log('Starting video playback in full screen');
-      try {
-        player.play();
-      } catch (error) {
-        console.log('Error starting video playback:', error);
-      }
+      const playVideo = async () => {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          if (player.status === 'readyToPlay') {
+            await player.play();
+            await player.setVolume(1);
+            console.log('Full screen video playback started with sound');
+          }
+        } catch (error) {
+          console.log('Error starting video playback:', error);
+        }
+      };
+      
+      playVideo();
     }
     
     return () => {
@@ -108,6 +116,13 @@ export default function VideoFullScreenScreen() {
 
   const toggleControls = () => {
     setShowControls(!showControls);
+  };
+
+  const handleLocationPress = () => {
+    if (post?.place_id) {
+      console.log('User tapped location, navigating to location details:', post.place_id);
+      router.push(`/location/${post.place_id}`);
+    }
   };
 
   const displayName = post?.profiles?.display_name || 'Unknown User';
@@ -192,15 +207,19 @@ export default function VideoFullScreenScreen() {
                 <Text style={styles.caption}>{caption}</Text>
               ) : null}
               {placeName ? (
-                <View style={styles.locationRow}>
+                <TouchableOpacity 
+                  style={styles.locationRow}
+                  onPress={handleLocationPress}
+                  activeOpacity={0.7}
+                >
                   <IconSymbol 
                     ios_icon_name="location.fill"
                     android_material_icon_name="location-on" 
                     size={16} 
-                    color="#FFFFFF"
+                    color="#FF69B4"
                   />
                   <Text style={styles.placeName}>{placeName}</Text>
-                </View>
+                </TouchableOpacity>
               ) : null}
             </View>
           </View>
@@ -302,6 +321,7 @@ const styles = StyleSheet.create({
   },
   placeName: {
     fontSize: 14,
-    color: '#FFFFFF',
+    color: '#FF69B4',
+    fontWeight: '600',
   },
 });

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
@@ -113,20 +113,43 @@ export default function AddScreen() {
       const fileExt = videoUri.split('.').pop() || 'mp4';
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
-      console.log('Fetching video blob from URI:', videoUri);
-      const response = await fetch(videoUri);
-      const blob = await response.blob();
+      console.log('Preparing video file for upload');
       
-      console.log('Video blob size:', blob.size, 'bytes');
-      console.log('Uploading to Supabase storage:', fileName);
-      
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, blob, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: `video/${fileExt}`,
-        });
+      let uploadData;
+      let uploadError;
+
+      if (Platform.OS === 'web') {
+        console.log('Web platform: Fetching video blob from URI:', videoUri);
+        const response = await fetch(videoUri);
+        const blob = await response.blob();
+        console.log('Video blob size:', blob.size, 'bytes');
+        
+        const result = await supabase.storage
+          .from('videos')
+          .upload(fileName, blob, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: `video/${fileExt}`,
+          });
+        
+        uploadData = result.data;
+        uploadError = result.error;
+      } else {
+        console.log('Native platform: Uploading video from URI:', videoUri);
+        const result = await supabase.storage
+          .from('videos')
+          .upload(fileName, {
+            uri: videoUri,
+            type: `video/${fileExt}`,
+            name: fileName,
+          } as any, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+        
+        uploadData = result.data;
+        uploadError = result.error;
+      }
 
       if (uploadError) {
         console.error('Supabase upload error:', uploadError);
@@ -289,7 +312,7 @@ export default function AddScreen() {
             >
               <Text style={[
                 styles.locationButtonText,
-                { color: selectedPlaceName ? textColor : textSecondaryColor }
+                { color: selectedPlaceName ? '#FF69B4' : textSecondaryColor }
               ]}>
                 {selectedPlaceName || locationPlaceholder}
               </Text>
@@ -433,6 +456,7 @@ const styles = StyleSheet.create({
   locationButtonText: {
     fontSize: 16,
     flex: 1,
+    fontWeight: '600',
   },
   postButton: {
     flexDirection: 'row',
