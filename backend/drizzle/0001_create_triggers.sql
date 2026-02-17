@@ -122,3 +122,45 @@ CREATE TRIGGER follow_deleted_decrement_counts
 AFTER DELETE ON follows
 FOR EACH ROW
 EXECUTE FUNCTION decrement_follow_counts();
+
+-- Function to safely increment view count
+CREATE OR REPLACE FUNCTION increment_view(p_post_id uuid)
+RETURNS bigint AS $$
+DECLARE
+  v_new_count bigint;
+BEGIN
+  -- Increment view count in post_stats
+  UPDATE post_stats
+  SET view_count = view_count + 1
+  WHERE post_id = p_post_id
+  RETURNING view_count INTO v_new_count;
+
+  -- If no row exists, create one (shouldn't happen in normal flow)
+  IF v_new_count IS NULL THEN
+    INSERT INTO post_stats (post_id, view_count)
+    VALUES (p_post_id, 1)
+    ON CONFLICT (post_id) DO UPDATE
+    SET view_count = post_stats.view_count + 1
+    RETURNING view_count INTO v_new_count;
+  END IF;
+
+  RETURN v_new_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: Initialize post_stats when a post is created
+CREATE OR REPLACE FUNCTION init_post_stats()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO post_stats (post_id, view_count)
+  VALUES (NEW.id, 0)
+  ON CONFLICT (post_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS post_created_init_stats ON posts;
+CREATE TRIGGER post_created_init_stats
+AFTER INSERT ON posts
+FOR EACH ROW
+EXECUTE FUNCTION init_post_stats();

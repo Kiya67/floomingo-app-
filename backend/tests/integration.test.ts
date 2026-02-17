@@ -688,3 +688,343 @@ describe('Profile Stats Feature', () => {
     }
   });
 });
+
+describe('Posts Feature', () => {
+  let authToken: string;
+  let userId: string;
+  let postId: string;
+  let otherUserId: string;
+  let otherUserToken: string;
+
+  beforeAll(async () => {
+    // Create user 1 for posts
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'posts-user1@example.com',
+        password: 'password123',
+        name: 'Posts User 1',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+    const data = JSON.parse(signUpResponse.payload);
+    userId = data.user.id;
+
+    // Sign in to get auth token
+    const signInResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'posts-user1@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse.statusCode).toBe(200);
+    authToken = signInResponse.cookies[0]?.value || '';
+
+    // Create user 2 for viewing posts
+    const signUpResponse2 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'posts-user2@example.com',
+        password: 'password123',
+        name: 'Posts User 2',
+      },
+    });
+
+    expect(signUpResponse2.statusCode).toBe(200);
+    const data2 = JSON.parse(signUpResponse2.payload);
+    otherUserId = data2.user.id;
+
+    // Sign in user 2
+    const signInResponse2 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'posts-user2@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse2.statusCode).toBe(200);
+    otherUserToken = signInResponse2.cookies[0]?.value || '';
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should return 401 when creating post without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Test post',
+        video_url: 'https://example.com/video.mp4',
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should create a post with authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Test video post',
+        video_url: 'https://example.com/video.mp4',
+        thumbnail_url: 'https://example.com/thumb.jpg',
+        place_id: 'place-123',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const data = JSON.parse(response.payload);
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('user_id');
+    expect(data.caption).toBe('Test video post');
+    expect(data.view_count).toBe(0);
+    postId = data.id;
+  });
+
+  it('should return 400 when creating post without required fields', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Missing video URL',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 400 when creating post with invalid video_url', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Invalid URL',
+        video_url: 'not-a-url',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should get a single post with view count', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/posts/${postId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.id).toBe(postId);
+    expect(data).toHaveProperty('view_count');
+  });
+
+  it('should return 404 for non-existent post', async () => {
+    const nonExistentPostId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/posts/${nonExistentPostId}`,
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 for invalid post UUID format', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/posts/invalid-uuid',
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 401 when incrementing view without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {
+        postId: postId,
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should return 400 when incrementing view without postId', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {},
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return null view_count when post owner tries to increment', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {
+        postId: postId,
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.view_count).toBeNull();
+  });
+
+  it('should increment view count when other user views', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {
+        postId: postId,
+      },
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.view_count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should return 404 when incrementing non-existent post', async () => {
+    const nonExistentPostId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {
+        postId: nonExistentPostId,
+      },
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 when incrementing with invalid postId UUID format', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/rpc/increment-view',
+      payload: {
+        postId: 'invalid-uuid',
+      },
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should get user posts with view_count when viewing own profile', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/users/${userId}/posts`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0]).toHaveProperty('view_count');
+      expect(typeof data[0].view_count).toBe('number');
+    }
+  });
+
+  it('should get user posts without view_count when viewing other profile', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/users/${userId}/posts`,
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0].view_count).toBeNull();
+    }
+  });
+
+  it('should get user posts without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/users/${userId}/posts`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0].view_count).toBeNull();
+    }
+  });
+
+  it('should return 401 when deleting post without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/posts/${postId}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should return 403 when deleting other user post', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/posts/${postId}`,
+      cookies: { 'auth_token': otherUserToken },
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it('should delete own post', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/posts/${postId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+  });
+
+  it('should return 404 when deleting non-existent post', async () => {
+    const nonExistentPostId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/posts/${nonExistentPostId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 when deleting post with invalid UUID format', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: '/api/posts/invalid-uuid',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+});
