@@ -33,7 +33,7 @@ interface PostStats {
 
 interface Comment {
   id: string;
-  content: string;
+  comment_text: string;
   created_at: string;
   user_id: string;
   profiles?: {
@@ -45,7 +45,7 @@ interface Comment {
 const { width, height } = Dimensions.get('window');
 
 // In-memory cache for signed URLs
-const signedUrlCache = new Map<string, string>();
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
@@ -58,9 +58,10 @@ async function generateSignedUrl(videoPath: string, postId: string): Promise<str
   if (!videoPath) return null;
 
   // Check cache first
-  if (signedUrlCache.has(postId)) {
+  const cached = signedUrlCache.get(postId);
+  if (cached && cached.expiresAt > Date.now() + 60 * 1000) {
     console.log('Using cached signed URL for post:', postId);
-    return signedUrlCache.get(postId)!;
+    return cached.url;
   }
 
   try {
@@ -73,7 +74,10 @@ async function generateSignedUrl(videoPath: string, postId: string): Promise<str
 
     if (data?.signedUrl) {
       console.log('Signed URL generated successfully');
-      signedUrlCache.set(postId, data.signedUrl);
+      signedUrlCache.set(postId, { 
+        url: data.signedUrl, 
+        expiresAt: Date.now() + 3600 * 1000 
+      });
       return data.signedUrl;
     }
 
@@ -173,6 +177,14 @@ export default function VideoFullScreenScreen() {
           if (videoUrl && !videoUrl.startsWith('http')) {
             const signedUrl = await generateSignedUrl(videoUrl, post.id);
             videoUrl = signedUrl || videoUrl;
+          } else if (videoUrl && videoUrl.includes('/storage/v1/object/public/')) {
+            // If it's a public URL, convert to path and generate signed URL
+            const pathMatch = videoUrl.match(/\/videos\/(.+)$/);
+            if (pathMatch) {
+              const path = pathMatch[1];
+              const signedUrl = await generateSignedUrl(path, post.id);
+              videoUrl = signedUrl || videoUrl;
+            }
           }
           
           return { ...post, video_url: videoUrl };
@@ -196,40 +208,51 @@ export default function VideoFullScreenScreen() {
   const loadPostInteractions = async (postId: string, userId: string) => {
     console.log('Loading interactions for post:', postId);
     
-    // Check if liked
-    const { data: likeData } = await supabase
-      .from('post_likes')
-      .select('*')
-      .eq('post_id', postId)
-      .eq('user_id', userId)
-      .limit(1);
-    
-    setIsLiked(likeData && likeData.length > 0);
-    
-    // Get stats
-    const { data: statsData } = await supabase
-      .from('post_stats')
-      .select('*')
-      .eq('post_id', postId)
-      .single();
-    
-    if (statsData) {
-      setStats({
-        like_count: statsData.like_count || 0,
-        comment_count: statsData.comment_count || 0,
-        share_count: statsData.share_count || 0,
-      });
+    try {
+      // Check if liked
+      const { data: likeData } = await supabase
+        .from('post_likes')
+        .select('*')
+        .eq('post_id', postId)
+        .eq('user_id', userId)
+        .limit(1);
+      
+      setIsLiked(likeData && likeData.length > 0);
+      
+      // Get stats - handle missing share_count gracefully
+      const { data: statsData } = await supabase
+        .from('post_stats')
+        .select('*')
+        .eq('post_id', postId)
+        .single();
+      
+      if (statsData) {
+        setStats({
+          like_count: statsData.like_count || 0,
+          comment_count: statsData.comment_count || 0,
+          share_count: statsData.share_count || 0,
+        });
+      } else {
+        // If no stats exist, set defaults
+        setStats({ like_count: 0, comment_count: 0, share_count: 0 });
+      }
+      
+      // Check if saved
+      const { data: savedData } = await supabase
+        .from('board_items')
+        .select('id, board_id, boards!inner(user_id)')
+        .eq('post_id', postId)
+        .eq('boards.user_id', userId)
+        .limit(1);
+      
+      setIsSaved(savedData && savedData.length > 0);
+    } catch (error) {
+      console.error('Error loading post interactions:', error);
+      // Set defaults on error
+      setStats({ like_count: 0, comment_count: 0, share_count: 0 });
+      setIsLiked(false);
+      setIsSaved(false);
     }
-    
-    // Check if saved
-    const { data: savedData } = await supabase
-      .from('board_items')
-      .select('id, board_id, boards!inner(user_id)')
-      .eq('post_id', postId)
-      .eq('boards.user_id', userId)
-      .limit(1);
-    
-    setIsSaved(savedData && savedData.length > 0);
   };
 
   useEffect(() => {
@@ -349,7 +372,7 @@ export default function VideoFullScreenScreen() {
     setIsLiked(!wasLiked);
     setStats(prev => ({
       ...prev,
-      like_count: wasLiked ? prev.like_count - 1 : prev.like_count + 1,
+      like_count: wasLiked ? Math.max(0, prev.like_count - 1) : prev.like_count + 1,
     }));
 
     try {
@@ -381,7 +404,7 @@ export default function VideoFullScreenScreen() {
       setIsLiked(wasLiked);
       setStats(prev => ({
         ...prev,
-        like_count: wasLiked ? prev.like_count + 1 : prev.like_count - 1,
+        like_count: wasLiked ? prev.like_count + 1 : Math.max(0, prev.like_count - 1),
       }));
     } finally {
       setLikeLoading(false);
@@ -413,6 +436,7 @@ export default function VideoFullScreenScreen() {
       console.log('Comments loaded:', data?.length || 0);
     } catch (error) {
       console.error('Error loading comments:', error);
+      setComments([]);
     } finally {
       setCommentsLoading(false);
     }
@@ -434,7 +458,7 @@ export default function VideoFullScreenScreen() {
         .insert({
           post_id: currentPost.id,
           user_id: currentUserId,
-          content: trimmedComment,
+          comment_text: trimmedComment,
         })
         .select(`
           *,
@@ -480,8 +504,9 @@ export default function VideoFullScreenScreen() {
     console.log('User tapped share button');
     
     try {
+      const shareMessage = post.caption || 'Amazing travel content!';
       const result = await Share.share({
-        message: `Check out this video: ${post.caption || 'Amazing travel content!'}`,
+        message: `Check out this video: ${shareMessage}`,
         url: `floomingo://post/${post.id}`,
       });
 
@@ -504,6 +529,7 @@ export default function VideoFullScreenScreen() {
   };
 
   const getInitials = (name: string) => {
+    if (!name) return '??';
     const names = name.split(' ');
     if (names.length >= 2) {
       return `${names[0][0]}${names[1][0]}`.toUpperCase();
@@ -528,6 +554,9 @@ export default function VideoFullScreenScreen() {
     const placeName = post?.place_name || '';
     const isOwnVideo = currentUserId === post?.user_id;
     const initials = getInitials(displayName);
+    const likeCountText = String(stats.like_count);
+    const commentCountText = String(stats.comment_count);
+    const shareCountText = String(stats.share_count);
 
     return (
       <View style={styles.videoSlide}>
@@ -620,7 +649,7 @@ export default function VideoFullScreenScreen() {
                     size={28} 
                     color={isLiked ? "#FF69B4" : "#FFFFFF"}
                   />
-                  <Text style={styles.actionButtonText}>{stats.like_count}</Text>
+                  <Text style={styles.actionButtonText}>{likeCountText}</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
@@ -633,7 +662,7 @@ export default function VideoFullScreenScreen() {
                     size={28} 
                     color="#FFFFFF"
                   />
-                  <Text style={styles.actionButtonText}>{stats.comment_count}</Text>
+                  <Text style={styles.actionButtonText}>{commentCountText}</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
@@ -659,7 +688,7 @@ export default function VideoFullScreenScreen() {
                     size={28} 
                     color="#FFFFFF"
                   />
-                  <Text style={styles.actionButtonText}>{stats.share_count}</Text>
+                  <Text style={styles.actionButtonText}>{shareCountText}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -756,6 +785,7 @@ export default function VideoFullScreenScreen() {
                   const commentDisplayName = comment.profiles?.display_name || 'Unknown User';
                   const commentAvatarUrl = comment.profiles?.avatar_url || '';
                   const commentInitials = getInitials(commentDisplayName);
+                  const commentText = comment.comment_text || '';
                   
                   return (
                     <View key={comment.id} style={styles.commentItem}>
@@ -775,7 +805,7 @@ export default function VideoFullScreenScreen() {
                             {commentDisplayName}
                           </Text>
                           <Text style={[styles.commentText, { color: textColor }]}>
-                            {comment.content}
+                            {commentText}
                           </Text>
                         </View>
                       </View>
@@ -833,6 +863,7 @@ export default function VideoFullScreenScreen() {
 function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
   const [currentUrl, setCurrentUrl] = useState(videoUrl);
   const [hasError, setHasError] = useState(false);
+  const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(currentUrl, (player) => {
     player.loop = true;
@@ -840,17 +871,28 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
   });
 
   useEffect(() => {
+    isMountedRef.current = true;
+    
     const playTimeout = setTimeout(() => {
-      if (player.status === 'readyToPlay') {
-        player.play();
-        player.volume = 1;
+      if (isMountedRef.current && player && player.status === 'readyToPlay') {
+        try {
+          player.play();
+          player.volume = 1;
+        } catch (error) {
+          console.error('Error playing video:', error);
+        }
       }
     }, 300);
 
     return () => {
+      isMountedRef.current = false;
       clearTimeout(playTimeout);
-      if (player.playing) {
-        player.pause();
+      try {
+        if (player && player.playing) {
+          player.pause();
+        }
+      } catch (error) {
+        console.log('Error pausing video on unmount:', error);
       }
     };
   }, [player]);
@@ -859,7 +901,7 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
   const handleVideoError = async () => {
     console.error('Video player error for post:', postId);
     
-    if (!hasError) {
+    if (!hasError && isMountedRef.current) {
       setHasError(true);
       
       // Clear cached signed URL
@@ -870,7 +912,7 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
       if (videoPath) {
         console.log('Attempting to regenerate signed URL for path:', videoPath);
         const newSignedUrl = await generateSignedUrl(videoPath, postId);
-        if (newSignedUrl && newSignedUrl !== currentUrl) {
+        if (newSignedUrl && newSignedUrl !== currentUrl && isMountedRef.current) {
           console.log('Regenerated signed URL, retrying playback');
           setCurrentUrl(newSignedUrl);
           setHasError(false);
