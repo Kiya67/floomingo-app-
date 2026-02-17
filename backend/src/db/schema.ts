@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer, bigint } from 'drizzle-orm/pg-core';
 
 export const blocks = pgTable('blocks', {
   blockerId: text('blocker_id').notNull(),
@@ -60,4 +60,19 @@ export const profileStats = pgTable('profile_stats', {
   followingCount: integer('following_count').default(0).notNull(),
   postCount: integer('post_count').default(0).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  caption: text('caption').notNull(),
+  videoUrl: text('video_url').notNull(),
+  thumbnailUrl: text('thumbnail_url'),
+  placeId: text('place_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const postStats = pgTable('post_stats', {
+  postId: uuid('post_id').primaryKey(),
+  viewCount: bigint('view_count', { mode: 'number' }).default(0).notNull(),
 });
