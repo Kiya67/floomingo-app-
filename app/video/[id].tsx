@@ -22,6 +22,7 @@ interface Post {
   place_name: string | null;
   location_type: string | null;
   created_at: string;
+  view_count?: number;
   profiles?: {
     display_name: string;
     avatar_url: string | null;
@@ -193,6 +194,7 @@ export default function VideoFullScreenScreen() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
+  const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
   
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -395,6 +397,57 @@ export default function VideoFullScreenScreen() {
     };
   }, [fetchPosts]);
 
+  const incrementViewCount = useCallback(async (postId: string, postOwnerId: string) => {
+    // Don't increment if already viewed in this session
+    if (viewedPostIds.has(postId)) {
+      console.log('[View Count] Post already viewed in this session:', postId);
+      return;
+    }
+
+    // Don't increment if viewer is the post owner
+    if (currentUserId === postOwnerId) {
+      console.log('[View Count] Skipping view increment - viewer is post owner');
+      return;
+    }
+
+    // Don't increment if not authenticated
+    if (!currentUserId) {
+      console.log('[View Count] Skipping view increment - not authenticated');
+      return;
+    }
+
+    console.log('[View Count] Incrementing view count for post:', postId);
+    
+    try {
+      const response = await authenticatedApiCall('/api/rpc/increment-view', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ postId }),
+      });
+
+      const data = await response.json();
+      console.log('[View Count] View count incremented successfully:', data.view_count);
+      
+      // Mark as viewed in this session
+      setViewedPostIds(prev => new Set(prev).add(postId));
+      
+      // Update local post data with new view count if returned
+      if (data.view_count !== null && data.view_count !== undefined) {
+        setPosts(prevPosts => 
+          prevPosts.map(p => 
+            p.id === postId
+              ? { ...p, view_count: data.view_count }
+              : p
+          )
+        );
+      }
+    } catch (error) {
+      console.error('[View Count] Error incrementing view count:', error);
+    }
+  }, [currentUserId, viewedPostIds]);
+
   const handleViewableItemsChanged = useCallback(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
       const newIndex = viewableItems[0].index;
@@ -404,6 +457,9 @@ export default function VideoFullScreenScreen() {
       if (currentPost && currentUserId) {
         loadPostInteractions(currentPost.id, currentUserId);
         checkBlockStatus(currentPost.user_id, currentUserId);
+        
+        // Increment view count when video becomes visible
+        incrementViewCount(currentPost.id, currentPost.user_id);
         
         if (currentPost.user_id !== currentUserId) {
           supabase
@@ -420,7 +476,7 @@ export default function VideoFullScreenScreen() {
         }
       }
     }
-  }, [posts, currentUserId, loadPostInteractions, checkBlockStatus]);
+  }, [posts, currentUserId, loadPostInteractions, checkBlockStatus, incrementViewCount]);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,

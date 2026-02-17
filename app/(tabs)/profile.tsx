@@ -7,7 +7,7 @@ import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
-import { getProfileStats } from "@/utils/api";
+import { getProfileStats, getUserPosts } from "@/utils/api";
 
 interface Profile {
   id: string;
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
   };
 
   const fetchUserPosts = async () => {
-    console.log('Fetching user posts');
+    console.log('Fetching user posts with view counts from backend API');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -111,17 +111,26 @@ export default function ProfileScreen() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      // Use backend API to fetch posts with view counts
+      try {
+        const postsData = await getUserPosts(user.id);
+        console.log('User posts fetched successfully from backend API:', postsData.length);
+        setPosts(postsData);
+      } catch (apiError) {
+        console.error('Error fetching posts from backend API:', apiError);
+        // Fallback to Supabase direct query without view counts
+        const { data, error } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching posts:', error);
-      } else {
-        console.log('User posts fetched successfully:', data?.length || 0);
-        setPosts(data || []);
+        if (error) {
+          console.error('Error fetching posts from Supabase:', error);
+        } else {
+          console.log('User posts fetched successfully from Supabase fallback:', data?.length || 0);
+          setPosts(data || []);
+        }
       }
     } catch (error) {
       console.error('Error in fetchUserPosts:', error);

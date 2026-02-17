@@ -287,18 +287,27 @@ export const saveVideoWithLocation = async (
   placeName: string,
   placeAddress: string,
   placePrimaryType: string
-): Promise<SaveVideoResponse> => {
+): Promise<SaveVideoResponse | { error: { code: number; message: string } }> => {
   console.log('[API] Saving video with location to board:', boardId);
-  return authenticatedPost<SaveVideoResponse>(
-    `/api/boards/${boardId}/save-video-with-location`,
-    {
-      post_id: postId,
-      place_id: placeId,
-      place_name: placeName,
-      place_address: placeAddress,
-      place_primary_type: placePrimaryType,
+  try {
+    return await authenticatedPost<SaveVideoResponse>(
+      `/api/boards/${boardId}/save-video-with-location`,
+      {
+        post_id: postId,
+        place_id: placeId,
+        place_name: placeName,
+        place_address: placeAddress,
+        place_primary_type: placePrimaryType,
+      }
+    );
+  } catch (error: any) {
+    console.error('[API] Error saving video with location:', error);
+    // Check if it's a 409 conflict (already saved)
+    if (error.message?.includes('409')) {
+      return { error: { code: 409, message: 'Video already saved to this board' } };
     }
-  );
+    return { error: { code: 500, message: error.message || 'Failed to save video' } };
+  }
 };
 
 /**
@@ -307,14 +316,23 @@ export const saveVideoWithLocation = async (
 export const saveVideoOnly = async (
   boardId: string,
   postId: string
-): Promise<SaveVideoResponse> => {
+): Promise<SaveVideoResponse | { error: { code: number; message: string } }> => {
   console.log('[API] Saving video only to board:', boardId);
-  return authenticatedPost<SaveVideoResponse>(
-    `/api/boards/${boardId}/save-video`,
-    {
-      post_id: postId,
+  try {
+    return await authenticatedPost<SaveVideoResponse>(
+      `/api/boards/${boardId}/save-video`,
+      {
+        post_id: postId,
+      }
+    );
+  } catch (error: any) {
+    console.error('[API] Error saving video only:', error);
+    // Check if it's a 409 conflict (already saved)
+    if (error.message?.includes('409')) {
+      return { error: { code: 409, message: 'Video already saved to this board' } };
     }
-  );
+    return { error: { code: 500, message: error.message || 'Failed to save video' } };
+  }
 };
 
 // ============================================
@@ -350,4 +368,39 @@ export const getProfileStats = async (userId: string): Promise<ProfileStats> => 
 export const recalculateProfileStats = async (userId: string): Promise<RecalculateStatsResponse> => {
   console.log('[API] Recalculating profile stats for user:', userId);
   return apiPost<RecalculateStatsResponse>(`/api/profile/stats/recalculate/${userId}`, {});
+};
+
+// ============================================
+// POSTS API HELPERS
+// ============================================
+
+export interface PostWithViewCount {
+  id: string;
+  user_id: string;
+  video_url: string;
+  thumbnail_url: string;
+  caption: string;
+  place_id: string | null;
+  place_name: string | null;
+  location_type: string | null;
+  created_at: string;
+  view_count?: number;
+}
+
+/**
+ * Get posts for a user profile
+ * Includes view_count only if viewing own profile
+ */
+export const getUserPosts = async (userId: string): Promise<PostWithViewCount[]> => {
+  console.log('[API] Fetching posts for user:', userId);
+  return apiGet<PostWithViewCount[]>(`/api/users/${userId}/posts`);
+};
+
+/**
+ * Increment view count for a post
+ * Only increments if user is authenticated and not the post owner
+ */
+export const incrementPostView = async (postId: string): Promise<{ view_count: number | null }> => {
+  console.log('[API] Incrementing view count for post:', postId);
+  return authenticatedPost<{ view_count: number | null }>('/api/rpc/increment-view', { postId });
 };

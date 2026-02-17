@@ -242,12 +242,13 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     }
 
     // Auth guard: Ensure session is valid before proceeding
+    console.log('SaveToTripsModal - Fetching fresh session for handleSave');
     const { data: sessionData } = await supabase.auth.getSession();
     const currentSession = sessionData?.session;
     
     if (!currentSession?.user) {
       console.warn('SaveToTripsModal - No session or user in handleSave');
-      showToast('Please sign in to save videos', 'error');
+      showToast('Authentication token not found. Please sign in.', 'error');
       router.push('/auth');
       return;
     }

@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
@@ -33,24 +33,29 @@ export default function AddScreen() {
   } | null>(null);
   const [isPosting, setIsPosting] = useState(false);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('Add screen focused, checking for location params');
-      if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-        console.log('Location selected from search:', {
-          placeId: params.selectedPlaceId,
-          placeName: params.selectedPlaceName,
-          locationType: params.selectedLocationType,
-        });
-        
-        setSelectedPlace({
-          place_id: params.selectedPlaceId as string,
-          main_text: params.selectedPlaceName as string,
-          location_type: params.selectedLocationType as string,
-        });
-      }
-    }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType])
-  );
+  // Debug: Log when component mounts/unmounts
+  useEffect(() => {
+    console.log('AddScreen mounted');
+    return () => console.log('AddScreen unmounted');
+  }, []);
+
+  // Handle location selection from search screen
+  useEffect(() => {
+    if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
+      console.log('Location selected from search - updating state with functional update:', {
+        placeId: params.selectedPlaceId,
+        placeName: params.selectedPlaceName,
+        locationType: params.selectedLocationType,
+      });
+      
+      // Use functional update to preserve other state
+      setSelectedPlace(prev => ({
+        place_id: params.selectedPlaceId as string,
+        main_text: params.selectedPlaceName as string,
+        location_type: params.selectedLocationType as string,
+      }));
+    }
+  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
@@ -257,7 +262,8 @@ export default function AddScreen() {
   };
 
   const handleOpenLocationSearch = () => {
-    console.log('User tapped location field, opening search');
+    console.log('User tapped location field, opening search - preserving form state');
+    // Use router.push (not replace) to preserve the Add screen state in the navigation stack
     router.push('/search-location');
   };
 
