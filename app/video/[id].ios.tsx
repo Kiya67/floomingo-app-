@@ -50,10 +50,9 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-// Video Player Component - uses public URLs directly with tap to play/pause
-function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
+// Video Player Component - uses public URLs directly with tap to play/pause and mute toggle
+function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: string; postId: string; isMuted: boolean; onToggleMute: () => void }) {
   // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP
-  const [isMuted, setIsMuted] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const isMountedRef = useRef(true);
 
@@ -61,6 +60,13 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
     player.loop = true;
     player.muted = isMuted;
   });
+
+  useEffect(() => {
+    if (player) {
+      player.muted = isMuted;
+      console.log('Video mute state changed:', isMuted ? 'muted' : 'unmuted');
+    }
+  }, [isMuted, player]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -97,12 +103,6 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
     };
   }, [player, postId]);
 
-  useEffect(() => {
-    if (player) {
-      player.muted = isMuted;
-    }
-  }, [isMuted, player]);
-
   const handleTap = () => {
     console.log('User tapped video center - toggling play/pause');
     if (!player) return;
@@ -129,40 +129,46 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
   }
 
   return (
-    <TouchableOpacity 
-      style={styles.video} 
-      activeOpacity={1} 
-      onPress={handleTap}
-    >
-      <VideoView
-        style={styles.video}
-        player={player}
-        nativeControls={false}
-        contentFit="cover"
-        allowsFullscreen={true}
-        allowsPictureInPicture={false}
-      />
-      {!isPlaying && (
-        <View style={styles.playPauseIndicator}>
-          <IconSymbol 
-            ios_icon_name="play.fill"
-            android_material_icon_name="play-arrow" 
-            size={64} 
-            color="#FFFFFF"
-          />
-        </View>
-      )}
-      {isMuted && (
-        <View style={styles.muteIndicator}>
-          <IconSymbol 
-            ios_icon_name="speaker.slash.fill"
-            android_material_icon_name="volume-off" 
-            size={24} 
-            color="#FFFFFF"
-          />
-        </View>
-      )}
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity 
+        style={styles.video} 
+        activeOpacity={1} 
+        onPress={handleTap}
+      >
+        <VideoView
+          style={styles.video}
+          player={player}
+          nativeControls={false}
+          contentFit="cover"
+          allowsFullscreen={true}
+          allowsPictureInPicture={false}
+        />
+        {!isPlaying && (
+          <View style={styles.playPauseIndicator}>
+            <IconSymbol 
+              ios_icon_name="play.fill"
+              android_material_icon_name="play-arrow" 
+              size={64} 
+              color="#FFFFFF"
+            />
+          </View>
+        )}
+      </TouchableOpacity>
+      
+      {/* Mute/Unmute button */}
+      <TouchableOpacity 
+        style={styles.muteButton}
+        onPress={onToggleMute}
+        activeOpacity={0.7}
+      >
+        <IconSymbol 
+          ios_icon_name={isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"}
+          android_material_icon_name={isMuted ? "volume-off" : "volume-up"} 
+          size={24} 
+          color="#FFFFFF"
+        />
+      </TouchableOpacity>
+    </>
   );
 }
 
@@ -186,6 +192,7 @@ export default function VideoFullScreenScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(true);
   
   // Action button states per post
   const [postInteractions, setPostInteractions] = useState<Map<string, {
@@ -586,6 +593,11 @@ export default function VideoFullScreenScreen() {
     }
   };
 
+  const handleToggleMute = () => {
+    console.log('User toggled mute/unmute');
+    setIsMuted(prev => !prev);
+  };
+
   const handleSave = (post: Post) => {
     console.log('User tapped save button - opening Save to Trips modal');
     setSelectedPostId(post.id);
@@ -692,7 +704,12 @@ export default function VideoFullScreenScreen() {
 
     return (
       <View style={styles.videoSlide}>
-        <VideoPlayer videoUrl={post.video_url} postId={post.id} />
+        <VideoPlayer 
+          videoUrl={post.video_url} 
+          postId={post.id}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+        />
         
         {/* Overlay content - NO BLACK BACKGROUND */}
         <View style={styles.overlay}>
@@ -1052,13 +1069,17 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     padding: 12,
   },
-  muteIndicator: {
+  muteButton: {
     position: 'absolute',
     top: 100,
     right: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 20,
     padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

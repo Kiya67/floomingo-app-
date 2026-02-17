@@ -62,6 +62,13 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
   });
 
   useEffect(() => {
+    if (player) {
+      player.muted = isMuted;
+      console.log('Video mute state changed:', isMuted ? 'muted' : 'unmuted');
+    }
+  }, [isMuted, player]);
+
+  useEffect(() => {
     isMountedRef.current = true;
     
     return () => {
@@ -95,12 +102,6 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
       clearTimeout(playTimeout);
     };
   }, [player, postId]);
-
-  useEffect(() => {
-    if (player) {
-      player.muted = isMuted;
-    }
-  }, [isMuted, player]);
 
   const handleTap = () => {
     console.log('User tapped video center - toggling play/pause');
