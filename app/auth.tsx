@@ -18,7 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 
 type Mode = "signin" | "signup";
 
-const APP_VERSION = "1.0.1"; // Updated to confirm refresh
+const APP_VERSION = "1.0.2"; // Updated to confirm refresh
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -50,7 +50,8 @@ export default function AuthScreen() {
   };
 
   const showError = (message: string) => {
-    setErrorMessage(message);
+    console.log('Showing error modal:', message);
+    setErrorMessage(message || "An error occurred");
     setErrorModalVisible(true);
   };
 
@@ -281,7 +282,7 @@ export default function AuthScreen() {
       </KeyboardAvoidingView>
 
       <Modal
-        isVisible={errorModalVisible}
+        visible={errorModalVisible}
         onClose={() => setErrorModalVisible(false)}
         title="Error"
         message={errorMessage}
