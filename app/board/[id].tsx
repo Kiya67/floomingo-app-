@@ -1,11 +1,12 @@
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, Alert } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, Alert, FlatList, ViewToken } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { VideoGridItem } from '@/components/VideoGridItem';
+import { MiniVideoPreview } from '@/components/MiniVideoPreview';
 
 interface Board {
   id: string;
@@ -36,6 +37,13 @@ interface BoardPlace {
   lng: number | null;
   place_json: any;
   created_at: string;
+  post_id?: string;
+  post?: {
+    id: string;
+    video_url: string;
+    thumbnail_url: string | null;
+    caption: string | null;
+  };
 }
 
 type TabType = 'videos' | 'places';
@@ -65,6 +73,7 @@ export default function BoardDetailScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('videos');
+  const [visiblePlaceIds, setVisiblePlaceIds] = useState<Set<string>>(new Set());
 
   const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
@@ -117,7 +126,17 @@ export default function BoardDetailScreen() {
 
       const { data: placesData, error: placesError } = await supabase
         .from('board_places')
-        .select('*')
+        .select(`
+          id,
+          board_id,
+          place_id,
+          place_name,
+          address,
+          lat,
+          lng,
+          place_json,
+          created_at
+        `)
         .eq('board_id', boardId)
         .order('created_at', { ascending: false });
 
@@ -126,7 +145,35 @@ export default function BoardDetailScreen() {
         setPlaces([]);
       } else {
         console.log('Board places fetched successfully:', placesData?.length || 0);
-        setPlaces(placesData || []);
+        
+        const placesWithPosts = await Promise.all(
+          (placesData || []).map(async (place) => {
+            const { data: postData } = await supabase
+              .from('board_posts')
+              .select(`
+                post_id,
+                posts (
+                  id,
+                  video_url,
+                  thumbnail_url,
+                  caption,
+                  place_id
+                )
+              `)
+              .eq('board_id', boardId)
+              .eq('posts.place_id', place.place_id)
+              .limit(1)
+              .single();
+
+            return {
+              ...place,
+              post_id: postData?.post_id || undefined,
+              post: postData?.posts || undefined,
+            };
+          })
+        );
+
+        setPlaces(placesWithPosts);
       }
     } catch (error) {
       console.error('Error in fetchBoardDetails:', error);
@@ -154,6 +201,15 @@ export default function BoardDetailScreen() {
   const handleVideoPress = (post: Post) => {
     console.log('User tapped video:', post.id);
     router.push(`/video/${post.id}`);
+  };
+
+  const handlePlacePress = (place: BoardPlace) => {
+    console.log('User tapped place:', place.place_id);
+    if (place.post_id) {
+      router.push(`/video/${place.post_id}`);
+    } else if (place.place_id) {
+      router.push(`/location/${place.place_id}`);
+    }
   };
 
   const handleEditBoard = () => {
@@ -213,6 +269,65 @@ export default function BoardDetailScreen() {
       console.error('Error in confirmDelete:', error);
       Alert.alert('Error', 'Could not delete trip');
     }
+  };
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const visibleIds = new Set(
+      viewableItems
+        .map(item => item.item?.id)
+        .filter(Boolean)
+    );
+    console.log('Viewable places changed:', visibleIds.size);
+    setVisiblePlaceIds(visibleIds);
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+  }).current;
+
+  const renderPlaceItem = ({ item }: { item: BoardPlace }) => {
+    const placeName = item.place_name || 'Unknown Place';
+    const placeAddress = item.address || 'No address available';
+    const shouldPlayVideo = visiblePlaceIds.has(item.id);
+
+    return (
+      <TouchableOpacity
+        style={[styles.placeCard, { backgroundColor: cardColor }]}
+        onPress={() => handlePlacePress(item)}
+        activeOpacity={0.8}
+      >
+        {item.post?.video_url ? (
+          <MiniVideoPreview
+            videoUrl={item.post.video_url}
+            posterUrl={item.post.thumbnail_url || undefined}
+            size={72}
+            borderRadius={12}
+            shouldPlay={shouldPlayVideo}
+          />
+        ) : (
+          <View style={[styles.placeIconContainer, { backgroundColor: isDark ? '#333' : '#F5F5F5' }]}>
+            <IconSymbol 
+              android_material_icon_name="location-on" 
+              size={24} 
+              color={primaryColor}
+            />
+          </View>
+        )}
+        <View style={styles.placeInfo}>
+          <Text style={[styles.placeName, { color: textColor }]} numberOfLines={1}>
+            {placeName}
+          </Text>
+          <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={2}>
+            {placeAddress}
+          </Text>
+        </View>
+        <IconSymbol 
+          android_material_icon_name="arrow-forward" 
+          size={20} 
+          color={textSecondaryColor}
+        />
+      </TouchableOpacity>
+    );
   };
 
   if (loading) {
@@ -334,20 +449,20 @@ export default function BoardDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={primaryColor}
-            colors={[primaryColor]}
-          />
-        }
-      >
-        {activeTab === 'videos' ? (
-          posts.length === 0 ? (
+      {activeTab === 'videos' ? (
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={primaryColor}
+              colors={[primaryColor]}
+            />
+          }
+        >
+          {posts.length === 0 ? (
             <View style={styles.emptyContainer}>
               <IconSymbol 
                 android_material_icon_name="videocam" 
@@ -371,59 +486,40 @@ export default function BoardDetailScreen() {
                 />
               ))}
             </View>
-          )
+          )}
+        </ScrollView>
+      ) : (
+        places.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol 
+              android_material_icon_name="location-on" 
+              size={64} 
+              color={textSecondaryColor}
+            />
+            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              No places saved yet
+            </Text>
+          </View>
         ) : (
-          places.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol 
-                android_material_icon_name="location-on" 
-                size={64} 
-                color={textSecondaryColor}
+          <FlatList
+            data={places}
+            renderItem={renderPlaceItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.placesContainer}
+            showsVerticalScrollIndicator={false}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={primaryColor}
+                colors={[primaryColor]}
               />
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-                No places saved yet
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.placesContainer}>
-              {places.map((place) => {
-                const placeName = place.place_name || 'Unknown Place';
-                const placeAddress = place.address || 'No address available';
-                
-                return (
-                  <TouchableOpacity
-                    key={place.id}
-                    style={[styles.placeCard, { backgroundColor: cardColor }]}
-                    onPress={() => console.log('Place tapped:', place.place_id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.placeIconContainer, { backgroundColor: isDark ? '#333' : '#F5F5F5' }]}>
-                      <IconSymbol 
-                        android_material_icon_name="location-on" 
-                        size={24} 
-                        color={primaryColor}
-                      />
-                    </View>
-                    <View style={styles.placeInfo}>
-                      <Text style={[styles.placeName, { color: textColor }]} numberOfLines={1}>
-                        {placeName}
-                      </Text>
-                      <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={2}>
-                        {placeAddress}
-                      </Text>
-                    </View>
-                    <IconSymbol 
-                      android_material_icon_name="arrow-forward" 
-                      size={20} 
-                      color={textSecondaryColor}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )
-        )}
-      </ScrollView>
+            }
+          />
+        )
+      )}
 
       <Modal
         visible={editModalVisible}
@@ -620,9 +716,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   placeIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 72,
+    height: 72,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
