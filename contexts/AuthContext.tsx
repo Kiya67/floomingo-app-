@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
@@ -98,13 +99,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       const session = await authClient.getSession();
+      console.log('fetchUser - session:', !!session?.data?.session, 'user:', !!session?.data?.user);
       if (session?.data?.user) {
+        console.log('Setting user:', session.data.user.email);
         setUser(session.data.user as User);
         // Sync token to SecureStore for utils/api.ts
         if (session.data.session?.token) {
           await setBearerToken(session.data.session.token);
         }
       } else {
+        console.log('No user found, clearing state');
         setUser(null);
         await clearAuthTokens();
       }
@@ -118,8 +122,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithEmail = async (email: string, password: string) => {
     try {
-      await authClient.signIn.email({ email, password });
+      console.log('signInWithEmail - starting...');
+      const result = await authClient.signIn.email({ email, password });
+      console.log('signInWithEmail - result:', !!result);
+      // Wait a bit for the session to be established
+      await new Promise(resolve => setTimeout(resolve, 500));
       await fetchUser();
+      console.log('signInWithEmail - fetchUser completed');
     } catch (error) {
       console.error("Email sign in failed:", error);
       throw error;
@@ -128,13 +137,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUpWithEmail = async (email: string, password: string, name?: string) => {
     try {
-      await authClient.signUp.email({
+      console.log('signUpWithEmail - starting...');
+      const result = await authClient.signUp.email({
         email,
         password,
         name,
-        // Ensure name is passed in header or logic if required, usually passed in body
       });
+      console.log('signUpWithEmail - result:', !!result);
+      // Wait a bit for the session to be established
+      await new Promise(resolve => setTimeout(resolve, 500));
       await fetchUser();
+      console.log('signUpWithEmail - fetchUser completed');
     } catch (error) {
       console.error("Email sign up failed:", error);
       throw error;
@@ -154,12 +167,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           provider,
           callbackURL,
         });
-        // Note: The redirect will reload the app or be handled by deep linking.
-        // fetchUser will be called on mount or via event listener if needed.
-        // For simple flow, we might need to listen to URL events.
-        // But better-auth expo client handles the redirect and session storage?
-        // We typically need to wait or rely on fetchUser on next app load.
-        // For now, call fetchUser just in case.
+        // Wait a bit for the session to be established
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchUser();
       }
     } catch (error) {

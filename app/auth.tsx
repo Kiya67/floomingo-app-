@@ -31,11 +31,12 @@ export default function AuthScreen() {
 
   // Redirect to home if user is already authenticated
   useEffect(() => {
+    console.log('AuthScreen - user:', !!user, 'authLoading:', authLoading);
     if (user && !authLoading) {
       console.log('User authenticated, redirecting to home...');
       router.replace("/(tabs)/(home)");
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, router]);
 
   if (authLoading) {
     return (
@@ -60,7 +61,6 @@ export default function AuthScreen() {
         console.log('Signing in with email...');
         await signInWithEmail(email, password);
         console.log('Sign in successful');
-        // Don't manually redirect - useEffect will handle it when user state updates
       } else {
         console.log('Signing up with email...');
         await signUpWithEmail(email, password, name);
@@ -69,7 +69,6 @@ export default function AuthScreen() {
           "Success",
           "Account created successfully!"
         );
-        // Don't manually redirect - useEffect will handle it when user state updates
       }
     } catch (error: any) {
       console.error('Auth error:', error);
@@ -91,7 +90,6 @@ export default function AuthScreen() {
         await signInWithGitHub();
       }
       console.log(`${provider} sign in successful`);
-      // Don't manually redirect - useEffect will handle it when user state updates
     } catch (error: any) {
       console.error(`${provider} auth error:`, error);
       Alert.alert("Error", error.message || "Authentication failed");
