@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -8,7 +8,7 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { SaveToTripsModal } from '@/components/SaveToTripsModal';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
 interface Post {
   id: string;
@@ -109,11 +109,14 @@ export default function VideoFullScreenScreen() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   
-  // Action button states
-  const [isLiked, setIsLiked] = useState(false);
+  // Action button states per post
+  const [postInteractions, setPostInteractions] = useState<Map<string, {
+    isLiked: boolean;
+    isSaved: boolean;
+    stats: PostStats;
+  }>>(new Map());
+  
   const [likeLoading, setLikeLoading] = useState(false);
-  const [stats, setStats] = useState<PostStats>({ like_count: 0, comment_count: 0, share_count: 0 });
-  const [isSaved, setIsSaved] = useState(false);
   
   // Comments modal
   const [showCommentsModal, setShowCommentsModal] = useState(false);
@@ -177,9 +180,9 @@ export default function VideoFullScreenScreen() {
           if (videoUrl && !videoUrl.startsWith('http')) {
             const signedUrl = await generateSignedUrl(videoUrl, post.id);
             videoUrl = signedUrl || videoUrl;
-          } else if (videoUrl && videoUrl.includes('/storage/v1/object/public/')) {
-            // If it's a public URL, convert to path and generate signed URL
-            const pathMatch = videoUrl.match(/\/videos\/(.+)$/);
+          } else if (videoUrl && videoUrl.includes('/storage/v1/object/')) {
+            // Extract path from URL and generate signed URL
+            const pathMatch = videoUrl.match(/\/videos\/(.+?)(\?|$)/);
             if (pathMatch) {
               const path = pathMatch[1];
               const signedUrl = await generateSignedUrl(path, post.id);
@@ -217,25 +220,20 @@ export default function VideoFullScreenScreen() {
         .eq('user_id', userId)
         .limit(1);
       
-      setIsLiked(likeData && likeData.length > 0);
+      const isLiked = likeData && likeData.length > 0;
       
-      // Get stats - handle missing share_count gracefully
+      // Get stats
       const { data: statsData } = await supabase
         .from('post_stats')
         .select('*')
         .eq('post_id', postId)
         .single();
       
-      if (statsData) {
-        setStats({
-          like_count: statsData.like_count || 0,
-          comment_count: statsData.comment_count || 0,
-          share_count: statsData.share_count || 0,
-        });
-      } else {
-        // If no stats exist, set defaults
-        setStats({ like_count: 0, comment_count: 0, share_count: 0 });
-      }
+      const stats = statsData ? {
+        like_count: statsData.like_count || 0,
+        comment_count: statsData.comment_count || 0,
+        share_count: statsData.share_count || 0,
+      } : { like_count: 0, comment_count: 0, share_count: 0 };
       
       // Check if saved
       const { data: savedData } = await supabase
@@ -245,13 +243,26 @@ export default function VideoFullScreenScreen() {
         .eq('boards.user_id', userId)
         .limit(1);
       
-      setIsSaved(savedData && savedData.length > 0);
+      const isSaved = savedData && savedData.length > 0;
+      
+      // Store in map
+      setPostInteractions(prev => {
+        const newMap = new Map(prev);
+        newMap.set(postId, { isLiked, isSaved, stats });
+        return newMap;
+      });
     } catch (error) {
       console.error('Error loading post interactions:', error);
       // Set defaults on error
-      setStats({ like_count: 0, comment_count: 0, share_count: 0 });
-      setIsLiked(false);
-      setIsSaved(false);
+      setPostInteractions(prev => {
+        const newMap = new Map(prev);
+        newMap.set(postId, {
+          isLiked: false,
+          isSaved: false,
+          stats: { like_count: 0, comment_count: 0, share_count: 0 }
+        });
+        return newMap;
+      });
     }
   };
 
@@ -285,7 +296,6 @@ export default function VideoFullScreenScreen() {
               setIsFollowing(data && data.length > 0);
             });
         } else {
-          // Reset follow state when viewing own video
           setIsFollowing(false);
         }
       }
@@ -362,18 +372,31 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleLike = async (post: Post) => {
-    console.log('User tapped like button');
+    console.log('User tapped like button for post:', post.id);
     if (likeLoading || !currentUserId) return;
+
+    const currentInteraction = postInteractions.get(post.id);
+    if (!currentInteraction) return;
 
     setLikeLoading(true);
     
     // Optimistic update
-    const wasLiked = isLiked;
-    setIsLiked(!wasLiked);
-    setStats(prev => ({
-      ...prev,
-      like_count: wasLiked ? Math.max(0, prev.like_count - 1) : prev.like_count + 1,
-    }));
+    const wasLiked = currentInteraction.isLiked;
+    setPostInteractions(prev => {
+      const newMap = new Map(prev);
+      const interaction = newMap.get(post.id);
+      if (interaction) {
+        newMap.set(post.id, {
+          ...interaction,
+          isLiked: !wasLiked,
+          stats: {
+            ...interaction.stats,
+            like_count: wasLiked ? Math.max(0, interaction.stats.like_count - 1) : interaction.stats.like_count + 1,
+          }
+        });
+      }
+      return newMap;
+    });
 
     try {
       if (wasLiked) {
@@ -401,11 +424,21 @@ export default function VideoFullScreenScreen() {
     } catch (error) {
       console.error('Error toggling like:', error);
       // Revert optimistic update
-      setIsLiked(wasLiked);
-      setStats(prev => ({
-        ...prev,
-        like_count: wasLiked ? prev.like_count + 1 : Math.max(0, prev.like_count - 1),
-      }));
+      setPostInteractions(prev => {
+        const newMap = new Map(prev);
+        const interaction = newMap.get(post.id);
+        if (interaction) {
+          newMap.set(post.id, {
+            ...interaction,
+            isLiked: wasLiked,
+            stats: {
+              ...interaction.stats,
+              like_count: wasLiked ? interaction.stats.like_count + 1 : Math.max(0, interaction.stats.like_count - 1),
+            }
+          });
+        }
+        return newMap;
+      });
     } finally {
       setLikeLoading(false);
     }
@@ -473,7 +506,23 @@ export default function VideoFullScreenScreen() {
 
       console.log('Comment submitted successfully');
       setComments(prev => [...prev, data]);
-      setStats(prev => ({ ...prev, comment_count: prev.comment_count + 1 }));
+      
+      // Update comment count
+      setPostInteractions(prev => {
+        const newMap = new Map(prev);
+        const interaction = newMap.get(currentPost.id);
+        if (interaction) {
+          newMap.set(currentPost.id, {
+            ...interaction,
+            stats: {
+              ...interaction.stats,
+              comment_count: interaction.stats.comment_count + 1,
+            }
+          });
+        }
+        return newMap;
+      });
+      
       setNewComment('');
     } catch (error) {
       console.error('Error submitting comment:', error);
@@ -520,7 +569,22 @@ export default function VideoFullScreenScreen() {
             share_target: 'system',
           });
         
-        setStats(prev => ({ ...prev, share_count: prev.share_count + 1 }));
+        // Update share count
+        setPostInteractions(prev => {
+          const newMap = new Map(prev);
+          const interaction = newMap.get(post.id);
+          if (interaction) {
+            newMap.set(post.id, {
+              ...interaction,
+              stats: {
+                ...interaction.stats,
+                share_count: interaction.stats.share_count + 1,
+              }
+            });
+          }
+          return newMap;
+        });
+        
         console.log('Share logged successfully');
       }
     } catch (error) {
@@ -554,9 +618,16 @@ export default function VideoFullScreenScreen() {
     const placeName = post?.place_name || '';
     const isOwnVideo = currentUserId === post?.user_id;
     const initials = getInitials(displayName);
-    const likeCountText = String(stats.like_count);
-    const commentCountText = String(stats.comment_count);
-    const shareCountText = String(stats.share_count);
+    
+    const interaction = postInteractions.get(post.id) || {
+      isLiked: false,
+      isSaved: false,
+      stats: { like_count: 0, comment_count: 0, share_count: 0 }
+    };
+    
+    const likeCountText = String(interaction.stats.like_count);
+    const commentCountText = String(interaction.stats.comment_count);
+    const shareCountText = String(interaction.stats.share_count);
 
     return (
       <View style={styles.videoSlide}>
@@ -645,9 +716,9 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
-                    android_material_icon_name={isLiked ? "favorite" : "favorite-border"} 
+                    android_material_icon_name={interaction.isLiked ? "favorite" : "favorite-border"} 
                     size={28} 
-                    color={isLiked ? "#FF69B4" : "#FFFFFF"}
+                    color={interaction.isLiked ? "#FF69B4" : "#FFFFFF"}
                   />
                   <Text style={styles.actionButtonText}>{likeCountText}</Text>
                 </TouchableOpacity>
@@ -671,9 +742,9 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
-                    android_material_icon_name={isSaved ? "bookmark" : "bookmark-border"} 
+                    android_material_icon_name={interaction.isSaved ? "bookmark" : "bookmark-border"} 
                     size={28} 
-                    color={isSaved ? "#FF69B4" : "#FFFFFF"}
+                    color={interaction.isSaved ? "#FF69B4" : "#FFFFFF"}
                   />
                   <Text style={styles.actionButtonText}>Save</Text>
                 </TouchableOpacity>
@@ -816,7 +887,7 @@ export default function VideoFullScreenScreen() {
             </BottomSheetScrollView>
             
             <View style={[styles.commentInputContainer, { backgroundColor: bgColor, borderTopColor: textSecondaryColor }]}>
-              <BottomSheetTextInput
+              <TextInput
                 style={[styles.commentInput, { backgroundColor: isDark ? '#333' : '#F0F0F0', color: textColor }]}
                 placeholder="Add a comment..."
                 placeholderTextColor={textSecondaryColor}
@@ -825,7 +896,7 @@ export default function VideoFullScreenScreen() {
                 multiline
               />
               <TouchableOpacity
-                style={[styles.commentSendButton, { backgroundColor: primaryColor }]}
+                style={[styles.commentSendButton, { backgroundColor: primaryColor, opacity: (!newComment.trim() || commentSubmitting) ? 0.5 : 1 }]}
                 onPress={handleSubmitComment}
                 disabled={commentSubmitting || !newComment.trim()}
               >
@@ -863,6 +934,7 @@ export default function VideoFullScreenScreen() {
 function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
   const [currentUrl, setCurrentUrl] = useState(videoUrl);
   const [hasError, setHasError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(currentUrl, (player) => {
@@ -872,21 +944,12 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
 
   useEffect(() => {
     isMountedRef.current = true;
+    setCurrentUrl(videoUrl);
+    setHasError(false);
+    setRetryCount(0);
     
-    const playTimeout = setTimeout(() => {
-      if (isMountedRef.current && player && player.status === 'readyToPlay') {
-        try {
-          player.play();
-          player.volume = 1;
-        } catch (error) {
-          console.error('Error playing video:', error);
-        }
-      }
-    }, 300);
-
     return () => {
       isMountedRef.current = false;
-      clearTimeout(playTimeout);
       try {
         if (player && player.playing) {
           player.pause();
@@ -895,14 +958,40 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
         console.log('Error pausing video on unmount:', error);
       }
     };
-  }, [player]);
+  }, [videoUrl, postId]);
+
+  useEffect(() => {
+    if (!player) return;
+    
+    const playTimeout = setTimeout(() => {
+      if (isMountedRef.current && player.status === 'readyToPlay') {
+        try {
+          player.play();
+          player.volume = 1;
+          console.log('Video playing for post:', postId);
+        } catch (error) {
+          console.error('Error playing video:', error);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(playTimeout);
+    };
+  }, [player, currentUrl]);
 
   // Handle video errors (e.g., expired signed URL)
   const handleVideoError = async () => {
-    console.error('Video player error for post:', postId);
+    console.error('Video player error for post:', postId, 'Retry count:', retryCount);
+    
+    if (retryCount >= 2) {
+      console.error('Max retries reached for post:', postId);
+      return;
+    }
     
     if (!hasError && isMountedRef.current) {
       setHasError(true);
+      setRetryCount(prev => prev + 1);
       
       // Clear cached signed URL
       signedUrlCache.delete(postId);
