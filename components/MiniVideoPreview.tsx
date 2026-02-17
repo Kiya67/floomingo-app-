@@ -32,7 +32,7 @@ export function MiniVideoPreview({
       console.log('MiniVideoPreview: Pausing playback for', videoUrl);
       player.pause();
     }
-  }, [shouldPlay, player]);
+  }, [shouldPlay, player, videoUrl]);
 
   useEffect(() => {
     const subscription = player.addListener('statusChange', (status) => {

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -31,12 +31,7 @@ export default function AuthScreen() {
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Check if user is already authenticated
-  useEffect(() => {
-    checkUser();
-  }, []);
-
-  const checkUser = async () => {
+  const checkUser = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       console.log('AuthScreen - checkUser - session:', !!session);
@@ -47,7 +42,12 @@ export default function AuthScreen() {
     } catch (error) {
       console.error('Error checking user:', error);
     }
-  };
+  }, [router]);
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    checkUser();
+  }, [checkUser]);
 
   const showError = (message: string) => {
     console.log('Showing error modal:', message);

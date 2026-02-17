@@ -1,5 +1,5 @@
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -7,11 +7,7 @@ import { supabase } from '@/lib/supabase';
 export default function AuthCallback() {
   const router = useRouter();
 
-  useEffect(() => {
-    handleAuthCallback();
-  }, []);
-
-  const handleAuthCallback = async () => {
+  const handleAuthCallback = useCallback(async () => {
     try {
       console.log('Auth callback - checking session...');
       const { data: { session } } = await supabase.auth.getSession();
@@ -27,7 +23,11 @@ export default function AuthCallback() {
       console.error('Auth callback error:', error);
       router.replace('/auth');
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    handleAuthCallback();
+  }, [handleAuthCallback]);
 
   return (
     <View style={styles.container}>

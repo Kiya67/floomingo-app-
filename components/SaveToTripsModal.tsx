@@ -43,24 +43,11 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalProps) {
-  // Guard: Do not render modal content unless BOTH isVisible === true AND post exists
-  // This guard MUST be BEFORE any hooks to comply with React Hooks rules
-  if (!isVisible || !post) {
-    console.log('SaveToTripsModal - Not rendering: isVisible =', isVisible, ', post =', !!post);
-    return null;
-  }
-
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // This is a fundamental React rule - hooks must be called in the same order every render
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const router = useRouter();
   const { session, user, loadingAuth } = useSupabaseAuth();
-  
-  const bgColor = isDark ? colors.backgroundDark : colors.background;
-  const textColor = isDark ? colors.textDark : colors.text;
-  const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
-  const cardColor = isDark ? colors.cardDark : colors.card;
-  const primaryColor = isDark ? colors.primaryDark : colors.primary;
-
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
 
@@ -78,11 +65,19 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  // Computed values
+  const isDark = colorScheme === 'dark';
+  const bgColor = isDark ? colors.backgroundDark : colors.background;
+  const textColor = isDark ? colors.textDark : colors.text;
+  const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
+  const cardColor = isDark ? colors.cardDark : colors.card;
+  const primaryColor = isDark ? colors.primaryDark : colors.primary;
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToastMessage(message);
     setToastType(type);
     setToastVisible(true);
-  };
+  }, []);
 
   const fetchBoards = useCallback(async () => {
     console.log('SaveToTripsModal - fetchBoards called');
@@ -160,7 +155,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     } finally {
       setLoadingBoards(false);
     }
-  }, [loadingAuth, session, user]);
+  }, [loadingAuth, session, user, showToast]);
 
   useEffect(() => {
     if (isVisible && post) {
@@ -179,7 +174,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     }
   }, [isVisible, post, fetchBoards]);
 
-  const handleCreateNewBoard = async () => {
+  const handleCreateNewBoard = useCallback(async () => {
     const trimmedTitle = newBoardTitle.trim();
     if (!trimmedTitle) {
       showToast('Please enter a trip name', 'error');
@@ -227,9 +222,9 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     } finally {
       setCreating(false);
     }
-  };
+  }, [newBoardTitle, loadingAuth, session, user, router, showToast, fetchBoards]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!selectedBoardId || !post || isSaving) {
       console.log('SaveToTripsModal - handleSave blocked:', { selectedBoardId, post: !!post, isSaving });
       return;
@@ -348,9 +343,9 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [selectedBoardId, post, isSaving, saveOption, loadingAuth, router, showToast, boards, onClose]);
 
-  const renderBackdrop = (props: any) => (
+  const renderBackdrop = useCallback((props: any) => (
     <BottomSheetBackdrop
       {...props}
       disappearsOnIndex={-1}
@@ -358,7 +353,14 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       opacity={0.5}
       pressBehavior="close"
     />
-  );
+  ), []);
+
+  // Guard: Do not render modal content unless BOTH isVisible === true AND post exists
+  // This guard is AFTER all hooks to comply with React Hooks rules
+  if (!isVisible || !post) {
+    console.log('SaveToTripsModal - Not rendering: isVisible =', isVisible, ', post =', !!post);
+    return null;
+  }
 
   // Safe access to post properties with optional chaining and nullish coalescing
   const postTitle = post?.caption ?? '';
