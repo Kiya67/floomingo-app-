@@ -8,6 +8,7 @@ import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { MiniVideoPreview } from '@/components/MiniVideoPreview';
 import CustomModal from '@/components/ui/Modal';
+import * as ImagePicker from 'expo-image-picker';
 
 interface Board {
   id: string;
@@ -60,6 +61,7 @@ export default function BoardDetailScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
   const [coverImageUrl, setCoverImageUrl] = useState<string>('');
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [modalState, setModalState] = useState<{
     visible: boolean;
     title: string;
@@ -255,6 +257,108 @@ export default function BoardDetailScreen() {
     router.push('/(tabs)/(home)');
   };
 
+  const handleChangeCoverPhoto = async () => {
+    console.log('User tapped change cover photo');
+    
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        setModalState({
+          visible: true,
+          title: 'Permission Required',
+          message: 'Please allow access to your photos to change the cover image',
+          type: 'error',
+        });
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        console.log('User selected cover image:', imageUri);
+        await uploadCoverImage(imageUri);
+      }
+    } catch (error) {
+      console.error('Error picking cover image:', error);
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not select image',
+        type: 'error',
+      });
+    }
+  };
+
+  const uploadCoverImage = async (uri: string) => {
+    console.log('Uploading cover image:', uri);
+    setUploadingCover(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('No authenticated user');
+      }
+
+      const fileExt = uri.split('.').pop();
+      const fileName = `${boardId}-${Date.now()}.${fileExt}`;
+      const filePath = `board-covers/${fileName}`;
+
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      const { error: uploadError } = await supabase.storage
+        .from('media')
+        .upload(filePath, blob, {
+          contentType: `image/${fileExt}`,
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('media')
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('boards')
+        .update({ cover_url: publicUrl })
+        .eq('id', boardId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      console.log('Cover image uploaded successfully:', publicUrl);
+      setCoverImageUrl(publicUrl);
+      setBoard(prev => prev ? { ...prev, cover_url: publicUrl } : null);
+      
+      setModalState({
+        visible: true,
+        title: 'Success',
+        message: 'Cover photo updated!',
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('Error uploading cover image:', error);
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not upload cover photo',
+        type: 'error',
+      });
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
   const onViewableVideosChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visibleIds = new Set(
       viewableItems
@@ -380,6 +484,22 @@ export default function BoardDetailScreen() {
                 />
               </TouchableOpacity>
               <View style={styles.coverHeaderActions}>
+                <TouchableOpacity
+                  style={styles.coverHeaderButton}
+                  onPress={handleChangeCoverPhoto}
+                  activeOpacity={0.7}
+                  disabled={uploadingCover}
+                >
+                  {uploadingCover ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <IconSymbol 
+                      android_material_icon_name="image" 
+                      size={24} 
+                      color="#FFFFFF"
+                    />
+                  )}
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.coverHeaderButton}
                   onPress={handleEditBoard}
