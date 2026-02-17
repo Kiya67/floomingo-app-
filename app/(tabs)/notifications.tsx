@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, useColorScheme, ActivityIndicator, Image, ImageSourcePropType, RefreshControl } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -153,6 +153,7 @@ export default function NotificationsScreen() {
   );
 
   const onRefresh = useCallback(() => {
+    console.log('User pulled to refresh notifications');
     setRefreshing(true);
     fetchNotifications();
   }, [fetchNotifications]);
@@ -170,6 +171,11 @@ export default function NotificationsScreen() {
       router.push(`/user/${notification.actor_id}`);
     }
   }, [router]);
+
+  const handleBack = () => {
+    console.log('User tapped back button on notifications');
+    router.back();
+  };
 
   const getNotificationMessage = (notification: Notification): string => {
     const username = notification.profiles?.username || 'Someone';
@@ -262,9 +268,15 @@ export default function NotificationsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: bgColor }]}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: textColor }]}>Notifications</Text>
-        </View>
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: 'Notifications',
+            headerBackTitle: 'Back',
+            headerStyle: { backgroundColor: bgColor },
+            headerTintColor: textColor,
+          }}
+        />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
         </View>
@@ -274,9 +286,15 @@ export default function NotificationsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Notifications</Text>
-      </View>
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: 'Notifications',
+          headerBackTitle: 'Back',
+          headerStyle: { backgroundColor: bgColor },
+          headerTintColor: textColor,
+        }}
+      />
 
       {notifications.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -316,17 +334,6 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
   },
   loadingContainer: {
     flex: 1,

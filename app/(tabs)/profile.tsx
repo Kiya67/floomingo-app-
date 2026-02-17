@@ -5,7 +5,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, A
 import { colors } from "@/styles/commonStyles";
 import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 
 interface Profile {
@@ -28,6 +28,7 @@ interface Post {
   place_name: string | null;
   location_type: string | null;
   created_at: string;
+  view_count: number;
 }
 
 interface ProfileStats {
@@ -69,12 +70,6 @@ export default function ProfileScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    fetchProfile();
-    fetchUserPosts();
-    fetchStats();
-  }, []);
 
   const fetchProfile = async () => {
     console.log('Fetching user profile');
@@ -160,6 +155,21 @@ export default function ProfileScreen() {
       console.error('Error in fetchStats:', error);
     }
   };
+
+  useEffect(() => {
+    fetchProfile();
+    fetchUserPosts();
+    fetchStats();
+  }, []);
+
+  // Refresh posts when screen comes into focus (e.g., after viewing a video)
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Profile screen focused - refreshing posts');
+      fetchUserPosts();
+      fetchStats();
+    }, [])
+  );
 
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
@@ -462,7 +472,7 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     position: 'absolute',
-    top: 16,
+    top: 60,
     right: 16,
     width: 44,
     height: 44,
