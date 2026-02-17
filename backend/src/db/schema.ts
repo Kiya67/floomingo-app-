@@ -17,12 +17,12 @@ export const boards = pgTable('boards', {
 });
 
 export const boardPosts = pgTable('board_posts', {
-  id: uuid('id').primaryKey().defaultRandom(),
   boardId: uuid('board_id').notNull(),
   postId: text('post_id').notNull(),
+  savedBy: text('saved_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex('board_posts_unique').on(table.boardId, table.postId),
+  primaryKey({ columns: [table.boardId, table.postId, table.savedBy] }),
 ]);
 
 export const boardPlaces = pgTable('board_places', {
