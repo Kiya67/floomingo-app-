@@ -389,6 +389,7 @@ export default function ProfileScreen() {
                     router.push(`/video/${post.id}`);
                   }}
                   onLongPress={() => handleLongPress(post)}
+                  showViewCount={true}
                 />
               ))}
             </View>

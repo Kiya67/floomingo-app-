@@ -15,6 +15,7 @@ interface Post {
   place_name: string | null;
   location_type: string | null;
   created_at: string;
+  view_count?: number;
 }
 
 interface VideoGridItemProps {
@@ -26,9 +27,10 @@ interface VideoGridItemProps {
   onFollowToggle?: (userId: string, isFollowing: boolean) => void;
   isFollowing?: boolean;
   onLongPress?: () => void;
+  showViewCount?: boolean;
 }
 
-export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButton = false, onFollowToggle, isFollowing = false, onLongPress }: VideoGridItemProps) {
+export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButton = false, onFollowToggle, isFollowing = false, onLongPress, showViewCount = false }: VideoGridItemProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const cardColor = isDark ? colors.cardDark : colors.card;
@@ -158,6 +160,8 @@ export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButto
   };
 
   const followButtonText = isFollowing ? 'Following' : 'Follow';
+  const viewCount = post.view_count || 0;
+  const viewCountText = viewCount >= 1000 ? `${(viewCount / 1000).toFixed(1)}K` : String(viewCount);
 
   return (
     <TouchableOpacity 
@@ -200,6 +204,16 @@ export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButto
             color="#999"
           />
           <Text style={styles.errorText}>Video unavailable</Text>
+        </View>
+      )}
+      {showViewCount && (
+        <View style={styles.viewCountOverlay}>
+          <IconSymbol 
+            android_material_icon_name="visibility" 
+            size={12} 
+            color="#FFFFFF"
+          />
+          <Text style={styles.viewCountText}>{viewCountText}</Text>
         </View>
       )}
       {showFollowButton && (
@@ -247,6 +261,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     textAlign: 'center',
+  },
+  viewCountOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  viewCountText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
   },
   followButtonOverlay: {
     position: 'absolute',

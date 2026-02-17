@@ -50,10 +50,11 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-// Video Player Component - uses public URLs directly
+// Video Player Component - uses public URLs directly with tap to play/pause
 function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
   // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP
   const [isMuted, setIsMuted] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(true);
   const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(videoUrl, (player) => {
@@ -83,6 +84,7 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
       if (isMountedRef.current && player.status === 'readyToPlay') {
         try {
           player.play();
+          setIsPlaying(true);
           console.log('Video playing for post:', postId);
         } catch (error) {
           console.error('Error playing video:', error);
@@ -102,8 +104,22 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
   }, [isMuted, player]);
 
   const handleTap = () => {
-    console.log('User tapped video, toggling mute');
-    setIsMuted(prev => !prev);
+    console.log('User tapped video center - toggling play/pause');
+    if (!player) return;
+
+    try {
+      if (isPlaying) {
+        player.pause();
+        setIsPlaying(false);
+        console.log('Video paused');
+      } else {
+        player.play();
+        setIsPlaying(true);
+        console.log('Video playing');
+      }
+    } catch (error) {
+      console.error('Error toggling play/pause:', error);
+    }
   };
 
   // GUARD CLAUSE AFTER ALL HOOKS
@@ -126,6 +142,16 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
         allowsFullscreen={true}
         allowsPictureInPicture={false}
       />
+      {!isPlaying && (
+        <View style={styles.playPauseIndicator}>
+          <IconSymbol 
+            ios_icon_name="play.fill"
+            android_material_icon_name="play-arrow" 
+            size={64} 
+            color="#FFFFFF"
+          />
+        </View>
+      )}
       {isMuted && (
         <View style={styles.muteIndicator}>
           <IconSymbol 
@@ -668,7 +694,7 @@ export default function VideoFullScreenScreen() {
       <View style={styles.videoSlide}>
         <VideoPlayer videoUrl={post.video_url} postId={post.id} />
         
-        {/* Overlay content */}
+        {/* Overlay content - NO BLACK BACKGROUND */}
         <View style={styles.overlay}>
           {/* Top controls */}
           <View style={styles.topControls}>
@@ -1017,6 +1043,15 @@ const styles = StyleSheet.create({
     width: width,
     height: height,
   },
+  playPauseIndicator: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -32 }, { translateY: -32 }],
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 40,
+    padding: 12,
+  },
   muteIndicator: {
     position: 'absolute',
     top: 100,
@@ -1046,7 +1081,6 @@ const styles = StyleSheet.create({
   bottomInfo: {
     paddingBottom: 40,
     paddingHorizontal: 16,
-    backgroundColor: 'linear-gradient(transparent, rgba(0, 0, 0, 0.7))',
   },
   infoContent: {
     gap: 12,
