@@ -44,10 +44,44 @@ interface Comment {
 
 const { width, height } = Dimensions.get('window');
 
+// In-memory cache for signed URLs
+const signedUrlCache = new Map<string, string>();
+
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
   if (typeof source === 'string') return { uri: source };
   return source as ImageSourcePropType;
+}
+
+// Generate signed URL for private video
+async function generateSignedUrl(videoPath: string, postId: string): Promise<string | null> {
+  if (!videoPath) return null;
+
+  // Check cache first
+  if (signedUrlCache.has(postId)) {
+    console.log('Using cached signed URL for post:', postId);
+    return signedUrlCache.get(postId)!;
+  }
+
+  try {
+    console.log('Generating signed URL for video path:', videoPath);
+    const { data, error } = await supabase.storage
+      .from('videos')
+      .createSignedUrl(videoPath, 3600); // 1 hour expiration
+
+    if (error) throw error;
+
+    if (data?.signedUrl) {
+      console.log('Signed URL generated successfully');
+      signedUrlCache.set(postId, data.signedUrl);
+      return data.signedUrl;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error generating signed URL:', error);
+    return null;
+  }
 }
 
 export default function VideoFullScreenScreen() {
@@ -130,24 +164,27 @@ export default function VideoFullScreenScreen() {
 
       const allPosts = [initialPost, ...(morePosts || [])];
       
-      // Convert video URLs
-      const postsWithUrls = allPosts.map(post => {
-        let videoUrl = post.video_url;
-        if (videoUrl && !videoUrl.startsWith('http')) {
-          const { data: urlData } = supabase.storage
-            .from('videos')
-            .getPublicUrl(videoUrl);
-          videoUrl = urlData.publicUrl;
-        }
-        return { ...post, video_url: videoUrl };
-      });
+      // Generate signed URLs for all posts
+      const postsWithSignedUrls = await Promise.all(
+        allPosts.map(async (post) => {
+          let videoUrl = post.video_url;
+          
+          // If video_url is a storage path (not a full URL), generate signed URL
+          if (videoUrl && !videoUrl.startsWith('http')) {
+            const signedUrl = await generateSignedUrl(videoUrl, post.id);
+            videoUrl = signedUrl || videoUrl;
+          }
+          
+          return { ...post, video_url: videoUrl };
+        })
+      );
 
-      console.log('Posts fetched successfully:', postsWithUrls.length);
-      setPosts(postsWithUrls);
+      console.log('Posts fetched successfully with signed URLs:', postsWithSignedUrls.length);
+      setPosts(postsWithSignedUrls);
       
       // Load stats and like status for first post
-      if (user && postsWithUrls[0]) {
-        await loadPostInteractions(postsWithUrls[0].id, user.id);
+      if (user && postsWithSignedUrls[0]) {
+        await loadPostInteractions(postsWithSignedUrls[0].id, user.id);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
@@ -213,7 +250,7 @@ export default function VideoFullScreenScreen() {
       if (currentPost && currentUserId) {
         loadPostInteractions(currentPost.id, currentUserId);
         
-        // Check follow status
+        // Check follow status only if viewing someone else's video
         if (currentPost.user_id !== currentUserId) {
           supabase
             .from('follows')
@@ -224,6 +261,9 @@ export default function VideoFullScreenScreen() {
             .then(({ data }) => {
               setIsFollowing(data && data.length > 0);
             });
+        } else {
+          // Reset follow state when viewing own video
+          setIsFollowing(false);
         }
       }
     }
@@ -255,6 +295,12 @@ export default function VideoFullScreenScreen() {
   const handleFollowToggle = async (post: Post) => {
     console.log('User tapped follow/unfollow button');
     if (followLoading || !post?.user_id || !currentUserId) return;
+
+    // CRITICAL: Prevent following yourself
+    if (post.user_id === currentUserId) {
+      console.log('Cannot follow yourself, ignoring action');
+      return;
+    }
 
     try {
       setFollowLoading(true);
@@ -485,7 +531,7 @@ export default function VideoFullScreenScreen() {
 
     return (
       <View style={styles.videoSlide}>
-        <VideoPlayer videoUrl={post.video_url} />
+        <VideoPlayer videoUrl={post.video_url} postId={post.id} />
         
         {/* Overlay content */}
         <View style={styles.overlay}>
@@ -791,9 +837,12 @@ export default function VideoFullScreenScreen() {
   );
 }
 
-// Video Player Component
-function VideoPlayer({ videoUrl }: { videoUrl: string }) {
-  const player = useVideoPlayer(videoUrl, (player) => {
+// Video Player Component with error handling for signed URLs
+function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
+  const [currentUrl, setCurrentUrl] = useState(videoUrl);
+  const [hasError, setHasError] = useState(false);
+
+  const player = useVideoPlayer(currentUrl, (player) => {
     player.loop = true;
     player.muted = false;
   });
@@ -814,6 +863,30 @@ function VideoPlayer({ videoUrl }: { videoUrl: string }) {
     };
   }, [player]);
 
+  // Handle video errors (e.g., expired signed URL)
+  const handleVideoError = async () => {
+    console.error('Video player error for post:', postId);
+    
+    if (!hasError) {
+      setHasError(true);
+      
+      // Clear cached signed URL
+      signedUrlCache.delete(postId);
+      
+      // Try to regenerate signed URL
+      const videoPath = videoUrl.split('/videos/')[1]?.split('?')[0];
+      if (videoPath) {
+        console.log('Attempting to regenerate signed URL for path:', videoPath);
+        const newSignedUrl = await generateSignedUrl(videoPath, postId);
+        if (newSignedUrl && newSignedUrl !== currentUrl) {
+          console.log('Regenerated signed URL, retrying playback');
+          setCurrentUrl(newSignedUrl);
+          setHasError(false);
+        }
+      }
+    }
+  };
+
   return (
     <VideoView
       style={styles.video}
@@ -822,6 +895,7 @@ function VideoPlayer({ videoUrl }: { videoUrl: string }) {
       contentFit="contain"
       allowsFullscreen={false}
       allowsPictureInPicture={false}
+      onError={handleVideoError}
     />
   );
 }

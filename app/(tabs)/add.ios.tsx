@@ -112,14 +112,14 @@ export default function AddScreen() {
 
       console.log('Authenticated user ID:', user.id);
 
-      // Step 2: Create IDs + paths
+      // Step 2: Create IDs + paths (STORE PATHS, NOT PUBLIC URLS)
       const postId = uuidv4();
       const videoPath = `${user.id}/${postId}.mp4`;
       const thumbPath = `${user.id}/${postId}.jpg`;
       
       console.log('Generated postId:', postId);
-      console.log('Video path:', videoPath);
-      console.log('Thumbnail path:', thumbPath);
+      console.log('Video path (to be stored in DB):', videoPath);
+      console.log('Thumbnail path (to be stored in DB):', thumbPath);
 
       // Step 3: Upload VIDEO to Supabase Storage (iOS native approach)
       console.log('Step 3: Uploading video to Supabase Storage (iOS)');
@@ -153,14 +153,6 @@ export default function AddScreen() {
       }
 
       console.log('Video uploaded successfully:', videoUploadData);
-
-      // Get public URL for video
-      const { data: videoPublicUrlData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(videoPath);
-      
-      const video_public_url = videoPublicUrlData.publicUrl;
-      console.log('Video public URL:', video_public_url);
 
       // Step 4: Generate THUMBNAIL (client side)
       console.log('Step 4: Generating thumbnail from video');
@@ -201,7 +193,7 @@ export default function AddScreen() {
 
       console.log('Thumbnail uploaded successfully:', thumbnailUploadData);
 
-      // Get public URL for thumbnail
+      // Get public URL for thumbnail (thumbnails bucket is public)
       const { data: thumbnailPublicUrlData } = supabase.storage
         .from('thumbnails')
         .getPublicUrl(thumbPath);
@@ -210,6 +202,7 @@ export default function AddScreen() {
       console.log('Thumbnail public URL:', thumbnail_public_url);
 
       // Step 6: Insert DB row into posts
+      // CRITICAL: Store videoPath (not public URL) for private bucket
       console.log('Step 6: Inserting post into database');
       
       const { error: insertError } = await supabase
@@ -217,8 +210,8 @@ export default function AddScreen() {
         .insert({
           id: postId,
           user_id: user.id,
-          video_url: video_public_url,
-          thumbnail_url: thumbnail_public_url,
+          video_url: videoPath, // Store path for private bucket
+          thumbnail_url: thumbnail_public_url, // Store public URL for public bucket
           caption: caption.trim() || null,
           place_id: selectedPlace?.place_id || null,
           place_name: selectedPlace?.main_text || null,
@@ -230,7 +223,7 @@ export default function AddScreen() {
         throw insertError;
       }
 
-      console.log('Post created successfully in database');
+      console.log('Post created successfully in database with video path:', videoPath);
 
       // Step 7: Success UX
       Alert.alert('Posted!', 'Your video has been posted successfully');

@@ -63,6 +63,7 @@ export default function UserProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
     console.log('Fetching user profile for ID:', profileUserId);
@@ -133,6 +134,15 @@ export default function UserProfileScreen() {
         return;
       }
 
+      setCurrentUserId(user.id);
+
+      // Don't check follow status if viewing own profile
+      if (user.id === profileUserId) {
+        console.log('Viewing own profile, skipping follow status check');
+        setIsFollowing(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('follows')
         .select('*')
@@ -180,15 +190,15 @@ export default function UserProfileScreen() {
 
   const handleFollowToggle = async () => {
     console.log('User tapped follow/unfollow button');
-    if (followLoading) return;
+    if (followLoading || !currentUserId) return;
+
+    // CRITICAL: Prevent following yourself
+    if (currentUserId === profileUserId) {
+      console.log('Cannot follow yourself, ignoring action');
+      return;
+    }
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to follow users');
-        return;
-      }
-
       setFollowLoading(true);
 
       if (isFollowing) {
@@ -196,7 +206,7 @@ export default function UserProfileScreen() {
         const { error } = await supabase
           .from('follows')
           .delete()
-          .eq('follower_id', user.id)
+          .eq('follower_id', currentUserId)
           .eq('following_id', profileUserId);
 
         if (error) throw error;
@@ -209,7 +219,7 @@ export default function UserProfileScreen() {
         const { error } = await supabase
           .from('follows')
           .insert({
-            follower_id: user.id,
+            follower_id: currentUserId,
             following_id: profileUserId,
           });
 
@@ -250,6 +260,8 @@ export default function UserProfileScreen() {
   const followerCountText = stats.follower_count.toString();
   const followingCountText = stats.following_count.toString();
   const postCountText = stats.post_count.toString();
+
+  const isOwnProfile = currentUserId === profileUserId;
 
   if (loading) {
     return (
@@ -342,30 +354,32 @@ export default function UserProfileScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[
-              styles.followButton,
-              { 
-                backgroundColor: isFollowing ? cardColor : primaryColor,
-                borderWidth: isFollowing ? 1 : 0,
-                borderColor: isFollowing ? primaryColor : 'transparent',
-              }
-            ]}
-            onPress={handleFollowToggle}
-            disabled={followLoading}
-            activeOpacity={0.7}
-          >
-            {followLoading ? (
-              <ActivityIndicator size="small" color={isFollowing ? primaryColor : '#FFFFFF'} />
-            ) : (
-              <Text style={[
-                styles.followButtonText,
-                { color: isFollowing ? primaryColor : '#FFFFFF' }
-              ]}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          {!isOwnProfile && (
+            <TouchableOpacity
+              style={[
+                styles.followButton,
+                { 
+                  backgroundColor: isFollowing ? cardColor : primaryColor,
+                  borderWidth: isFollowing ? 1 : 0,
+                  borderColor: isFollowing ? primaryColor : 'transparent',
+                }
+              ]}
+              onPress={handleFollowToggle}
+              disabled={followLoading}
+              activeOpacity={0.7}
+            >
+              {followLoading ? (
+                <ActivityIndicator size="small" color={isFollowing ? primaryColor : '#FFFFFF'} />
+              ) : (
+                <Text style={[
+                  styles.followButtonText,
+                  { color: isFollowing ? primaryColor : '#FFFFFF' }
+                ]}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.postsSection}>
