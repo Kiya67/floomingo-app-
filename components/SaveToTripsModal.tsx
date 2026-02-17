@@ -31,7 +31,7 @@ interface Post {
 interface SaveToTripsModalProps {
   isVisible: boolean;
   onClose: () => void;
-  post: Post;
+  post: Post; // Post is now a required prop
 }
 
 const LAST_USED_BOARD_KEY = 'lastUsedBoardId';
@@ -43,6 +43,13 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalProps) {
+  // Guard: Do not render modal content unless BOTH isVisible === true AND post exists
+  // This guard MUST be BEFORE any hooks to comply with React Hooks rules
+  if (!isVisible || !post) {
+    console.log('SaveToTripsModal - Not rendering: isVisible =', isVisible, ', post =', !!post);
+    return null;
+  }
+
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
@@ -156,7 +163,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   }, [loadingAuth, session, user]);
 
   useEffect(() => {
-    if (isVisible) {
+    if (isVisible && post) {
       console.log('SaveToTripsModal - Modal opened for post:', post.id);
       bottomSheetRef.current?.expand();
       fetchBoards();
@@ -353,13 +360,12 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     />
   );
 
-  if (!isVisible) return null;
-
-  const postTitle = post.caption || 'Video';
-  const postSubtitle = post.place_name ? ` • ${post.place_name}` : '';
-  const headerSubtitle = `${postTitle.substring(0, 40)}${postTitle.length > 40 ? '...' : ''}${postSubtitle}`;
+  // Safe access to post properties with optional chaining and nullish coalescing
+  const postTitle = post?.caption ?? '';
+  const postSubtitle = post?.place_name ?? '';
+  const headerSubtitle = `${postTitle.substring(0, 40)}${postTitle.length > 40 ? '...' : ''}${postSubtitle ? ` • ${postSubtitle}` : ''}`;
   
-  const hasPlace = Boolean(post.place_id && post.place_name);
+  const hasPlace = Boolean(post?.place_id && post?.place_name);
   const showPlaceWarning = saveOption === 'video_and_place' && !hasPlace;
   
   // Determine if we can save

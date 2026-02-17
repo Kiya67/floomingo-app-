@@ -187,7 +187,7 @@ export default function VideoFullScreenScreen() {
   const [followLoading, setFollowLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [isMuted, setIsMuted] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   
@@ -665,15 +665,16 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleSave = (post: Post) => {
-    console.log('User tapped save button - opening Save to Trips modal');
-    setSelectedPostId(post.id);
+    console.log('User tapped save button - setting post first, then opening modal');
+    // MUST set selectedPost FIRST, then open modal
+    setSelectedPost(post);
     setShowSaveModal(true);
   };
 
   const handleSaveModalClose = () => {
     console.log('Closing Save to Trips modal');
     setShowSaveModal(false);
-    setSelectedPostId(null);
+    setSelectedPost(null);
     
     const currentPost = posts[currentIndex];
     if (currentPost && currentUserId) {
@@ -1074,8 +1075,6 @@ export default function VideoFullScreenScreen() {
     );
   }
 
-  const selectedPost = selectedPostId ? posts.find(p => p.id === selectedPostId) : null;
-  const currentPost = posts[currentIndex];
   const blockButtonText = isBlocked ? 'Unblock User' : 'Block User';
 
   return (
@@ -1294,10 +1293,7 @@ export default function VideoFullScreenScreen() {
         <SaveToTripsModal
           isVisible={showSaveModal}
           onClose={handleSaveModalClose}
-          postId={selectedPost.id}
-          placeId={selectedPost.place_id}
-          placeName={selectedPost.place_name}
-          locationType={selectedPost.location_type}
+          post={selectedPost}
         />
       )}
     </GestureHandlerRootView>

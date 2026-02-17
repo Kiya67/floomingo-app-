@@ -762,7 +762,8 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleSave = (post: Post) => {
-    console.log('User tapped save button - opening Save to Trips modal');
+    console.log('User tapped save button - setting post first, then opening modal');
+    // MUST set selectedPost FIRST, then open modal
     setSelectedPost(post);
     setShowSaveModal(true);
   };

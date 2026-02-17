@@ -1,11 +1,12 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, RefreshControl, Linking } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { VideoGridItem } from '@/components/VideoGridItem';
+import { Toast } from '@/components/ui/Toast';
 
 interface Post {
   id: string;
@@ -51,6 +52,16 @@ export default function LocationDetailsScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
 
   const fetchLocationDetails = useCallback(async () => {
     console.log('Fetching location details for place_id:', id);
@@ -128,6 +139,34 @@ export default function LocationDetailsScreen() {
   const handleBack = () => {
     console.log('User tapped back button');
     router.back();
+  };
+
+  const handleDirections = async () => {
+    console.log('User tapped Directions button');
+    
+    // Check if google_place_id exists
+    if (!id || typeof id !== 'string') {
+      console.error('Missing Google Place ID');
+      showToast('Directions unavailable - Missing location ID', 'error');
+      return;
+    }
+    
+    const url = `https://www.google.com/maps/dir/?api=1&destination=place_id:${id}&travelmode=driving`;
+    console.log('Opening directions URL:', url);
+    
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+        console.log('Directions opened successfully');
+      } else {
+        console.error('Cannot open URL:', url);
+        showToast('Cannot open directions - Please install Google Maps', 'error');
+      }
+    } catch (error) {
+      console.error('Error opening directions:', error);
+      showToast('Error opening directions - Please try again', 'error');
+    }
   };
 
   const locationName = locationDetails?.name || 'Location';
@@ -222,6 +261,20 @@ export default function LocationDetailsScreen() {
             </View>
           </View>
 
+          {/* Directions Button */}
+          <TouchableOpacity
+            style={[styles.directionsButton, { backgroundColor: primaryColor }]}
+            onPress={handleDirections}
+            activeOpacity={0.8}
+          >
+            <IconSymbol 
+              android_material_icon_name="directions" 
+              size={24} 
+              color="#FFFFFF"
+            />
+            <Text style={styles.directionsButtonText}>Get Directions</Text>
+          </TouchableOpacity>
+
           {hours.length > 0 ? (
             <View style={styles.hoursSection}>
               <Text style={[styles.hoursTitle, { color: textColor }]}>Hours</Text>
@@ -264,6 +317,13 @@ export default function LocationDetailsScreen() {
           )}
         </View>
       </ScrollView>
+
+      <Toast
+        message={toastMessage}
+        visible={toastVisible}
+        onHide={() => setToastVisible(false)}
+        type={toastType}
+      />
     </View>
   );
 }
@@ -314,6 +374,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 24,
     marginTop: 8,
+    marginBottom: 20,
   },
   statItem: {
     flexDirection: 'row',
@@ -322,6 +383,22 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 16,
+    fontWeight: '600',
+  },
+  directionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 8,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  directionsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '600',
   },
   hoursSection: {

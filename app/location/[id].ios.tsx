@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, RefreshControl, Linking, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
@@ -130,6 +130,34 @@ export default function LocationDetailsScreen() {
     router.back();
   };
 
+  const handleDirections = async () => {
+    console.log('User tapped Directions button');
+    
+    // Check if google_place_id exists
+    if (!id || typeof id !== 'string') {
+      console.error('Missing Google Place ID');
+      Alert.alert('Directions unavailable', 'Missing location ID');
+      return;
+    }
+    
+    const url = `https://www.google.com/maps/dir/?api=1&destination=place_id:${id}&travelmode=driving`;
+    console.log('Opening directions URL:', url);
+    
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+        console.log('Directions opened successfully');
+      } else {
+        console.error('Cannot open URL:', url);
+        Alert.alert('Cannot open directions', 'Please install Google Maps');
+      }
+    } catch (error) {
+      console.error('Error opening directions:', error);
+      Alert.alert('Error opening directions', 'Please try again');
+    }
+  };
+
   const locationName = locationDetails?.name || 'Location';
   const address = locationDetails?.formatted_address || '';
   const rating = locationDetails?.rating || 0;
@@ -226,6 +254,21 @@ export default function LocationDetailsScreen() {
             </View>
           </View>
 
+          {/* Directions Button */}
+          <TouchableOpacity
+            style={[styles.directionsButton, { backgroundColor: primaryColor }]}
+            onPress={handleDirections}
+            activeOpacity={0.8}
+          >
+            <IconSymbol 
+              ios_icon_name="arrow.triangle.turn.up.right.circle.fill"
+              android_material_icon_name="directions" 
+              size={24} 
+              color="#FFFFFF"
+            />
+            <Text style={styles.directionsButtonText}>Get Directions</Text>
+          </TouchableOpacity>
+
           {hours.length > 0 ? (
             <View style={styles.hoursSection}>
               <Text style={[styles.hoursTitle, { color: textColor }]}>Hours</Text>
@@ -319,6 +362,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 24,
     marginTop: 8,
+    marginBottom: 20,
   },
   statItem: {
     flexDirection: 'row',
@@ -327,6 +371,22 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 16,
+    fontWeight: '600',
+  },
+  directionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 8,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  directionsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '600',
   },
   hoursSection: {
