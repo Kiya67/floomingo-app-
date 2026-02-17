@@ -13,6 +13,7 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { WidgetProvider } from "@/contexts/WidgetContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme, Alert } from "react-native";
 import { useNetworkState } from "expo-network";
@@ -76,15 +77,19 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
-        <WidgetProvider>
-          <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
-          <Stack>
-            <Stack.Screen name="auth" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-        </WidgetProvider>
+        <AuthProvider>
+          <WidgetProvider>
+            <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
+            <Stack>
+              <Stack.Screen name="auth" options={{ headerShown: false }} />
+              <Stack.Screen name="auth-popup" options={{ headerShown: false }} />
+              <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+          </WidgetProvider>
+        </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

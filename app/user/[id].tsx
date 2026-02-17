@@ -1,11 +1,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, ImageSourcePropType, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, ImageSourcePropType } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { VideoGridItem } from '@/components/VideoGridItem';
+import { Modal } from '@/components/ui/Modal';
+import { Toast } from '@/components/ui/Toast';
+import { authenticatedApiCall } from '@/utils/api';
 
 interface Profile {
   id: string;
@@ -64,6 +67,43 @@ export default function UserProfileScreen() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  // Block/Report states
+  const [showMoreModal, setShowMoreModal] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
+  const checkBlockStatus = useCallback(async (targetUserId: string, currentUserId: string) => {
+    console.log('[API] Checking block status for user:', targetUserId);
+    try {
+      const response = await authenticatedApiCall(`/api/blocks/check/${targetUserId}`, {
+        method: 'GET',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setIsBlocked(data.isBlocked || false);
+        console.log('[API] Block status:', data.isBlocked);
+      } else {
+        console.error('[API] Error checking block status:', response.status);
+        setIsBlocked(false);
+      }
+    } catch (error) {
+      console.error('[API] Error checking block status:', error);
+      setIsBlocked(false);
+    }
+  }, []);
 
   const fetchProfile = useCallback(async () => {
     console.log('Fetching user profile for ID:', profileUserId);
@@ -143,6 +183,9 @@ export default function UserProfileScreen() {
         return;
       }
 
+      // Check block status
+      await checkBlockStatus(profileUserId as string, user.id);
+
       const { data, error } = await supabase
         .from('follows')
         .select('*')
@@ -160,7 +203,7 @@ export default function UserProfileScreen() {
     } catch (error) {
       console.error('Error in checkFollowStatus:', error);
     }
-  }, [profileUserId]);
+  }, [profileUserId, checkBlockStatus]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -231,10 +274,103 @@ export default function UserProfileScreen() {
       }
     } catch (error: any) {
       console.error('Error toggling follow:', error);
-      Alert.alert('Error', error.message || 'Failed to update follow status');
+      showToast(error.message || 'Failed to update follow status', 'error');
     } finally {
       setFollowLoading(false);
     }
+  };
+
+  const handleBlockUser = async () => {
+    console.log('[API] User tapped block user');
+    if (!currentUserId) return;
+
+    // Prevent blocking yourself
+    if (currentUserId === profileUserId) {
+      console.log('Cannot block yourself');
+      showToast('Cannot block yourself', 'error');
+      return;
+    }
+
+    setShowMoreModal(false);
+    setBlockLoading(true);
+
+    try {
+      if (isBlocked) {
+        // Unblock
+        console.log('[API] Unblocking user:', profileUserId);
+        const response = await authenticatedApiCall(`/api/blocks/${profileUserId}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to unblock user');
+        }
+
+        const data = await response.json();
+        console.log('[API] Unblock response:', data);
+
+        setIsBlocked(false);
+        showToast('User unblocked', 'success');
+        console.log('[API] User unblocked successfully');
+      } else {
+        // Block
+        console.log('[API] Blocking user:', profileUserId);
+        const response = await authenticatedApiCall('/api/blocks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            blocked_id: profileUserId,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to block user');
+        }
+
+        const data = await response.json();
+        console.log('[API] Block response:', data);
+
+        // Unfollow each other (using Supabase since this is a local operation)
+        console.log('Unfollowing blocked user');
+        await supabase
+          .from('follows')
+          .delete()
+          .or(`and(follower_id.eq.${currentUserId},following_id.eq.${profileUserId}),and(follower_id.eq.${profileUserId},following_id.eq.${currentUserId})`);
+
+        setIsBlocked(true);
+        setIsFollowing(false);
+        showToast('User blocked', 'success');
+        console.log('[API] User blocked successfully');
+
+        // Navigate back to remove blocked user's content from view
+        setTimeout(() => {
+          router.back();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('[API] Error blocking/unblocking user:', error);
+      showToast('Failed to update block status', 'error');
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleReportUser = () => {
+    console.log('User tapped report user');
+    setShowMoreModal(false);
+    // TODO: Implement report functionality (backend endpoint not yet available)
+    showToast('Report functionality coming soon', 'info');
+  };
+
+  const handleMoreOptions = () => {
+    console.log('User tapped more options button');
+    if (currentUserId === profileUserId) {
+      console.log('Cannot block/report yourself');
+      return;
+    }
+    setShowMoreModal(true);
   };
 
   const handleBack = () => {
@@ -262,6 +398,7 @@ export default function UserProfileScreen() {
   const postCountText = stats.post_count.toString();
 
   const isOwnProfile = currentUserId === profileUserId;
+  const blockButtonText = isBlocked ? 'Unblock User' : 'Block User';
 
   if (loading) {
     return (
@@ -290,6 +427,19 @@ export default function UserProfileScreen() {
           title: displayName,
           headerStyle: { backgroundColor: bgColor },
           headerTintColor: textColor,
+          headerRight: !isOwnProfile ? () => (
+            <TouchableOpacity
+              onPress={handleMoreOptions}
+              style={{ marginRight: 16 }}
+              activeOpacity={0.7}
+            >
+              <IconSymbol 
+                android_material_icon_name="more-vert" 
+                size={24} 
+                color={textColor}
+              />
+            </TouchableOpacity>
+          ) : undefined,
         }}
       />
       <ScrollView
@@ -410,6 +560,58 @@ export default function UserProfileScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* More Options Modal (Block/Report) */}
+      <Modal
+        visible={showMoreModal}
+        onClose={() => setShowMoreModal(false)}
+        title="More Options"
+      >
+        <View style={{ gap: 12, marginBottom: 20 }}>
+          <TouchableOpacity
+            style={[styles.modalOptionButton, { borderBottomColor: textSecondaryColor }]}
+            onPress={handleBlockUser}
+            disabled={blockLoading}
+            activeOpacity={0.7}
+          >
+            {blockLoading ? (
+              <ActivityIndicator size="small" color={primaryColor} />
+            ) : (
+              <>
+                <IconSymbol 
+                  android_material_icon_name={isBlocked ? "check-circle" : "block"} 
+                  size={24} 
+                  color={isBlocked ? primaryColor : '#FF3B30'}
+                />
+                <Text style={[styles.modalOptionText, { color: isBlocked ? primaryColor : '#FF3B30' }]}>
+                  {blockButtonText}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.modalOptionButton}
+            onPress={handleReportUser}
+            activeOpacity={0.7}
+          >
+            <IconSymbol 
+              android_material_icon_name="flag" 
+              size={24} 
+              color={textColor}
+            />
+            <Text style={[styles.modalOptionText, { color: textColor }]}>Report User</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Toast Notification */}
+      <Toast
+        message={toastMessage}
+        visible={toastVisible}
+        onHide={() => setToastVisible(false)}
+        type={toastType}
+      />
     </View>
   );
 }
@@ -537,5 +739,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+  },
+  modalOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  modalOptionText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { VideoGridItem } from "@/components/VideoGridItem";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
+import { authenticatedApiCall } from "@/utils/api";
 
 interface Post {
   id: string;
@@ -75,6 +76,29 @@ export default function HomeScreen() {
   const fetchPosts = useCallback(async () => {
     console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
     try {
+      // Fetch blocked users list from API
+      let blockedUserIds: string[] = [];
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        try {
+          const blocksResponse = await authenticatedApiCall('/api/blocks', {
+            method: 'GET',
+          });
+          
+          if (blocksResponse.ok) {
+            const blocksData = await blocksResponse.json();
+            console.log('[API] Blocked users fetched for feed filtering:', blocksData.length);
+            // Extract blocked user IDs (both blocker and blocked)
+            blockedUserIds = blocksData.map((block: any) => 
+              block.blockerId === user.id ? block.blockedId : block.blockerId
+            );
+          }
+        } catch (error) {
+          console.error('[API] Error fetching blocked users:', error);
+        }
+      }
+
       let query = supabase
         .from('posts')
         .select(`
@@ -89,6 +113,12 @@ export default function HomeScreen() {
       if (filterPlaceId) {
         console.log('Applying place_id filter:', filterPlaceId);
         query = query.eq('place_id', filterPlaceId);
+      }
+
+      // Filter out blocked users
+      if (blockedUserIds.length > 0) {
+        console.log('Filtering out blocked users from feed:', blockedUserIds.length);
+        query = query.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
       }
 
       // Apply keyword filter (client-side for now)

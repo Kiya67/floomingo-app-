@@ -1,14 +1,17 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { SaveToTripsModal } from '@/components/SaveToTripsModal';
+import { Modal } from '@/components/ui/Modal';
+import { Toast } from '@/components/ui/Toast';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { authenticatedApiCall } from '@/utils/api';
 
 interface Post {
   id: string;
@@ -193,6 +196,16 @@ export default function VideoFullScreenScreen() {
   const [isMuted, setIsMuted] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   
+  // Block/Report states
+  const [showMoreModal, setShowMoreModal] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  
+  // Toast states
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
+  
   // Action button states per post
   const [postInteractions, setPostInteractions] = useState<Map<string, {
     isLiked: boolean;
@@ -213,6 +226,12 @@ export default function VideoFullScreenScreen() {
   
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
 
   const loadPostInteractions = useCallback(async (postId: string, userId: string) => {
     console.log('Loading interactions for post:', postId);
@@ -272,6 +291,27 @@ export default function VideoFullScreenScreen() {
     }
   }, []);
 
+  const checkBlockStatus = useCallback(async (targetUserId: string, currentUserId: string) => {
+    console.log('[API] Checking block status for user:', targetUserId);
+    try {
+      const response = await authenticatedApiCall(`/api/blocks/check/${targetUserId}`, {
+        method: 'GET',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setIsBlocked(data.isBlocked || false);
+        console.log('[API] Block status:', data.isBlocked);
+      } else {
+        console.error('[API] Error checking block status:', response.status);
+        setIsBlocked(false);
+      }
+    } catch (error) {
+      console.error('[API] Error checking block status:', error);
+      setIsBlocked(false);
+    }
+  }, []);
+
   const fetchPosts = useCallback(async () => {
     console.log('Loading video posts starting from ID:', id);
     try {
@@ -299,8 +339,34 @@ export default function VideoFullScreenScreen() {
         return;
       }
 
-      // Fetch more posts from the same user or related posts
-      const { data: morePosts, error: moreError } = await supabase
+      // Check block status for initial post
+      if (user && initialPost) {
+        await checkBlockStatus(initialPost.user_id, user.id);
+      }
+
+      // Fetch blocked users list from API
+      let blockedUserIds: string[] = [];
+      if (user) {
+        try {
+          const blocksResponse = await authenticatedApiCall('/api/blocks', {
+            method: 'GET',
+          });
+          
+          if (blocksResponse.ok) {
+            const blocksData = await blocksResponse.json();
+            console.log('[API] Blocked users fetched:', blocksData.length);
+            // Extract blocked user IDs (both blocker and blocked)
+            blockedUserIds = blocksData.map((block: any) => 
+              block.blockerId === user.id ? block.blockedId : block.blockerId
+            );
+          }
+        } catch (error) {
+          console.error('[API] Error fetching blocked users:', error);
+        }
+      }
+
+      // Fetch more posts from the same user or related posts, excluding blocked users
+      let query = supabase
         .from('posts')
         .select(`
           *,
@@ -312,6 +378,13 @@ export default function VideoFullScreenScreen() {
         .neq('id', id)
         .order('created_at', { ascending: false })
         .limit(10);
+      
+      // Filter out blocked users
+      if (blockedUserIds.length > 0) {
+        query = query.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
+      }
+      
+      const { data: morePosts, error: moreError } = await query;
 
       const allPosts = [initialPost, ...(morePosts || [])];
       
@@ -327,7 +400,7 @@ export default function VideoFullScreenScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id, loadPostInteractions]);
+  }, [id, loadPostInteractions, checkBlockStatus]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -346,6 +419,7 @@ export default function VideoFullScreenScreen() {
       const currentPost = posts[newIndex];
       if (currentPost && currentUserId) {
         loadPostInteractions(currentPost.id, currentUserId);
+        checkBlockStatus(currentPost.user_id, currentUserId);
         
         // Check follow status only if viewing someone else's video
         if (currentPost.user_id !== currentUserId) {
@@ -363,7 +437,7 @@ export default function VideoFullScreenScreen() {
         }
       }
     }
-  }, [posts, currentUserId, loadPostInteractions]);
+  }, [posts, currentUserId, loadPostInteractions, checkBlockStatus]);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -681,7 +755,7 @@ export default function VideoFullScreenScreen() {
     // Edge case: Check if video_url is missing
     if (!post.video_url) {
       console.warn('Share failed: No video URL available');
-      Alert.alert('No share link available');
+      showToast('No share link available', 'error');
       return;
     }
     
@@ -743,7 +817,7 @@ export default function VideoFullScreenScreen() {
         }
         
         // Show success toast
-        Alert.alert('Shared');
+        showToast('Shared', 'success');
       } else if (result.action === Share.dismissedAction) {
         // User cancelled - do not log or increment
         console.log('User cancelled share');
@@ -751,10 +825,105 @@ export default function VideoFullScreenScreen() {
     } catch (error) {
       console.error('Error sharing:', error);
       // Show failure toast
-      Alert.alert('Couldn\'t share');
+      showToast('Couldn\'t share', 'error');
     } finally {
       setIsSharing(false);
     }
+  };
+
+  const handleMoreOptions = (post: Post) => {
+    console.log('User tapped more options button');
+    const currentPost = posts[currentIndex];
+    if (currentPost && currentPost.user_id === currentUserId) {
+      console.log('Cannot block/report yourself');
+      return;
+    }
+    setShowMoreModal(true);
+  };
+
+  const handleBlockUser = async () => {
+    console.log('[API] User tapped block user');
+    const currentPost = posts[currentIndex];
+    if (!currentPost || !currentUserId) return;
+
+    // Prevent blocking yourself
+    if (currentPost.user_id === currentUserId) {
+      console.log('Cannot block yourself');
+      showToast('Cannot block yourself', 'error');
+      return;
+    }
+
+    setShowMoreModal(false);
+    setBlockLoading(true);
+
+    try {
+      if (isBlocked) {
+        // Unblock
+        console.log('[API] Unblocking user:', currentPost.user_id);
+        const response = await authenticatedApiCall(`/api/blocks/${currentPost.user_id}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to unblock user');
+        }
+
+        const data = await response.json();
+        console.log('[API] Unblock response:', data);
+
+        setIsBlocked(false);
+        showToast('User unblocked', 'success');
+        console.log('[API] User unblocked successfully');
+      } else {
+        // Block
+        console.log('[API] Blocking user:', currentPost.user_id);
+        const response = await authenticatedApiCall('/api/blocks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            blocked_id: currentPost.user_id,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to block user');
+        }
+
+        const data = await response.json();
+        console.log('[API] Block response:', data);
+
+        // Unfollow each other (using Supabase since this is a local operation)
+        console.log('Unfollowing blocked user');
+        await supabase
+          .from('follows')
+          .delete()
+          .or(`and(follower_id.eq.${currentUserId},following_id.eq.${currentPost.user_id}),and(follower_id.eq.${currentPost.user_id},following_id.eq.${currentUserId})`);
+
+        setIsBlocked(true);
+        setIsFollowing(false);
+        showToast('User blocked', 'success');
+        console.log('[API] User blocked successfully');
+
+        // Navigate back to remove blocked user's content from view
+        setTimeout(() => {
+          router.back();
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('[API] Error blocking/unblocking user:', error);
+      showToast('Failed to update block status', 'error');
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const handleReportUser = () => {
+    console.log('User tapped report user');
+    setShowMoreModal(false);
+    // TODO: Implement report functionality (backend endpoint not yet available)
+    showToast('Report functionality coming soon', 'info');
   };
 
   const getInitials = (name: string) => {
@@ -941,6 +1110,21 @@ export default function VideoFullScreenScreen() {
                   />
                   <Text style={styles.actionButtonText}>{shareCountText}</Text>
                 </TouchableOpacity>
+                
+                {!isOwnVideo && (
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={() => handleMoreOptions(post)}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name="more-horiz" 
+                      size={28} 
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>More</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -986,6 +1170,8 @@ export default function VideoFullScreenScreen() {
   }
 
   const selectedPost = selectedPostId ? posts.find(p => p.id === selectedPostId) : null;
+  const currentPost = posts[currentIndex];
+  const blockButtonText = isBlocked ? 'Unblock User' : 'Block User';
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -1008,6 +1194,50 @@ export default function VideoFullScreenScreen() {
         maxToRenderPerBatch={2}
         windowSize={3}
       />
+
+      {/* More Options Modal (Block/Report) */}
+      <Modal
+        visible={showMoreModal}
+        onClose={() => setShowMoreModal(false)}
+        title="More Options"
+      >
+        <View style={{ gap: 12, marginBottom: 20 }}>
+          <TouchableOpacity
+            style={[styles.modalOptionButton, { borderBottomColor: textSecondaryColor }]}
+            onPress={handleBlockUser}
+            disabled={blockLoading}
+            activeOpacity={0.7}
+          >
+            {blockLoading ? (
+              <ActivityIndicator size="small" color={primaryColor} />
+            ) : (
+              <>
+                <IconSymbol 
+                  android_material_icon_name={isBlocked ? "check-circle" : "block"} 
+                  size={24} 
+                  color={isBlocked ? primaryColor : '#FF3B30'}
+                />
+                <Text style={[styles.modalOptionText, { color: isBlocked ? primaryColor : '#FF3B30' }]}>
+                  {blockButtonText}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.modalOptionButton}
+            onPress={handleReportUser}
+            activeOpacity={0.7}
+          >
+            <IconSymbol 
+              android_material_icon_name="flag" 
+              size={24} 
+              color={textColor}
+            />
+            <Text style={[styles.modalOptionText, { color: textColor }]}>Report User</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Comments Modal */}
       {showCommentsModal && (
@@ -1109,38 +1339,17 @@ export default function VideoFullScreenScreen() {
       {/* Delete Comment Confirmation Modal */}
       <Modal
         visible={showDeleteCommentModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDeleteCommentModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? colors.cardDark : colors.card }]}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Comment?</Text>
-            <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
-              This will permanently delete your comment.
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: isDark ? '#444' : '#E0E0E0' }]}
-                onPress={() => {
-                  setShowDeleteCommentModal(false);
-                  setDeleteCommentId(null);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.modalButtonText, { color: textColor }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#FF3B30' }]}
-                onPress={confirmDeleteComment}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => {
+          setShowDeleteCommentModal(false);
+          setDeleteCommentId(null);
+        }}
+        title="Delete Comment?"
+        message="This will permanently delete your comment."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={confirmDeleteComment}
+        confirmColor="#FF3B30"
+      />
 
       {/* Save to Trips Modal */}
       {selectedPost && (
@@ -1153,6 +1362,14 @@ export default function VideoFullScreenScreen() {
           locationType={selectedPost.location_type}
         />
       )}
+
+      {/* Toast Notification */}
+      <Toast
+        message={toastMessage}
+        visible={toastVisible}
+        onHide={() => setToastVisible(false)}
+        type={toastType}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -1448,5 +1665,16 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  modalOptionText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
