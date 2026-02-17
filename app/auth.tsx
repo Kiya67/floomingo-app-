@@ -7,92 +7,169 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Platform,
   KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "expo-router";
+import { supabase } from "@/lib/supabase";
+import { Modal } from "@/components/ui/Modal";
 
 type Mode = "signin" | "signup";
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple, signInWithGitHub, loading: authLoading } =
-    useAuth();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorModalVisible, setErrorModalVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Redirect to home if user is already authenticated
+  // Check if user is already authenticated
   useEffect(() => {
-    console.log('AuthScreen - user:', !!user, 'authLoading:', authLoading);
-    if (user && !authLoading) {
-      console.log('User authenticated, redirecting to home...');
-      router.replace("/(tabs)/(home)");
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('AuthScreen - checkUser - session:', !!session);
+      if (session) {
+        console.log('User already authenticated, redirecting to home...');
+        router.replace("/(tabs)/(home)");
+      }
+    } catch (error) {
+      console.error('Error checking user:', error);
     }
-  }, [user, authLoading, router]);
+  };
 
-  if (authLoading) {
-    return (
-      <LinearGradient
-        colors={['#FF6B9D', '#FFA06B']}
-        style={styles.loadingContainer}
-      >
-        <ActivityIndicator size="large" color="#fff" />
-      </LinearGradient>
-    );
-  }
+  const showError = (message: string) => {
+    setErrorMessage(message);
+    setErrorModalVisible(true);
+  };
 
-  const handleEmailAuth = async () => {
+  const handleSignIn = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Please enter email and password");
+      showError("Please enter email and password");
       return;
     }
 
     setLoading(true);
+    console.log('Signing in with Supabase...');
+    
     try {
-      if (mode === "signin") {
-        console.log('Signing in with email...');
-        await signInWithEmail(email, password);
-        console.log('Sign in successful');
-      } else {
-        console.log('Signing up with email...');
-        await signUpWithEmail(email, password, name);
-        console.log('Sign up successful');
-        Alert.alert(
-          "Success",
-          "Account created successfully!"
-        );
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        console.error('Sign in error:', error);
+        showError(error.message);
+        return;
       }
+
+      console.log('Sign in successful, user:', data.user?.email);
+      
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Navigate to home
+      router.replace("/(tabs)/(home)");
     } catch (error: any) {
-      console.error('Auth error:', error);
-      Alert.alert("Error", error.message || "Authentication failed");
+      console.error('Sign in exception:', error);
+      showError(error.message || "Sign in failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSocialAuth = async (provider: "google" | "apple" | "github") => {
+  const handleSignUp = async () => {
+    if (!email || !password) {
+      showError("Please enter email and password");
+      return;
+    }
+
+    if (password.length < 6) {
+      showError("Password must be at least 6 characters");
+      return;
+    }
+
     setLoading(true);
+    console.log('Signing up with Supabase...');
+    
     try {
-      console.log(`Signing in with ${provider}...`);
-      if (provider === "google") {
-        await signInWithGoogle();
-      } else if (provider === "apple") {
-        await signInWithApple();
-      } else if (provider === "github") {
-        await signInWithGitHub();
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: {
+            display_name: name || email.split('@')[0],
+          },
+        },
+      });
+
+      if (error) {
+        console.error('Sign up error:', error);
+        showError(error.message);
+        return;
       }
-      console.log(`${provider} sign in successful`);
+
+      console.log('Sign up successful, user:', data.user?.email);
+
+      // Create profile in profiles table
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            email: data.user.email,
+            display_name: name || email.split('@')[0],
+          });
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+        }
+      }
+
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Navigate to home
+      router.replace("/(tabs)/(home)");
     } catch (error: any) {
-      console.error(`${provider} auth error:`, error);
-      Alert.alert("Error", error.message || "Authentication failed");
+      console.error('Sign up exception:', error);
+      showError(error.message || "Sign up failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
+    setLoading(true);
+    console.log(`Signing in with ${provider}...`);
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: Platform.OS === 'web' 
+            ? `${window.location.origin}/auth-callback`
+            : 'myapp://auth-callback',
+        },
+      });
+
+      if (error) {
+        console.error(`${provider} sign in error:`, error);
+        showError(error.message);
+      }
+    } catch (error: any) {
+      console.error(`${provider} sign in exception:`, error);
+      showError(error.message || `${provider} sign in failed`);
     } finally {
       setLoading(false);
     }
@@ -147,7 +224,7 @@ export default function AuthScreen() {
 
             <TouchableOpacity
               style={[styles.primaryButton, loading && styles.buttonDisabled]}
-              onPress={handleEmailAuth}
+              onPress={mode === "signin" ? handleSignIn : handleSignUp}
               disabled={loading}
             >
               {loading ? (
@@ -178,7 +255,7 @@ export default function AuthScreen() {
 
             <TouchableOpacity
               style={styles.socialButton}
-              onPress={() => handleSocialAuth("google")}
+              onPress={() => handleOAuthSignIn("google")}
               disabled={loading}
             >
               <Text style={styles.socialButtonText}>Continue with Google</Text>
@@ -187,7 +264,7 @@ export default function AuthScreen() {
             {Platform.OS === "ios" && (
               <TouchableOpacity
                 style={[styles.socialButton, styles.appleButton]}
-                onPress={() => handleSocialAuth("apple")}
+                onPress={() => handleOAuthSignIn("apple")}
                 disabled={loading}
               >
                 <Text style={[styles.socialButtonText, styles.appleButtonText]}>
@@ -198,6 +275,15 @@ export default function AuthScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        isVisible={errorModalVisible}
+        onClose={() => setErrorModalVisible(false)}
+        title="Error"
+        message={errorMessage}
+        onConfirm={() => setErrorModalVisible(false)}
+        confirmText="OK"
+      />
     </LinearGradient>
   );
 }
@@ -208,11 +294,6 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   scrollContent: {
     flexGrow: 1,

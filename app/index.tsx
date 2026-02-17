@@ -1,10 +1,29 @@
 
 import { Redirect } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Index - checkUser - session:', !!session);
+      setUser(session?.user || null);
+    } catch (error) {
+      console.error('Error checking user:', error);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   console.log('Index - user:', !!user, 'loading:', loading);
 

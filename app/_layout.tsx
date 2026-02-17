@@ -13,12 +13,11 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import { WidgetProvider } from "@/contexts/WidgetContext";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { SupabaseAuthProvider } from "@/contexts/SupabaseAuthContext";
 import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme, Alert } from "react-native";
 import { useNetworkState } from "expo-network";
 import { supabase } from "@/lib/supabase";
-import { Session } from "@supabase/supabase-js";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -77,7 +76,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={colorScheme === "dark" ? BlackDarkTheme : DefaultTheme}>
-        <AuthProvider>
+        <SupabaseAuthProvider>
           <WidgetProvider>
             <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
             <Stack>
@@ -89,7 +88,7 @@ export default function RootLayout() {
             </Stack>
             <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
           </WidgetProvider>
-        </AuthProvider>
+        </SupabaseAuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
