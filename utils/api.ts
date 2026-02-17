@@ -316,3 +316,38 @@ export const saveVideoOnly = async (
     }
   );
 };
+
+// ============================================
+// PROFILE STATS API HELPERS
+// ============================================
+
+export interface ProfileStats {
+  user_id: string;
+  post_count: number;
+  follower_count: number;
+  following_count: number;
+  updated_at: string;
+}
+
+export interface RecalculateStatsResponse {
+  success: boolean;
+  post_count: number;
+  follower_count: number;
+  following_count: number;
+}
+
+/**
+ * Get profile stats for a user
+ */
+export const getProfileStats = async (userId: string): Promise<ProfileStats> => {
+  console.log('[API] Fetching profile stats for user:', userId);
+  return apiGet<ProfileStats>(`/api/profile/stats/${userId}`);
+};
+
+/**
+ * Recalculate profile stats for a user (internal endpoint)
+ */
+export const recalculateProfileStats = async (userId: string): Promise<RecalculateStatsResponse> => {
+  console.log('[API] Recalculating profile stats for user:', userId);
+  return apiPost<RecalculateStatsResponse>(`/api/profile/stats/recalculate/${userId}`, {});
+};

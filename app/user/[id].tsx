@@ -8,7 +8,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { VideoGridItem } from '@/components/VideoGridItem';
 import { Modal } from '@/components/ui/Modal';
 import { Toast } from '@/components/ui/Toast';
-import { authenticatedApiCall } from '@/utils/api';
+import { authenticatedApiCall, getProfileStats } from '@/utils/api';
 
 interface Profile {
   id: string;
@@ -87,18 +87,12 @@ export default function UserProfileScreen() {
   const checkBlockStatus = useCallback(async (targetUserId: string, currentUserId: string) => {
     console.log('[API] Checking block status for user:', targetUserId);
     try {
-      const response = await authenticatedApiCall(`/api/blocks/check/${targetUserId}`, {
+      const data = await authenticatedApiCall(`/api/blocks/check/${targetUserId}`, {
         method: 'GET',
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        setIsBlocked(data.isBlocked || false);
-        console.log('[API] Block status:', data.isBlocked);
-      } else {
-        console.error('[API] Error checking block status:', response.status);
-        setIsBlocked(false);
-      }
+      setIsBlocked(data.isBlocked || false);
+      console.log('[API] Block status:', data.isBlocked);
     } catch (error) {
       console.error('[API] Error checking block status:', error);
       setIsBlocked(false);
@@ -146,19 +140,32 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchStats = useCallback(async () => {
-    console.log('Fetching profile stats for user:', profileUserId);
+    console.log('Fetching profile stats for user from backend API:', profileUserId);
     try {
-      const { data, error } = await supabase
-        .from('profile_stats')
-        .select('*')
-        .eq('user_id', profileUserId)
-        .single();
+      // Use backend API to fetch stats
+      try {
+        const statsData = await getProfileStats(profileUserId as string);
+        console.log('Stats fetched successfully from backend:', statsData);
+        setStats({
+          follower_count: statsData.follower_count || 0,
+          following_count: statsData.following_count || 0,
+          post_count: statsData.post_count || 0,
+        });
+      } catch (apiError) {
+        console.error('Error fetching stats from backend API:', apiError);
+        // Fallback to Supabase direct query if backend fails
+        const { data, error } = await supabase
+          .from('profile_stats')
+          .select('*')
+          .eq('user_id', profileUserId)
+          .single();
 
-      if (error) {
-        console.error('Error fetching stats:', error);
-      } else if (data) {
-        console.log('Stats fetched successfully:', data);
-        setStats(data);
+        if (error) {
+          console.error('Error fetching stats from Supabase:', error);
+        } else if (data) {
+          console.log('Stats fetched successfully from Supabase fallback:', data);
+          setStats(data);
+        }
       }
     } catch (error) {
       console.error('Error in fetchStats:', error);
@@ -298,15 +305,10 @@ export default function UserProfileScreen() {
       if (isBlocked) {
         // Unblock
         console.log('[API] Unblocking user:', profileUserId);
-        const response = await authenticatedApiCall(`/api/blocks/${profileUserId}`, {
+        const data = await authenticatedApiCall(`/api/blocks/${profileUserId}`, {
           method: 'DELETE',
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to unblock user');
-        }
-
-        const data = await response.json();
         console.log('[API] Unblock response:', data);
 
         setIsBlocked(false);
@@ -315,7 +317,7 @@ export default function UserProfileScreen() {
       } else {
         // Block
         console.log('[API] Blocking user:', profileUserId);
-        const response = await authenticatedApiCall('/api/blocks', {
+        const data = await authenticatedApiCall('/api/blocks', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -325,11 +327,6 @@ export default function UserProfileScreen() {
           }),
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to block user');
-        }
-
-        const data = await response.json();
         console.log('[API] Block response:', data);
 
         // Unfollow each other (using Supabase since this is a local operation)

@@ -47,6 +47,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [alreadySavedBoards, setAlreadySavedBoards] = useState<Set<string>>(new Set());
+  const [sessionReady, setSessionReady] = useState(false);
   const [modalState, setModalState] = useState<{
     visible: boolean;
     title: string;
@@ -67,14 +68,22 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const fetchBoards = useCallback(async () => {
     console.log('Fetching user boards for save modal');
     setLoading(true);
+    setSessionReady(false);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.log('No authenticated user');
+      // Load session on modal open
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
+        console.log('No authenticated user or session');
         setBoards([]);
         setLoading(false);
+        setSessionReady(false);
         return;
       }
+
+      // Session is ready
+      setSessionReady(true);
+      console.log('Session loaded successfully for user:', session.user.id);
 
       // Fetch boards with counts
       const { data, error } = await supabase
@@ -84,7 +93,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
           title,
           board_posts (id)
         `)
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .order('updated_at', { ascending: false });
 
       if (error) {
@@ -105,7 +114,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         .from('board_posts')
         .select('board_id, boards!inner(user_id)')
         .eq('post_id', postId)
-        .eq('boards.user_id', user.id);
+        .eq('boards.user_id', session.user.id);
 
       if (!savedError && savedData) {
         const savedBoardIds = new Set(savedData.map(item => item.board_id));
@@ -115,6 +124,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     } catch (error) {
       console.error('Error in fetchBoards:', error);
       setBoards([]);
+      setSessionReady(false);
     } finally {
       setLoading(false);
     }
@@ -207,6 +217,34 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     console.log('Saving post to board:', selectedBoardId);
     setSaving(true);
     try {
+      // CRITICAL: Fetch session at tap-time and guard if missing
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        console.warn('No session token in handleSave', { error: sessionError });
+        
+        // Attempt to refresh session
+        console.log('Attempting to refresh session...');
+        await supabase.auth.refreshSession();
+        
+        // Check again after refresh
+        const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+        
+        if (!refreshedSession?.access_token) {
+          console.error('Session refresh failed - no token available');
+          setModalState({
+            visible: true,
+            title: 'Authentication Error',
+            message: 'Authentication token not found. Please sign in again.',
+            type: 'error',
+          });
+          setSaving(false);
+          return;
+        }
+        
+        console.log('Session refreshed successfully');
+      }
+
       // Check if already saved to this board
       if (alreadySavedBoards.has(selectedBoardId)) {
         setModalState({
@@ -524,14 +562,16 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                   style={[
                     styles.saveButton,
                     { backgroundColor: primaryColor },
-                    (!selectedBoardId || saving || alreadySavedBoards.has(selectedBoardId || '')) && { opacity: 0.5 },
+                    (!selectedBoardId || saving || !sessionReady || alreadySavedBoards.has(selectedBoardId || '')) && { opacity: 0.5 },
                   ]}
                   onPress={handleSave}
-                  disabled={!selectedBoardId || saving || alreadySavedBoards.has(selectedBoardId || '')}
+                  disabled={!selectedBoardId || saving || !sessionReady || alreadySavedBoards.has(selectedBoardId || '')}
                   activeOpacity={0.8}
                 >
                   {saving ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : !sessionReady ? (
+                    <Text style={styles.saveButtonText}>Loading session...</Text>
                   ) : (
                     <Text style={styles.saveButtonText}>
                       {selectedBoardId && alreadySavedBoards.has(selectedBoardId) ? 'Already Saved' : 'Save'}

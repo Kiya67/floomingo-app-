@@ -1,9 +1,12 @@
 
-# Backend Integration Summary - Block/Report Feature
+# Backend Integration Summary
 
 ## ✅ Integration Complete
 
-The block/report feature has been successfully integrated into the frontend application.
+The following backend features have been successfully integrated into the frontend application:
+1. **SaveToTripsModal Authentication Fix** (CRITICAL)
+2. **Profile Stats Integration**
+3. **Block/Report Feature**
 
 ## 🔐 Authentication Setup
 
@@ -16,9 +19,96 @@ The block/report feature has been successfully integrated into the frontend appl
   - `app/auth-popup.tsx` - OAuth popup handler
   - `app/auth-callback.tsx` - OAuth callback handler
 
+## 🔥 Critical Fixes
+
+### 1. SaveToTripsModal Authentication Fix
+
+**Problem:**
+- SaveToTripsModal was throwing "Authentication token not found" error even when signed in
+- Modal was not properly checking session state before API calls
+- Save button was enabled before session was loaded
+
+**Solution Implemented:**
+- ✅ Ensured SaveToTripsModal uses the SAME shared Supabase client instance
+- ✅ Added session loading state (`sessionReady`)
+- ✅ Fetch session at tap-time in `handleSave` with guard
+- ✅ Attempt to refresh session if token is missing
+- ✅ Disable/grey out Save button until session is loaded
+- ✅ Show "Loading session..." text while session loads
+
+**Files Modified:**
+- `components/SaveToTripsModal.tsx`
+
+**Key Code Changes:**
+```typescript
+// 1. Added sessionReady state
+const [sessionReady, setSessionReady] = useState(false);
+
+// 2. Load session on modal open
+const { data: { session } } = await supabase.auth.getSession();
+if (!session?.user) {
+  setSessionReady(false);
+  return;
+}
+setSessionReady(true);
+
+// 3. Guard in handleSave with refresh logic
+const { data: { session } } = await supabase.auth.getSession();
+if (!session?.access_token) {
+  await supabase.auth.refreshSession();
+  const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+  if (!refreshedSession?.access_token) {
+    throw new Error("Authentication token not found. Please sign in.");
+  }
+}
+
+// 4. Disable Save button until session ready
+disabled={!selectedBoardId || saving || !sessionReady}
+```
+
+### 2. Profile Stats Integration
+
+**Problem:**
+- Profile stats were only fetched from Supabase directly
+- No integration with backend API for profile stats
+- Post count not automatically updated when posts are deleted
+
+**Solution Implemented:**
+- ✅ Integrated backend API endpoint `/api/profile/stats/{user_id}`
+- ✅ Added fallback to Supabase if backend fails
+- ✅ Profile stats now update automatically via database triggers
+- ✅ Post count decrements when user deletes a video
+
+**Files Modified:**
+- `utils/api.ts` - Added profile stats API helpers
+- `app/(tabs)/profile.tsx` - Integrated backend API for stats
+- `app/user/[id].tsx` - Integrated backend API for stats
+
+**New API Helpers:**
+```typescript
+export interface ProfileStats {
+  user_id: string;
+  post_count: number;
+  follower_count: number;
+  following_count: number;
+  updated_at: string;
+}
+
+export const getProfileStats = async (userId: string): Promise<ProfileStats> => {
+  return apiGet<ProfileStats>(`/api/profile/stats/${userId}`);
+};
+```
+
+**Database Triggers (Backend):**
+The backend has database triggers that automatically:
+- Increment `post_count` when a post is created
+- Decrement `post_count` when a post is deleted
+- Update `follower_count` when follows are created/deleted
+- Update `following_count` when follows are created/deleted
+
 ## 🎯 Features Implemented
 
-### 1. Block/Unblock Functionality
+### 3. Block/Unblock Functionality
 - **Location**: Video full-screen view (`app/video/[id].tsx`) and User profile (`app/user/[id].tsx`)
 - **API Endpoints Integrated**:
   - `POST /api/blocks` - Block a user
@@ -26,15 +116,29 @@ The block/report feature has been successfully integrated into the frontend appl
   - `GET /api/blocks/check/:user_id` - Check block status
   - `GET /api/blocks` - Get blocked users list
 
-### 2. Feed Filtering
+### 4. Boards/Trips System
+- **Location**: SaveToTripsModal (`components/SaveToTripsModal.tsx`), Trips tab, Board detail
+- **API Endpoints Integrated**:
+  - `GET /api/boards` - Get boards for authenticated user
+  - `GET /api/boards/:board_id/places` - Get places for a board
+  - `POST /api/boards/:board_id/save-video-with-location` - Save video with location
+  - `POST /api/boards/:board_id/save-video` - Save video only
+
+### 5. Profile Stats System
+- **Location**: Profile tab (`app/(tabs)/profile.tsx`), User profile (`app/user/[id].tsx`)
+- **API Endpoints Integrated**:
+  - `GET /api/profile/stats/:user_id` - Get profile stats for a user
+  - `POST /api/profile/stats/recalculate/:user_id` - Recalculate stats (internal)
+
+### 6. Feed Filtering
 - **Home Feed** (`app/(tabs)/(home)/index.tsx`): Automatically filters out posts from blocked users
 - **Video Feed** (`app/video/[id].tsx`): Excludes blocked users from related videos
 
-### 3. UI Components Created
+### 7. UI Components Created
 - **Custom Modal** (`components/ui/Modal.tsx`): Web-compatible confirmation dialogs
 - **Toast Notifications** (`components/ui/Toast.tsx`): Non-blocking success/error messages
 
-### 4. User Experience Improvements
+### 8. User Experience Improvements
 - ✅ Three-dot menu (⋮) on user profiles with Block/Report options
 - ✅ Three-dot menu (⋯) on video full-screen view
 - ✅ Automatic unfollow when blocking a user
@@ -67,14 +171,33 @@ const response = await authenticatedApiCall('/api/blocks', {
 
 ## 📝 Files Modified
 
-1. `app/_layout.tsx` - Added AuthProvider wrapper
-2. `app/video/[id].tsx` - Integrated block/report API, added UI elements
-3. `app/user/[id].tsx` - Added block/report functionality to profiles
-4. `app/(tabs)/(home)/index.tsx` - Added feed filtering for blocked users
-5. `components/ui/Modal.tsx` - Created (new file)
-6. `components/ui/Toast.tsx` - Created (new file)
+### Critical Fixes
+1. `components/SaveToTripsModal.tsx` - Fixed authentication, added session guards
+2. `utils/api.ts` - Added profile stats API helpers
+3. `app/(tabs)/profile.tsx` - Integrated backend API for stats
+4. `app/user/[id].tsx` - Integrated backend API for stats and block functionality
+5. `lib/supabase.ts` - Verified session persistence configuration
+
+### Block/Report Feature
+6. `app/_layout.tsx` - Added AuthProvider wrapper
+7. `app/video/[id].tsx` - Integrated block/report API, added UI elements
+8. `app/(tabs)/(home)/index.tsx` - Added feed filtering for blocked users
+9. `components/ui/Modal.tsx` - Created (new file)
+10. `components/ui/Toast.tsx` - Created (new file)
 
 ## 🧪 Testing Checklist
+
+### SaveToTripsModal Authentication
+- [ ] Save video to trip without "Authentication token not found" error
+- [ ] Save button disabled until session loads
+- [ ] Session refresh works when token expires
+- [ ] "Loading session..." text shows while loading
+
+### Profile Stats
+- [ ] Profile stats load from backend API
+- [ ] Post count decrements when post is deleted
+- [ ] Stats refresh after post deletion
+- [ ] Fallback to Supabase works if backend fails
 
 ### Block Functionality
 - [ ] Block a user from video full-screen view

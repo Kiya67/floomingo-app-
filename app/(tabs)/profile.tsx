@@ -7,6 +7,7 @@ import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
+import { getProfileStats } from "@/utils/api";
 
 interface Profile {
   id: string;
@@ -130,7 +131,7 @@ export default function ProfileScreen() {
   };
 
   const fetchStats = async () => {
-    console.log('Fetching profile stats');
+    console.log('Fetching profile stats from backend API');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -139,17 +140,30 @@ export default function ProfileScreen() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('profile_stats')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      // Use backend API to fetch stats
+      try {
+        const statsData = await getProfileStats(user.id);
+        console.log('Profile stats fetched successfully from backend:', statsData);
+        setStats({
+          follower_count: statsData.follower_count || 0,
+          following_count: statsData.following_count || 0,
+          post_count: statsData.post_count || 0,
+        });
+      } catch (apiError) {
+        console.error('Error fetching stats from backend API:', apiError);
+        // Fallback to Supabase direct query if backend fails
+        const { data, error } = await supabase
+          .from('profile_stats')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
 
-      if (error) {
-        console.error('Error fetching stats:', error);
-      } else {
-        console.log('Profile stats fetched successfully:', data);
-        setStats(data || { follower_count: 0, following_count: 0, post_count: 0 });
+        if (error) {
+          console.error('Error fetching stats from Supabase:', error);
+        } else {
+          console.log('Profile stats fetched successfully from Supabase fallback:', data);
+          setStats(data || { follower_count: 0, following_count: 0, post_count: 0 });
+        }
       }
     } catch (error) {
       console.error('Error in fetchStats:', error);
