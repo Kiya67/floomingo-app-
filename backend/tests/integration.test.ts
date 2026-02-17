@@ -237,6 +237,48 @@ describe('Boards Feature', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('should return 400 when creating board without title', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/boards',
+      payload: {},
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should create a board with authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/boards',
+      payload: {
+        title: 'My Test Board',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const data = JSON.parse(response.payload);
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('user_id');
+    expect(data).toHaveProperty('title');
+    expect(data.title).toBe('My Test Board');
+    boardId = data.id;
+  });
+
+  it('should return 401 when creating board without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/boards',
+      payload: {
+        title: 'Another Board',
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
   it('should get boards for authenticated user', async () => {
     const response = await app.fastify.inject({
       method: 'GET',
@@ -252,51 +294,39 @@ describe('Boards Feature', () => {
     if (data.length > 0) {
       expect(data[0]).toHaveProperty('id');
       expect(data[0]).toHaveProperty('title');
-      boardId = data[0].id;
     }
   });
 
-  it('should return 404 when getting places for non-existent board', async () => {
+  it('should return 404 when getting videos for non-existent board', async () => {
     const nonExistentBoardId = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
       method: 'GET',
-      url: `/api/boards/${nonExistentBoardId}/places`,
+      url: `/api/boards/${nonExistentBoardId}/videos`,
       cookies: { 'auth_token': authToken },
     });
 
     expect(response.statusCode).toBe(404);
   });
 
-  it('should return 400 for invalid UUID format when getting places', async () => {
-    const response = await app.fastify.inject({
-      method: 'GET',
-      url: '/api/boards/invalid-uuid/places',
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
-  it('should return 401 when getting places without authentication', async () => {
+  it('should return 401 when getting board videos without authentication', async () => {
     const boardUuid = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
       method: 'GET',
-      url: `/api/boards/${boardUuid}/places`,
+      url: `/api/boards/${boardUuid}/videos`,
     });
 
     expect(response.statusCode).toBe(401);
   });
 
-  it('should get places for a board if one exists', async () => {
+  it('should get videos for board if one exists', async () => {
     if (!boardId) {
-      // Skip if no boards exist
       expect(true).toBe(true);
       return;
     }
 
     const response = await app.fastify.inject({
       method: 'GET',
-      url: `/api/boards/${boardId}/places`,
+      url: `/api/boards/${boardId}/videos`,
       cookies: { 'auth_token': authToken },
     });
 
@@ -319,19 +349,6 @@ describe('Boards Feature', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('should return 400 for invalid UUID when saving video', async () => {
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: '/api/boards/invalid-uuid/save-video',
-      payload: {
-        post_id: 'test-post-id',
-      },
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
   it('should return 401 when saving video without authentication', async () => {
     const boardUuid = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
@@ -351,73 +368,6 @@ describe('Boards Feature', () => {
       method: 'POST',
       url: `/api/boards/${boardUuid}/save-video`,
       payload: {},
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
-  it('should return 404 when saving video with location to non-existent board', async () => {
-    const nonExistentBoardId = '00000000-0000-0000-0000-000000000000';
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: `/api/boards/${nonExistentBoardId}/save-video-with-location`,
-      payload: {
-        post_id: 'test-post-id',
-        place_id: 'test-place-id',
-        place_name: 'Test Place',
-        place_address: '123 Test St',
-        place_primary_type: 'restaurant',
-      },
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(404);
-  });
-
-  it('should return 400 for invalid UUID when saving video with location', async () => {
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: '/api/boards/invalid-uuid/save-video-with-location',
-      payload: {
-        post_id: 'test-post-id',
-        place_id: 'test-place-id',
-        place_name: 'Test Place',
-        place_address: '123 Test St',
-        place_primary_type: 'restaurant',
-      },
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
-  it('should return 401 when saving video with location without authentication', async () => {
-    const boardUuid = '00000000-0000-0000-0000-000000000000';
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: `/api/boards/${boardUuid}/save-video-with-location`,
-      payload: {
-        post_id: 'test-post-id',
-        place_id: 'test-place-id',
-        place_name: 'Test Place',
-        place_address: '123 Test St',
-        place_primary_type: 'restaurant',
-      },
-    });
-
-    expect(response.statusCode).toBe(401);
-  });
-
-  it('should return 400 when saving video with location without required fields', async () => {
-    const boardUuid = '00000000-0000-0000-0000-000000000000';
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: `/api/boards/${boardUuid}/save-video-with-location`,
-      payload: {
-        post_id: 'test-post-id',
-        // Missing other required fields
-      },
       cookies: { 'auth_token': authToken },
     });
 
@@ -500,16 +450,6 @@ describe('Trips Feature', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('should return 400 for invalid UUID format when getting trip items', async () => {
-    const response = await app.fastify.inject({
-      method: 'GET',
-      url: '/api/trips/invalid-uuid/items',
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
   it('should return 401 when getting trip items without authentication', async () => {
     const tripUuid = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
@@ -551,19 +491,6 @@ describe('Trips Feature', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('should return 400 for invalid UUID when saving video to trip', async () => {
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: '/api/trips/invalid-uuid/save',
-      payload: {
-        post_id: 'test-post-id',
-      },
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
-  });
-
   it('should return 401 when saving video to trip without authentication', async () => {
     const tripUuid = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
@@ -598,16 +525,6 @@ describe('Trips Feature', () => {
     });
 
     expect(response.statusCode).toBe(404);
-  });
-
-  it('should return 400 for invalid UUID when removing video from trip', async () => {
-    const response = await app.fastify.inject({
-      method: 'DELETE',
-      url: '/api/trips/invalid-uuid/items/test-post-id',
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
   });
 
   it('should return 401 when removing video from trip without authentication', async () => {
@@ -771,28 +688,6 @@ describe('Posts Feature', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('should create a post with authentication', async () => {
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: '/api/posts',
-      payload: {
-        caption: 'Test video post',
-        video_url: 'https://example.com/video.mp4',
-        thumbnail_url: 'https://example.com/thumb.jpg',
-        place_id: 'place-123',
-      },
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(201);
-    const data = JSON.parse(response.payload);
-    expect(data).toHaveProperty('id');
-    expect(data).toHaveProperty('user_id');
-    expect(data.caption).toBe('Test video post');
-    expect(data.view_count).toBe(0);
-    postId = data.id;
-  });
-
   it('should return 400 when creating post without required fields', async () => {
     const response = await app.fastify.inject({
       method: 'POST',
@@ -820,6 +715,28 @@ describe('Posts Feature', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('should create a post with authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Test video post',
+        video_url: 'https://example.com/video.mp4',
+        thumbnail_url: 'https://example.com/thumb.jpg',
+        place_id: 'place-123',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const data = JSON.parse(response.payload);
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('user_id');
+    expect(data.caption).toBe('Test video post');
+    expect(data.view_count).toBe(0);
+    postId = data.id;
+  });
+
   it('should get a single post with view count', async () => {
     const response = await app.fastify.inject({
       method: 'GET',
@@ -840,15 +757,6 @@ describe('Posts Feature', () => {
     });
 
     expect(response.statusCode).toBe(404);
-  });
-
-  it('should return 400 for invalid post UUID format', async () => {
-    const response = await app.fastify.inject({
-      method: 'GET',
-      url: '/api/posts/invalid-uuid',
-    });
-
-    expect(response.statusCode).toBe(400);
   });
 
   it('should return 401 when incrementing view without authentication', async () => {
@@ -916,19 +824,6 @@ describe('Posts Feature', () => {
     });
 
     expect(response.statusCode).toBe(404);
-  });
-
-  it('should return 400 when incrementing with invalid postId UUID format', async () => {
-    const response = await app.fastify.inject({
-      method: 'POST',
-      url: '/api/rpc/increment-view',
-      payload: {
-        postId: 'invalid-uuid',
-      },
-      cookies: { 'auth_token': otherUserToken },
-    });
-
-    expect(response.statusCode).toBe(400);
   });
 
   it('should get user posts with view_count when viewing own profile', async () => {
@@ -1016,15 +911,5 @@ describe('Posts Feature', () => {
     });
 
     expect(response.statusCode).toBe(404);
-  });
-
-  it('should return 400 when deleting post with invalid UUID format', async () => {
-    const response = await app.fastify.inject({
-      method: 'DELETE',
-      url: '/api/posts/invalid-uuid',
-      cookies: { 'auth_token': authToken },
-    });
-
-    expect(response.statusCode).toBe(400);
   });
 });

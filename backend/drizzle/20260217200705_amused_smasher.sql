@@ -1,0 +1,1 @@
+ALTER TABLE "board_posts" ALTER COLUMN "post_id" SET DATA TYPE text;
