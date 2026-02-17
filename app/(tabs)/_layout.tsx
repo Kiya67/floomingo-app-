@@ -4,14 +4,14 @@ import { Tabs } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { useColorScheme } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const tabBarActiveTintColor = isDark ? colors.primaryDark : colors.primary;
-  const tabBarInactiveTintColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
-  const tabBarBackgroundColor = isDark ? colors.cardDark : colors.card;
+  const tabBarActiveTintColor = '#fff';
+  const tabBarInactiveTintColor = 'rgba(255, 255, 255, 0.6)';
 
   return (
     <Tabs
@@ -20,9 +20,8 @@ export default function TabLayout() {
         tabBarActiveTintColor,
         tabBarInactiveTintColor,
         tabBarStyle: {
-          backgroundColor: tabBarBackgroundColor,
-          borderTopWidth: 1,
-          borderTopColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
           height: 70,
           paddingBottom: 12,
           paddingTop: 12,
@@ -37,6 +36,15 @@ export default function TabLayout() {
           shadowRadius: 8,
           elevation: 8,
         },
+        tabBarBackground: () => (
+          <LinearGradient
+            colors={['#FF6B9D', '#FFA06B']}
+            style={{
+              flex: 1,
+              borderRadius: 20,
+            }}
+          />
+        ),
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
