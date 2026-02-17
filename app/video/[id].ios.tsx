@@ -50,8 +50,8 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: string; postId: string; isMuted: boolean; onToggleMute: () => void }) {
-  const [isPlaying, setIsPlaying] = useState(true);
+function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { videoUrl: string; postId: string; isMuted: boolean; onToggleMute: () => void; isActive: boolean }) {
+  const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(videoUrl, (player) => {
@@ -81,25 +81,38 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
     };
   }, [player]);
 
+  // Auto-play when video becomes active
   useEffect(() => {
     if (!player) return;
     
-    const playTimeout = setTimeout(() => {
-      if (isMountedRef.current && player.status === 'readyToPlay') {
-        try {
-          player.play();
-          setIsPlaying(true);
-          console.log('Video playing for post:', postId);
-        } catch (error) {
-          console.error('Error playing video:', error);
+    if (isActive) {
+      console.log('Video is now active, attempting to play:', postId);
+      const playTimeout = setTimeout(() => {
+        if (isMountedRef.current) {
+          try {
+            player.play();
+            setIsPlaying(true);
+            console.log('Video playing for post:', postId);
+          } catch (error) {
+            console.error('Error playing video:', error);
+          }
         }
-      }
-    }, 300);
+      }, 300);
 
-    return () => {
-      clearTimeout(playTimeout);
-    };
-  }, [player, postId]);
+      return () => {
+        clearTimeout(playTimeout);
+      };
+    } else {
+      // Pause when not active
+      console.log('Video is no longer active, pausing:', postId);
+      try {
+        player.pause();
+        setIsPlaying(false);
+      } catch (error) {
+        console.error('Error pausing video:', error);
+      }
+    }
+  }, [player, postId, isActive]);
 
   const handleTap = () => {
     console.log('User tapped video center - toggling play/pause');
@@ -665,7 +678,7 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleSave = (post: Post) => {
-    console.log('User tapped save button - setting post first, then opening modal');
+    console.log('User tapped save button for post:', post.id, '- setting post first, then opening modal');
     // MUST set selectedPost FIRST, then open modal
     setSelectedPost(post);
     setShowSaveModal(true);
@@ -848,7 +861,7 @@ export default function VideoFullScreenScreen() {
     />
   );
 
-  const renderVideoItem = ({ item: post }: { item: Post }) => {
+  const renderVideoItem = ({ item: post, index }: { item: Post; index: number }) => {
     if (!post?.video_url) {
       console.log('Post missing video_url, skipping render for post:', post?.id);
       return null;
@@ -872,6 +885,7 @@ export default function VideoFullScreenScreen() {
     const shareCountText = String(interaction.stats.share_count);
     
     const shareDisabled = !post.video_url || isSharing;
+    const isActive = index === currentIndex;
 
     return (
       <View style={styles.videoSlide}>
@@ -880,6 +894,7 @@ export default function VideoFullScreenScreen() {
           postId={post.id} 
           isMuted={isMuted}
           onToggleMute={handleToggleMute}
+          isActive={isActive}
         />
         
         <View style={styles.overlay}>

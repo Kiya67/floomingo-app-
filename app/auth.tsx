@@ -18,7 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 
 type Mode = "signin" | "signup";
 
-const APP_VERSION = "1.0.2"; // Updated to confirm refresh
+const APP_VERSION = "1.0.2";
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -152,32 +152,6 @@ export default function AuthScreen() {
     }
   };
 
-  const handleOAuthSignIn = async (provider: 'google' | 'apple') => {
-    setLoading(true);
-    console.log(`Signing in with ${provider}...`);
-    
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: Platform.OS === 'web' 
-            ? `${window.location.origin}/auth-callback`
-            : 'myapp://auth-callback',
-        },
-      });
-
-      if (error) {
-        console.error(`${provider} sign in error:`, error);
-        showError(error.message);
-      }
-    } catch (error: any) {
-      console.error(`${provider} sign in exception:`, error);
-      showError(error.message || `${provider} sign in failed`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <LinearGradient
       colors={['#FF6B9D', '#FFA06B']}
@@ -251,32 +225,6 @@ export default function AuthScreen() {
                   : "Already have an account? Sign In"}
               </Text>
             </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.socialButton}
-              onPress={() => handleOAuthSignIn("google")}
-              disabled={loading}
-            >
-              <Text style={styles.socialButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            {Platform.OS === "ios" && (
-              <TouchableOpacity
-                style={[styles.socialButton, styles.appleButton]}
-                onPress={() => handleOAuthSignIn("apple")}
-                disabled={loading}
-              >
-                <Text style={[styles.socialButtonText, styles.appleButtonText]}>
-                  Continue with Apple
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -355,42 +303,5 @@ const styles = StyleSheet.create({
   switchModeText: {
     color: "#fff",
     fontSize: 14,
-  },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-  },
-  dividerText: {
-    marginHorizontal: 12,
-    color: "#fff",
-    fontSize: 14,
-  },
-  socialButton: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-  },
-  socialButtonText: {
-    fontSize: 16,
-    color: "#fff",
-    fontWeight: "500",
-  },
-  appleButton: {
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    borderColor: "rgba(255, 255, 255, 0.3)",
-  },
-  appleButtonText: {
-    color: "#fff",
   },
 });
