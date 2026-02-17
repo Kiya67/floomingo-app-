@@ -112,25 +112,25 @@ export default function AddScreen() {
 
       console.log('Authenticated user ID:', user.id);
 
-      // Step 2: Create IDs + paths (STORE PATHS, NOT PUBLIC URLS)
+      // Step 2: Create IDs + paths for video_public bucket
       const postId = uuidv4();
-      const videoPath = `${user.id}/${postId}.mp4`;
+      const timestamp = Date.now();
+      const videoPath = `videos/${user.id}/${timestamp}.mp4`;
       const thumbPath = `${user.id}/${postId}.jpg`;
       
       console.log('Generated postId:', postId);
-      console.log('Video path (to be stored in DB):', videoPath);
-      console.log('Thumbnail path (to be stored in DB):', thumbPath);
+      console.log('Video path for video_public bucket:', videoPath);
+      console.log('Thumbnail path:', thumbPath);
 
       // Step 3: Upload VIDEO to Supabase Storage (video_public bucket)
-      console.log('Step 3: Uploading video to Supabase Storage (video_public bucket)');
+      console.log('Step 3: Uploading video to video_public bucket');
       
-      // Use FormData for file uploads (works on all platforms)
       const videoFormData = new FormData();
       
       const videoFile = {
         uri: videoUri,
         type: 'video/mp4',
-        name: `${postId}.mp4`,
+        name: `${timestamp}.mp4`,
       } as any;
       
       videoFormData.append('file', videoFile);
@@ -152,8 +152,20 @@ export default function AddScreen() {
 
       console.log('Video uploaded successfully to video_public:', videoUploadData);
 
-      // Step 4: Generate THUMBNAIL (client side)
-      console.log('Step 4: Generating thumbnail from video');
+      // Step 4: Get PUBLIC URL for video (no signed URL needed)
+      const { data: videoPublicUrlData } = supabase.storage
+        .from('video_public')
+        .getPublicUrl(videoPath);
+      
+      if (!videoPublicUrlData?.publicUrl) {
+        throw new Error('Failed to get public URL for video');
+      }
+      
+      const videoPublicUrl = videoPublicUrlData.publicUrl;
+      console.log('Video public URL:', videoPublicUrl);
+
+      // Step 5: Generate THUMBNAIL (client side)
+      console.log('Step 5: Generating thumbnail from video');
       
       const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
         time: 0, // First frame
@@ -161,8 +173,8 @@ export default function AddScreen() {
       
       console.log('Thumbnail generated:', thumbnailUri);
 
-      // Step 5: Upload THUMBNAIL to Supabase Storage
-      console.log('Step 5: Uploading thumbnail to Supabase Storage');
+      // Step 6: Upload THUMBNAIL to Supabase Storage
+      console.log('Step 6: Uploading thumbnail to Supabase Storage');
       
       const thumbnailFormData = new FormData();
       
@@ -191,25 +203,24 @@ export default function AddScreen() {
 
       console.log('Thumbnail uploaded successfully:', thumbnailUploadData);
 
-      // Get public URL for thumbnail (thumbnails bucket is public)
+      // Get public URL for thumbnail
       const { data: thumbnailPublicUrlData } = supabase.storage
         .from('thumbnails')
         .getPublicUrl(thumbPath);
       
-      const thumbnail_public_url = thumbnailPublicUrlData.publicUrl;
-      console.log('Thumbnail public URL:', thumbnail_public_url);
+      const thumbnailPublicUrl = thumbnailPublicUrlData.publicUrl;
+      console.log('Thumbnail public URL:', thumbnailPublicUrl);
 
-      // Step 6: Insert DB row into posts
-      // CRITICAL: Store videoPath (not public URL) for video_public bucket
-      console.log('Step 6: Inserting post into database');
+      // Step 7: Insert DB row into posts with PUBLIC URL
+      console.log('Step 7: Inserting post into database with public URL');
       
       const { error: insertError } = await supabase
         .from('posts')
         .insert({
           id: postId,
           user_id: user.id,
-          video_url: videoPath, // Store path for video_public bucket
-          thumbnail_url: thumbnail_public_url, // Store public URL for public bucket
+          video_url: videoPublicUrl, // Store full public HTTPS URL
+          thumbnail_url: thumbnailPublicUrl,
           caption: caption.trim() || null,
           place_id: selectedPlace?.place_id || null,
           place_name: selectedPlace?.main_text || null,
@@ -221,9 +232,9 @@ export default function AddScreen() {
         throw insertError;
       }
 
-      console.log('Post created successfully in database with video path:', videoPath);
+      console.log('Post created successfully in database with public URL:', videoPublicUrl);
 
-      // Step 7: Success UX
+      // Step 8: Success UX
       Alert.alert('Posted!', 'Your video has been posted successfully');
       
       // Clear fields
@@ -236,7 +247,7 @@ export default function AddScreen() {
       router.replace('/(tabs)/(home)');
       
     } catch (error: any) {
-      // Step 8: Error handling
+      // Step 9: Error handling
       console.error('Error posting video:', error);
       Alert.alert('Error', error.message || 'Failed to post video. Please try again.');
     } finally {

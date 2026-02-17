@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, TextInput, ScrollView, Alert } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { IconSymbol } from '@/components/IconSymbol';
@@ -45,17 +45,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (isVisible) {
-      console.log('Opening Save to Trips modal for post:', postId);
-      bottomSheetRef.current?.expand();
-      fetchBoards();
-    } else {
-      bottomSheetRef.current?.close();
-    }
-  }, [isVisible]);
-
-  const fetchBoards = async () => {
+  const fetchBoards = useCallback(async () => {
     console.log('Fetching user boards for save modal');
     setLoading(true);
     try {
@@ -95,7 +85,17 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isVisible) {
+      console.log('Opening Save to Trips modal for post:', postId);
+      bottomSheetRef.current?.expand();
+      fetchBoards();
+    } else {
+      bottomSheetRef.current?.close();
+    }
+  }, [isVisible, postId, fetchBoards]);
 
   const handleCreateNewBoard = async () => {
     const trimmedTitle = newBoardTitle.trim();

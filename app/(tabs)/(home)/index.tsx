@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl, TouchableOpacity } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
@@ -52,21 +52,7 @@ export default function HomeScreen() {
   // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
 
-  // Listen for filter params from location search
-  useEffect(() => {
-    if (params.filterPlaceId) {
-      console.log('Received filter location from search:', params.filterPlaceName);
-      setFilterPlaceId(params.filterPlaceId as string);
-      setFilterPlaceName(params.filterPlaceName as string);
-      setFilterModalVisible(true);
-    }
-  }, [params.filterPlaceId, params.filterPlaceName]);
-
-  useEffect(() => {
-    fetchPosts();
-  }, [filterPlaceId, filterKeywords]);
-
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
     try {
       let query = supabase
@@ -122,7 +108,21 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterPlaceId, filterKeywords]);
+
+  // Listen for filter params from location search
+  useEffect(() => {
+    if (params.filterPlaceId) {
+      console.log('Received filter location from search:', params.filterPlaceName);
+      setFilterPlaceId(params.filterPlaceId as string);
+      setFilterPlaceName(params.filterPlaceName as string);
+      setFilterModalVisible(true);
+    }
+  }, [params.filterPlaceId, params.filterPlaceName]);
+
+  useEffect(() => {
+    fetchPosts();
+  }, [fetchPosts]);
 
   const onRefresh = async () => {
     console.log('User pulled to refresh posts');

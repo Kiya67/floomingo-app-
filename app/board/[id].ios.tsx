@@ -50,11 +50,7 @@ export default function BoardDetailScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
 
-  useEffect(() => {
-    fetchBoardDetails();
-  }, [boardId]);
-
-  const fetchBoardDetails = async () => {
+  const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
     try {
       const { data: boardData, error: boardError } = await supabase
@@ -107,14 +103,18 @@ export default function BoardDetailScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [boardId]);
+
+  useEffect(() => {
+    fetchBoardDetails();
+  }, [fetchBoardDetails]);
 
   const onRefresh = useCallback(async () => {
     console.log('User pulled to refresh board');
     setRefreshing(true);
     await fetchBoardDetails();
     setRefreshing(false);
-  }, [boardId]);
+  }, [fetchBoardDetails]);
 
   const handleBack = () => {
     console.log('User tapped back button');

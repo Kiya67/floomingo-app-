@@ -44,48 +44,99 @@ interface Comment {
 
 const { width, height } = Dimensions.get('window');
 
-// In-memory cache for signed URLs
-const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
-
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: '' };
   if (typeof source === 'string') return { uri: source };
   return source as ImageSourcePropType;
 }
 
-// Generate signed URL for private video
-async function generateSignedUrl(videoPath: string, postId: string): Promise<string | null> {
-  if (!videoPath) return null;
-
-  // Check cache first
-  const cached = signedUrlCache.get(postId);
-  if (cached && cached.expiresAt > Date.now() + 60 * 1000) {
-    console.log('Using cached signed URL for post:', postId);
-    return cached.url;
+// Video Player Component - uses public URLs directly
+function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
+  // Guard: Don't render if video_url is missing
+  if (!videoUrl) {
+    console.log('VideoPlayer: No video URL provided for post:', postId);
+    return null;
   }
 
-  try {
-    console.log('Generating signed URL for video path from video_public bucket:', videoPath);
-    const { data, error } = await supabase.storage
-      .from('video_public')
-      .createSignedUrl(videoPath, 3600); // 1 hour expiration
+  const [isMuted, setIsMuted] = useState(true);
+  const isMountedRef = useRef(true);
 
-    if (error) throw error;
+  const player = useVideoPlayer(videoUrl, (player) => {
+    player.loop = true;
+    player.muted = isMuted;
+  });
 
-    if (data?.signedUrl) {
-      console.log('Signed URL generated successfully from video_public bucket');
-      signedUrlCache.set(postId, { 
-        url: data.signedUrl, 
-        expiresAt: Date.now() + 3600 * 1000 
-      });
-      return data.signedUrl;
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+      try {
+        if (player && player.playing) {
+          player.pause();
+        }
+      } catch (error) {
+        console.log('Error pausing video on unmount:', error);
+      }
+    };
+  }, [player]);
+
+  useEffect(() => {
+    if (!player) return;
+    
+    const playTimeout = setTimeout(() => {
+      if (isMountedRef.current && player.status === 'readyToPlay') {
+        try {
+          player.play();
+          console.log('Video playing for post:', postId);
+        } catch (error) {
+          console.error('Error playing video:', error);
+        }
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(playTimeout);
+    };
+  }, [player, postId]);
+
+  useEffect(() => {
+    if (player) {
+      player.muted = isMuted;
     }
+  }, [isMuted, player]);
 
-    return null;
-  } catch (error) {
-    console.error('Error generating signed URL from video_public bucket:', error);
-    return null;
-  }
+  const handleTap = () => {
+    console.log('User tapped video, toggling mute');
+    setIsMuted(prev => !prev);
+  };
+
+  return (
+    <TouchableOpacity 
+      style={styles.video} 
+      activeOpacity={1} 
+      onPress={handleTap}
+    >
+      <VideoView
+        style={styles.video}
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        allowsFullscreen={true}
+        allowsPictureInPicture={false}
+      />
+      {isMuted && (
+        <View style={styles.muteIndicator}>
+          <IconSymbol 
+            ios_icon_name="speaker.slash.fill"
+            android_material_icon_name="volume-off" 
+            size={24} 
+            color="#FFFFFF"
+          />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
 }
 
 export default function VideoFullScreenScreen() {
@@ -128,87 +179,7 @@ export default function VideoFullScreenScreen() {
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
 
-  const fetchPosts = useCallback(async () => {
-    console.log('Loading video posts starting from ID:', id);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-
-      // Fetch the initial post
-      const { data: initialPost, error: initialError } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles!posts_user_id_fkey (
-            display_name,
-            avatar_url
-          )
-        `)
-        .eq('id', id)
-        .single();
-
-      if (initialError) {
-        console.error('Error fetching initial post:', initialError);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch more posts from the same user or related posts
-      const { data: morePosts, error: moreError } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles!posts_user_id_fkey (
-            display_name,
-            avatar_url
-          )
-        `)
-        .neq('id', id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      const allPosts = [initialPost, ...(morePosts || [])];
-      
-      // Generate signed URLs for all posts
-      const postsWithSignedUrls = await Promise.all(
-        allPosts.map(async (post) => {
-          let videoUrl = post.video_url;
-          
-          // If video_url is a storage path (not a full URL), generate signed URL
-          if (videoUrl && !videoUrl.startsWith('http')) {
-            const signedUrl = await generateSignedUrl(videoUrl, post.id);
-            videoUrl = signedUrl || videoUrl;
-          } else if (videoUrl && videoUrl.includes('/storage/v1/object/')) {
-            // Extract path from URL and generate signed URL
-            const pathMatch = videoUrl.match(/\/video_public\/(.+?)(\?|$)/);
-            if (pathMatch) {
-              const path = pathMatch[1];
-              const signedUrl = await generateSignedUrl(path, post.id);
-              videoUrl = signedUrl || videoUrl;
-            }
-          }
-          
-          return { ...post, video_url: videoUrl };
-        })
-      );
-
-      console.log('Posts fetched successfully with signed URLs:', postsWithSignedUrls.length);
-      setPosts(postsWithSignedUrls);
-      
-      // Load stats and like status for first post
-      if (user && postsWithSignedUrls[0]) {
-        await loadPostInteractions(postsWithSignedUrls[0].id, user.id);
-      }
-    } catch (error) {
-      console.error('Error in fetchPosts:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
-
-  const loadPostInteractions = async (postId: string, userId: string) => {
+  const loadPostInteractions = useCallback(async (postId: string, userId: string) => {
     console.log('Loading interactions for post:', postId);
     
     try {
@@ -264,7 +235,64 @@ export default function VideoFullScreenScreen() {
         return newMap;
       });
     }
-  };
+  }, []);
+
+  const fetchPosts = useCallback(async () => {
+    console.log('Loading video posts starting from ID:', id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+
+      // Fetch the initial post
+      const { data: initialPost, error: initialError } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('id', id)
+        .single();
+
+      if (initialError) {
+        console.error('Error fetching initial post:', initialError);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch more posts from the same user or related posts
+      const { data: morePosts, error: moreError } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (
+            display_name,
+            avatar_url
+          )
+        `)
+        .neq('id', id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      const allPosts = [initialPost, ...(morePosts || [])];
+      
+      console.log('Posts fetched successfully:', allPosts.length);
+      setPosts(allPosts);
+      
+      // Load stats and like status for first post
+      if (user && allPosts[0]) {
+        await loadPostInteractions(allPosts[0].id, user.id);
+      }
+    } catch (error) {
+      console.error('Error in fetchPosts:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [id, loadPostInteractions]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -300,7 +328,7 @@ export default function VideoFullScreenScreen() {
         }
       }
     }
-  }, [posts, currentUserId]);
+  }, [posts, currentUserId, loadPostInteractions]);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -612,6 +640,12 @@ export default function VideoFullScreenScreen() {
   );
 
   const renderVideoItem = ({ item: post }: { item: Post }) => {
+    // Guard: Don't render if video_url is missing
+    if (!post?.video_url) {
+      console.log('Post missing video_url, skipping render for post:', post?.id);
+      return null;
+    }
+
     const displayName = post?.profiles?.display_name || 'Unknown User';
     const avatarUrl = post?.profiles?.avatar_url || '';
     const caption = post?.caption || '';
@@ -938,99 +972,6 @@ export default function VideoFullScreenScreen() {
   );
 }
 
-// Video Player Component with error handling for signed URLs
-function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
-  const [currentUrl, setCurrentUrl] = useState(videoUrl);
-  const [hasError, setHasError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const isMountedRef = useRef(true);
-
-  const player = useVideoPlayer(currentUrl, (player) => {
-    player.loop = true;
-    player.muted = false;
-  });
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    setCurrentUrl(videoUrl);
-    setHasError(false);
-    setRetryCount(0);
-    
-    return () => {
-      isMountedRef.current = false;
-      try {
-        if (player && player.playing) {
-          player.pause();
-        }
-      } catch (error) {
-        console.log('Error pausing video on unmount:', error);
-      }
-    };
-  }, [videoUrl, postId]);
-
-  useEffect(() => {
-    if (!player) return;
-    
-    const playTimeout = setTimeout(() => {
-      if (isMountedRef.current && player.status === 'readyToPlay') {
-        try {
-          player.play();
-          player.volume = 1;
-          console.log('Video playing for post:', postId);
-        } catch (error) {
-          console.error('Error playing video:', error);
-        }
-      }
-    }, 300);
-
-    return () => {
-      clearTimeout(playTimeout);
-    };
-  }, [player, currentUrl]);
-
-  // Handle video errors (e.g., expired signed URL)
-  const handleVideoError = async () => {
-    console.error('Video player error for post:', postId, 'Retry count:', retryCount);
-    
-    if (retryCount >= 2) {
-      console.error('Max retries reached for post:', postId);
-      return;
-    }
-    
-    if (!hasError && isMountedRef.current) {
-      setHasError(true);
-      setRetryCount(prev => prev + 1);
-      
-      // Clear cached signed URL
-      signedUrlCache.delete(postId);
-      
-      // Try to regenerate signed URL
-      const videoPath = videoUrl.split('/video_public/')[1]?.split('?')[0];
-      if (videoPath) {
-        console.log('Attempting to regenerate signed URL for path:', videoPath);
-        const newSignedUrl = await generateSignedUrl(videoPath, postId);
-        if (newSignedUrl && newSignedUrl !== currentUrl && isMountedRef.current) {
-          console.log('Regenerated signed URL, retrying playback');
-          setCurrentUrl(newSignedUrl);
-          setHasError(false);
-        }
-      }
-    }
-  };
-
-  return (
-    <VideoView
-      style={styles.video}
-      player={player}
-      nativeControls={false}
-      contentFit="contain"
-      allowsFullscreen={false}
-      allowsPictureInPicture={false}
-      onError={handleVideoError}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1074,6 +1015,14 @@ const styles = StyleSheet.create({
   video: {
     width: width,
     height: height,
+  },
+  muteIndicator: {
+    position: 'absolute',
+    top: 100,
+    right: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    padding: 8,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
