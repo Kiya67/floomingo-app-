@@ -26,6 +26,20 @@ interface Post {
   created_at: string;
 }
 
+interface BoardPlace {
+  id: string;
+  board_id: string;
+  place_id: string;
+  place_name: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  place_json: any;
+  created_at: string;
+}
+
+type TabType = 'videos' | 'places';
+
 const windowWidth = Dimensions.get('window').width;
 const gridItemSize = (windowWidth - 48) / 3;
 
@@ -44,11 +58,13 @@ export default function BoardDetailScreen() {
 
   const [board, setBoard] = useState<Board | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [places, setPlaces] = useState<BoardPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [activeTab, setActiveTab] = useState<TabType>('videos');
 
   const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
@@ -68,8 +84,8 @@ export default function BoardDetailScreen() {
       setBoard(boardData);
       setEditTitle(boardData.title);
 
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('board_items')
+      const { data: postsData, error: postsError } = await supabase
+        .from('board_posts')
         .select(`
           post_id,
           posts (
@@ -87,16 +103,30 @@ export default function BoardDetailScreen() {
         .eq('board_id', boardId)
         .order('created_at', { ascending: false });
 
-      if (itemsError) {
-        console.error('Error fetching board items:', itemsError);
+      if (postsError) {
+        console.error('Error fetching board posts:', postsError);
         setPosts([]);
       } else {
-        const postsArray = (itemsData || [])
+        const postsArray = (postsData || [])
           .map(item => item.posts)
           .filter(post => post !== null) as Post[];
         
-        console.log('Board items fetched successfully:', postsArray.length);
+        console.log('Board posts fetched successfully:', postsArray.length);
         setPosts(postsArray);
+      }
+
+      const { data: placesData, error: placesError } = await supabase
+        .from('board_places')
+        .select('*')
+        .eq('board_id', boardId)
+        .order('created_at', { ascending: false });
+
+      if (placesError) {
+        console.error('Error fetching board places:', placesError);
+        setPlaces([]);
+      } else {
+        console.log('Board places fetched successfully:', placesData?.length || 0);
+        setPlaces(placesData || []);
       }
     } catch (error) {
       console.error('Error in fetchBoardDetails:', error);
@@ -266,6 +296,48 @@ export default function BoardDetailScreen() {
         </View>
       </View>
 
+      <View style={styles.titleContainer}>
+        <Text style={[styles.title, { color: textColor }]}>{board.title}</Text>
+        <Text style={[styles.itemCount, { color: textSecondaryColor }]}>
+          {posts.length} {posts.length === 1 ? 'video' : 'videos'} • {places.length} {places.length === 1 ? 'place' : 'places'}
+        </Text>
+      </View>
+
+      <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#222' : '#F0F0F0' }]}>
+        <TouchableOpacity
+          style={[
+            styles.segmentButton,
+            activeTab === 'videos' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
+          ]}
+          onPress={() => setActiveTab('videos')}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.segmentText,
+            { color: activeTab === 'videos' ? textColor : textSecondaryColor },
+            activeTab === 'videos' && styles.segmentTextActive
+          ]}>
+            Videos
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.segmentButton,
+            activeTab === 'places' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
+          ]}
+          onPress={() => setActiveTab('places')}
+          activeOpacity={0.8}
+        >
+          <Text style={[
+            styles.segmentText,
+            { color: activeTab === 'places' ? textColor : textSecondaryColor },
+            activeTab === 'places' && styles.segmentTextActive
+          ]}>
+            Places
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -278,38 +350,86 @@ export default function BoardDetailScreen() {
           />
         }
       >
-        <View style={styles.titleContainer}>
-          <Text style={[styles.title, { color: textColor }]}>{board.title}</Text>
-          <Text style={[styles.itemCount, { color: textSecondaryColor }]}>
-            {posts.length} {posts.length === 1 ? 'video' : 'videos'}
-          </Text>
-        </View>
-
-        {posts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol 
-              ios_icon_name="video.fill"
-              android_material_icon_name="videocam" 
-              size={64} 
-              color={textSecondaryColor}
-            />
-            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              No videos saved yet
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.gridContainer}>
-            {posts.map((post) => (
-              <VideoGridItem
-                key={post.id}
-                post={post}
-                size={gridItemSize}
-                onPress={() => handleVideoPress(post)}
-                shouldPlay={false}
-                showFollowButton={false}
+        {activeTab === 'videos' ? (
+          posts.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <IconSymbol 
+                ios_icon_name="video.fill"
+                android_material_icon_name="videocam" 
+                size={64} 
+                color={textSecondaryColor}
               />
-            ))}
-          </View>
+              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+                No videos saved yet
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.gridContainer}>
+              {posts.map((post) => (
+                <VideoGridItem
+                  key={post.id}
+                  post={post}
+                  size={gridItemSize}
+                  onPress={() => handleVideoPress(post)}
+                  shouldPlay={false}
+                  showFollowButton={false}
+                />
+              ))}
+            </View>
+          )
+        ) : (
+          places.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <IconSymbol 
+                ios_icon_name="mappin.circle.fill"
+                android_material_icon_name="location-on" 
+                size={64} 
+                color={textSecondaryColor}
+              />
+              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+                No places saved yet
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.placesContainer}>
+              {places.map((place) => {
+                const placeName = place.place_name || 'Unknown Place';
+                const placeAddress = place.address || 'No address available';
+                
+                return (
+                  <TouchableOpacity
+                    key={place.id}
+                    style={[styles.placeCard, { backgroundColor: cardColor }]}
+                    onPress={() => console.log('Place tapped:', place.place_id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.placeIconContainer, { backgroundColor: isDark ? '#333' : '#F5F5F5' }]}>
+                      <IconSymbol 
+                        ios_icon_name="mappin.circle.fill"
+                        android_material_icon_name="location-on" 
+                        size={24} 
+                        color={primaryColor}
+                      />
+                    </View>
+                    <View style={styles.placeInfo}>
+                      <Text style={[styles.placeName, { color: textColor }]} numberOfLines={1}>
+                        {placeName}
+                      </Text>
+                      <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={2}>
+                        {placeAddress}
+                      </Text>
+                    </View>
+                    <IconSymbol 
+                      ios_icon_name="chevron.right"
+                      android_material_icon_name="arrow-forward" 
+                      size={20} 
+                      color={textSecondaryColor}
+                    />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )
         )}
       </ScrollView>
 
@@ -439,11 +559,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  scrollView: {
-    flex: 1,
-  },
   titleContainer: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   title: {
     fontSize: 28,
@@ -452,6 +571,29 @@ const styles = StyleSheet.create({
   },
   itemCount: {
     fontSize: 16,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 10,
+    padding: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  segmentText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  segmentTextActive: {
+    fontWeight: '600',
+  },
+  scrollView: {
+    flex: 1,
   },
   emptyContainer: {
     flex: 1,
@@ -468,6 +610,41 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     padding: 12,
     gap: 6,
+  },
+  placesContainer: {
+    padding: 16,
+    gap: 12,
+  },
+  placeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  placeIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeInfo: {
+    flex: 1,
+  },
+  placeName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  placeAddress: {
+    fontSize: 14,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,
