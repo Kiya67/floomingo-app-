@@ -55,7 +55,6 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 
 // Video Player Component - uses public URLs directly with tap to play/pause and mute toggle
 function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: string; postId: string; isMuted: boolean; onToggleMute: () => void }) {
-  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP
   const [isPlaying, setIsPlaying] = useState(true);
   const isMountedRef = useRef(true);
 
@@ -125,7 +124,6 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
     }
   };
 
-  // GUARD CLAUSE AFTER ALL HOOKS
   if (!videoUrl) {
     console.log('VideoPlayer: No video URL provided for post:', postId);
     return null;
@@ -157,7 +155,7 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
         )}
       </TouchableOpacity>
       
-      {/* Mute/Unmute button */}
+      {/* Mute/Unmute button - positioned at top right */}
       <TouchableOpacity 
         style={styles.muteButton}
         onPress={onToggleMute}
@@ -196,17 +194,14 @@ export default function VideoFullScreenScreen() {
   const [isMuted, setIsMuted] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   
-  // Block/Report states
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   
-  // Toast states
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
   
-  // Action button states per post
   const [postInteractions, setPostInteractions] = useState<Map<string, {
     isLiked: boolean;
     isSaved: boolean;
@@ -215,7 +210,6 @@ export default function VideoFullScreenScreen() {
   
   const [likeLoading, setLikeLoading] = useState(false);
   
-  // Comments modal
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -237,7 +231,6 @@ export default function VideoFullScreenScreen() {
     console.log('Loading interactions for post:', postId);
     
     try {
-      // Check if liked
       const { data: likeData } = await supabase
         .from('post_likes')
         .select('*')
@@ -247,7 +240,6 @@ export default function VideoFullScreenScreen() {
       
       const isLiked = likeData && likeData.length > 0;
       
-      // Get stats
       const { data: statsData } = await supabase
         .from('post_stats')
         .select('*')
@@ -260,7 +252,6 @@ export default function VideoFullScreenScreen() {
         share_count: statsData.share_count || 0,
       } : { like_count: 0, comment_count: 0, share_count: 0 };
       
-      // Check if saved
       const { data: savedData } = await supabase
         .from('board_items')
         .select('id, board_id, boards!inner(user_id)')
@@ -270,7 +261,6 @@ export default function VideoFullScreenScreen() {
       
       const isSaved = savedData && savedData.length > 0;
       
-      // Store in map
       setPostInteractions(prev => {
         const newMap = new Map(prev);
         newMap.set(postId, { isLiked, isSaved, stats });
@@ -278,7 +268,6 @@ export default function VideoFullScreenScreen() {
       });
     } catch (error) {
       console.error('Error loading post interactions:', error);
-      // Set defaults on error
       setPostInteractions(prev => {
         const newMap = new Map(prev);
         newMap.set(postId, {
@@ -320,7 +309,6 @@ export default function VideoFullScreenScreen() {
         setCurrentUserId(user.id);
       }
 
-      // Fetch the initial post
       const { data: initialPost, error: initialError } = await supabase
         .from('posts')
         .select(`
@@ -339,12 +327,10 @@ export default function VideoFullScreenScreen() {
         return;
       }
 
-      // Check block status for initial post
       if (user && initialPost) {
         await checkBlockStatus(initialPost.user_id, user.id);
       }
 
-      // Fetch blocked users list from API
       let blockedUserIds: string[] = [];
       if (user) {
         try {
@@ -355,7 +341,6 @@ export default function VideoFullScreenScreen() {
           if (blocksResponse.ok) {
             const blocksData = await blocksResponse.json();
             console.log('[API] Blocked users fetched:', blocksData.length);
-            // Extract blocked user IDs (both blocker and blocked)
             blockedUserIds = blocksData.map((block: any) => 
               block.blockerId === user.id ? block.blockedId : block.blockerId
             );
@@ -365,7 +350,6 @@ export default function VideoFullScreenScreen() {
         }
       }
 
-      // Fetch more posts from the same user or related posts, excluding blocked users
       let query = supabase
         .from('posts')
         .select(`
@@ -379,7 +363,6 @@ export default function VideoFullScreenScreen() {
         .order('created_at', { ascending: false })
         .limit(10);
       
-      // Filter out blocked users
       if (blockedUserIds.length > 0) {
         query = query.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
       }
@@ -391,7 +374,6 @@ export default function VideoFullScreenScreen() {
       console.log('Posts fetched successfully:', allPosts.length);
       setPosts(allPosts);
       
-      // Load stats and like status for first post
       if (user && allPosts[0]) {
         await loadPostInteractions(allPosts[0].id, user.id);
       }
@@ -421,7 +403,6 @@ export default function VideoFullScreenScreen() {
         loadPostInteractions(currentPost.id, currentUserId);
         checkBlockStatus(currentPost.user_id, currentUserId);
         
-        // Check follow status only if viewing someone else's video
         if (currentPost.user_id !== currentUserId) {
           supabase
             .from('follows')
@@ -466,7 +447,6 @@ export default function VideoFullScreenScreen() {
     console.log('User tapped follow/unfollow button');
     if (followLoading || !post?.user_id || !currentUserId) return;
 
-    // CRITICAL: Prevent following yourself
     if (post.user_id === currentUserId) {
       console.log('Cannot follow yourself, ignoring action');
       return;
@@ -517,7 +497,6 @@ export default function VideoFullScreenScreen() {
 
     setLikeLoading(true);
     
-    // Optimistic update
     const wasLiked = currentInteraction.isLiked;
     setPostInteractions(prev => {
       const newMap = new Map(prev);
@@ -537,7 +516,6 @@ export default function VideoFullScreenScreen() {
 
     try {
       if (wasLiked) {
-        // Unlike
         const { error } = await supabase
           .from('post_likes')
           .delete()
@@ -547,7 +525,6 @@ export default function VideoFullScreenScreen() {
         if (error) throw error;
         console.log('Post unliked successfully');
       } else {
-        // Like
         const { error } = await supabase
           .from('post_likes')
           .insert({
@@ -560,7 +537,6 @@ export default function VideoFullScreenScreen() {
       }
     } catch (error) {
       console.error('Error toggling like:', error);
-      // Revert optimistic update
       setPostInteractions(prev => {
         const newMap = new Map(prev);
         const interaction = newMap.get(post.id);
@@ -644,7 +620,6 @@ export default function VideoFullScreenScreen() {
       console.log('Comment submitted successfully');
       setComments(prev => [...prev, data]);
       
-      // Update comment count
       setPostInteractions(prev => {
         const newMap = new Map(prev);
         const interaction = newMap.get(currentPost.id);
@@ -671,7 +646,6 @@ export default function VideoFullScreenScreen() {
   const handleDeleteComment = (commentId: string, commentUserId: string) => {
     console.log('User long-pressed comment - checking ownership');
     
-    // Only allow deleting own comments
     if (commentUserId !== currentUserId) {
       console.warn('Cannot delete another user\'s comment');
       return;
@@ -691,16 +665,14 @@ export default function VideoFullScreenScreen() {
         .from('comments')
         .delete()
         .eq('id', deleteCommentId)
-        .eq('user_id', currentUserId); // Double-check ownership
+        .eq('user_id', currentUserId);
 
       if (error) throw error;
 
       console.log('Comment deleted successfully');
       
-      // Optimistic UI update
       setComments(prev => prev.filter(c => c.id !== deleteCommentId));
       
-      // Update comment count
       const currentPost = posts[currentIndex];
       if (currentPost) {
         setPostInteractions(prev => {
@@ -742,7 +714,6 @@ export default function VideoFullScreenScreen() {
     setShowSaveModal(false);
     setSelectedPostId(null);
     
-    // Refresh saved status
     const currentPost = posts[currentIndex];
     if (currentPost && currentUserId) {
       loadPostInteractions(currentPost.id, currentUserId);
@@ -752,14 +723,12 @@ export default function VideoFullScreenScreen() {
   const handleShare = async (post: Post) => {
     console.log('User tapped share button for post:', post.id);
     
-    // Edge case: Check if video_url is missing
     if (!post.video_url) {
       console.warn('Share failed: No video URL available');
       showToast('No share link available', 'error');
       return;
     }
     
-    // Prevent double taps
     if (isSharing) {
       console.log('Share already in progress, ignoring tap');
       return;
@@ -768,10 +737,8 @@ export default function VideoFullScreenScreen() {
     setIsSharing(true);
     
     try {
-      // Build share message
       let shareMessage = post.caption || '';
       
-      // Include place_name if available
       if (post.place_name) {
         shareMessage = shareMessage 
           ? `${shareMessage} • ${post.place_name}` 
@@ -788,11 +755,9 @@ export default function VideoFullScreenScreen() {
 
       console.log('Share result:', result);
 
-      // Check if user completed the share
       if (result.action === Share.sharedAction) {
         console.log('User completed share successfully');
         
-        // Log the share in database
         if (currentUserId) {
           try {
             const { error: insertError } = await supabase
@@ -807,8 +772,6 @@ export default function VideoFullScreenScreen() {
               console.error('Error logging share:', insertError);
             } else {
               console.log('Share logged to database successfully');
-              
-              // Refresh post_stats to update share_count
               await loadPostInteractions(post.id, currentUserId);
             }
           } catch (dbError) {
@@ -816,15 +779,12 @@ export default function VideoFullScreenScreen() {
           }
         }
         
-        // Show success toast
         showToast('Shared', 'success');
       } else if (result.action === Share.dismissedAction) {
-        // User cancelled - do not log or increment
         console.log('User cancelled share');
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      // Show failure toast
       showToast('Couldn\'t share', 'error');
     } finally {
       setIsSharing(false);
@@ -846,7 +806,6 @@ export default function VideoFullScreenScreen() {
     const currentPost = posts[currentIndex];
     if (!currentPost || !currentUserId) return;
 
-    // Prevent blocking yourself
     if (currentPost.user_id === currentUserId) {
       console.log('Cannot block yourself');
       showToast('Cannot block yourself', 'error');
@@ -858,7 +817,6 @@ export default function VideoFullScreenScreen() {
 
     try {
       if (isBlocked) {
-        // Unblock
         console.log('[API] Unblocking user:', currentPost.user_id);
         const response = await authenticatedApiCall(`/api/blocks/${currentPost.user_id}`, {
           method: 'DELETE',
@@ -875,7 +833,6 @@ export default function VideoFullScreenScreen() {
         showToast('User unblocked', 'success');
         console.log('[API] User unblocked successfully');
       } else {
-        // Block
         console.log('[API] Blocking user:', currentPost.user_id);
         const response = await authenticatedApiCall('/api/blocks', {
           method: 'POST',
@@ -894,7 +851,6 @@ export default function VideoFullScreenScreen() {
         const data = await response.json();
         console.log('[API] Block response:', data);
 
-        // Unfollow each other (using Supabase since this is a local operation)
         console.log('Unfollowing blocked user');
         await supabase
           .from('follows')
@@ -906,7 +862,6 @@ export default function VideoFullScreenScreen() {
         showToast('User blocked', 'success');
         console.log('[API] User blocked successfully');
 
-        // Navigate back to remove blocked user's content from view
         setTimeout(() => {
           router.back();
         }, 1000);
@@ -922,7 +877,6 @@ export default function VideoFullScreenScreen() {
   const handleReportUser = () => {
     console.log('User tapped report user');
     setShowMoreModal(false);
-    // TODO: Implement report functionality (backend endpoint not yet available)
     showToast('Report functionality coming soon', 'info');
   };
 
@@ -946,7 +900,6 @@ export default function VideoFullScreenScreen() {
   );
 
   const renderVideoItem = ({ item: post }: { item: Post }) => {
-    // Guard: Don't render if video_url is missing
     if (!post?.video_url) {
       console.log('Post missing video_url, skipping render for post:', post?.id);
       return null;
@@ -969,7 +922,6 @@ export default function VideoFullScreenScreen() {
     const commentCountText = String(interaction.stats.comment_count);
     const shareCountText = String(interaction.stats.share_count);
     
-    // Disable share button if no video_url or if sharing is in progress
     const shareDisabled = !post.video_url || isSharing;
 
     return (
@@ -981,9 +933,7 @@ export default function VideoFullScreenScreen() {
           onToggleMute={handleToggleMute}
         />
         
-        {/* Overlay content - NO BLACK BACKGROUND */}
         <View style={styles.overlay}>
-          {/* Top controls */}
           <View style={styles.topControls}>
             <TouchableOpacity 
               style={styles.closeButton}
@@ -997,7 +947,6 @@ export default function VideoFullScreenScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Bottom info */}
           <View style={styles.bottomInfo}>
             <View style={styles.infoContent}>
               <View style={styles.userRowContainer}>
@@ -1195,7 +1144,6 @@ export default function VideoFullScreenScreen() {
         windowSize={3}
       />
 
-      {/* More Options Modal (Block/Report) */}
       <Modal
         visible={showMoreModal}
         onClose={() => setShowMoreModal(false)}
@@ -1239,7 +1187,6 @@ export default function VideoFullScreenScreen() {
         </View>
       </Modal>
 
-      {/* Comments Modal */}
       {showCommentsModal && (
         <BottomSheet
           ref={commentsSheetRef}
@@ -1336,7 +1283,6 @@ export default function VideoFullScreenScreen() {
         </BottomSheet>
       )}
 
-      {/* Delete Comment Confirmation Modal */}
       <Modal
         visible={showDeleteCommentModal}
         onClose={() => {
@@ -1351,7 +1297,6 @@ export default function VideoFullScreenScreen() {
         confirmColor="#FF3B30"
       />
 
-      {/* Save to Trips Modal */}
       {selectedPost && (
         <SaveToTripsModal
           isVisible={showSaveModal}
@@ -1363,7 +1308,6 @@ export default function VideoFullScreenScreen() {
         />
       )}
 
-      {/* Toast Notification */}
       <Toast
         message={toastMessage}
         visible={toastVisible}
@@ -1429,7 +1373,7 @@ const styles = StyleSheet.create({
   },
   muteButton: {
     position: 'absolute',
-    top: 100,
+    top: 60,
     right: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 20,
@@ -1438,6 +1382,7 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1628,43 +1573,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 12,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  modalMessage: {
-    fontSize: 16,
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
   },
   modalOptionButton: {
     flexDirection: 'row',
