@@ -70,19 +70,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="notifications"
-        options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => (
-            <IconSymbol 
-              android_material_icon_name="favorite" 
-              size={size} 
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="trips"
         options={{
           title: 'Trips',
@@ -106,6 +93,12 @@ export default function TabLayout() {
               color={color}
             />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
         }}
       />
     </Tabs>
