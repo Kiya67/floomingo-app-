@@ -252,14 +252,16 @@ export default function VideoFullScreenScreen() {
         share_count: statsData.share_count || 0,
       } : { like_count: 0, comment_count: 0, share_count: 0 };
       
+      // Check if post is saved to ANY of user's boards
       const { data: savedData } = await supabase
-        .from('board_items')
+        .from('board_posts')
         .select('id, board_id, boards!inner(user_id)')
         .eq('post_id', postId)
         .eq('boards.user_id', userId)
         .limit(1);
       
       const isSaved = savedData && savedData.length > 0;
+      console.log('Post saved status:', isSaved);
       
       setPostInteractions(prev => {
         const newMap = new Map(prev);
@@ -714,6 +716,7 @@ export default function VideoFullScreenScreen() {
     setShowSaveModal(false);
     setSelectedPostId(null);
     
+    // Refresh saved state for current post
     const currentPost = posts[currentIndex];
     if (currentPost && currentUserId) {
       loadPostInteractions(currentPost.id, currentUserId);

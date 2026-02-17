@@ -44,6 +44,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  const [alreadySavedBoards, setAlreadySavedBoards] = useState<Set<string>>(new Set());
 
   const fetchBoards = useCallback(async () => {
     console.log('Fetching user boards for save modal');
@@ -57,15 +58,16 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         return;
       }
 
+      // Fetch boards with counts
       const { data, error } = await supabase
         .from('boards')
         .select(`
           id,
           title,
-          board_items (id)
+          board_posts (id)
         `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('updated_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching boards:', error);
@@ -74,10 +76,23 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         const boardsWithCounts = (data || []).map(board => ({
           id: board.id,
           title: board.title,
-          item_count: board.board_items?.length || 0,
+          item_count: board.board_posts?.length || 0,
         }));
         console.log('Boards fetched for modal:', boardsWithCounts.length);
         setBoards(boardsWithCounts);
+      }
+
+      // Check which boards already have this post saved
+      const { data: savedData, error: savedError } = await supabase
+        .from('board_posts')
+        .select('board_id, boards!inner(user_id)')
+        .eq('post_id', postId)
+        .eq('boards.user_id', user.id);
+
+      if (!savedError && savedData) {
+        const savedBoardIds = new Set(savedData.map(item => item.board_id));
+        setAlreadySavedBoards(savedBoardIds);
+        console.log('Post already saved to boards:', savedBoardIds.size);
       }
     } catch (error) {
       console.error('Error in fetchBoards:', error);
@@ -85,7 +100,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [postId]);
 
   useEffect(() => {
     if (isVisible) {
@@ -155,15 +170,8 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         return;
       }
 
-      // Check if already saved
-      const { data: existingData } = await supabase
-        .from('board_items')
-        .select('id')
-        .eq('board_id', selectedBoardId)
-        .eq('post_id', postId)
-        .limit(1);
-
-      if (existingData && existingData.length > 0) {
+      // Check if already saved to this board
+      if (alreadySavedBoards.has(selectedBoardId)) {
         Alert.alert('Already Saved', 'This video is already in this trip');
         setSaving(false);
         return;
@@ -171,7 +179,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
 
       // Save video to board
       const { error: itemError } = await supabase
-        .from('board_items')
+        .from('board_posts')
         .insert({
           board_id: selectedBoardId,
           post_id: postId,
@@ -195,7 +203,10 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
             board_id: selectedBoardId,
             place_id: placeId,
             place_name: placeName,
-            location_type: locationType,
+            address: null,
+            lat: null,
+            lng: null,
+            place_json: null,
           }, {
             onConflict: 'board_id,place_id',
           });
@@ -214,7 +225,6 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
 
       // Emit refresh event for Trips tab
       console.log('Emitting TRIPS_REFRESH event');
-      // We'll use a simple event emitter pattern via global state
       if (global.tripsRefreshCallback) {
         global.tripsRefreshCallback();
       }
@@ -238,6 +248,39 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
       Alert.alert('Error', 'Could not save to trip. Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRemove = async (boardId: string) => {
+    console.log('Removing post from board:', boardId);
+    try {
+      const { error } = await supabase
+        .from('board_posts')
+        .delete()
+        .eq('board_id', boardId)
+        .eq('post_id', postId);
+
+      if (error) {
+        console.error('Error removing from board:', error);
+        Alert.alert('Error', 'Could not remove from trip');
+      } else {
+        console.log('Post removed from board successfully');
+        setAlreadySavedBoards(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(boardId);
+          return newSet;
+        });
+        
+        // Emit refresh event
+        if (global.tripsRefreshCallback) {
+          global.tripsRefreshCallback();
+        }
+        
+        Alert.alert('Removed', 'Video removed from trip');
+      }
+    } catch (error) {
+      console.error('Error in handleRemove:', error);
+      Alert.alert('Error', 'Could not remove from trip');
     }
   };
 
@@ -336,6 +379,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                   <View style={styles.boardsList}>
                     {boards.map((board) => {
                       const isSelected = selectedBoardId === board.id;
+                      const isSaved = alreadySavedBoards.has(board.id);
                       const itemCountText = board.item_count === 1 ? '1 item' : `${board.item_count || 0} items`;
                       
                       return (
@@ -358,14 +402,25 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                                 {itemCountText}
                               </Text>
                             </View>
-                            {isSelected && (
-                              <IconSymbol
-                                ios_icon_name="checkmark.circle.fill"
-                                android_material_icon_name="check-circle"
-                                size={24}
-                                color={primaryColor}
-                              />
-                            )}
+                            <View style={styles.boardItemActions}>
+                              {isSaved && (
+                                <TouchableOpacity
+                                  style={[styles.removeButton, { backgroundColor: '#FF3B30' }]}
+                                  onPress={() => handleRemove(board.id)}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text style={styles.removeButtonText}>Remove</Text>
+                                </TouchableOpacity>
+                              )}
+                              {isSelected && !isSaved && (
+                                <IconSymbol
+                                  ios_icon_name="checkmark.circle.fill"
+                                  android_material_icon_name="check-circle"
+                                  size={24}
+                                  color={primaryColor}
+                                />
+                              )}
+                            </View>
                           </View>
                         </TouchableOpacity>
                       );
@@ -408,16 +463,18 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                   style={[
                     styles.saveButton,
                     { backgroundColor: primaryColor },
-                    (!selectedBoardId || saving) && { opacity: 0.5 },
+                    (!selectedBoardId || saving || alreadySavedBoards.has(selectedBoardId || '')) && { opacity: 0.5 },
                   ]}
                   onPress={handleSave}
-                  disabled={!selectedBoardId || saving}
+                  disabled={!selectedBoardId || saving || alreadySavedBoards.has(selectedBoardId || '')}
                   activeOpacity={0.8}
                 >
                   {saving ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.saveButtonText}>Save</Text>
+                    <Text style={styles.saveButtonText}>
+                      {selectedBoardId && alreadySavedBoards.has(selectedBoardId) ? 'Already Saved' : 'Save'}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </>
@@ -485,6 +542,21 @@ const styles = StyleSheet.create({
   },
   boardItemCount: {
     fontSize: 14,
+  },
+  boardItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  removeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  removeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyContainer: {
     paddingVertical: 40,

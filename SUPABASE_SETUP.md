@@ -1,209 +1,324 @@
 
-# Supabase Setup Instructions
+# Supabase Database Schema
 
-This app uses Supabase for authentication and data storage. The configuration is already set up in `app.json`.
+This document describes the complete database schema for the travel social media app.
 
-## Database Schema
+## Authentication Tables (Managed by Supabase Auth)
+- `auth.users` - User authentication data
+- `auth.sessions` - User sessions
 
-You need to create a `profiles` table in your Supabase database with the following structure:
+## Core Tables
 
+### profiles
+User profile information
 ```sql
--- Create profiles table
 CREATE TABLE profiles (
-  id UUID REFERENCES auth.users(id) PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
   display_name TEXT NOT NULL,
   username TEXT UNIQUE,
   bio TEXT,
   avatar_url TEXT,
   cover_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### posts
+Video posts
+```sql
+CREATE TABLE posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  video_url TEXT NOT NULL,
+  thumbnail_url TEXT,
+  caption TEXT,
+  place_id TEXT,
+  place_name TEXT,
+  location_type TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  view_count INTEGER DEFAULT 0
+);
+```
+
+### follows
+User follow relationships
+```sql
+CREATE TABLE follows (
+  follower_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (follower_id, following_id)
+);
+```
+
+### post_likes
+Post likes
+```sql
+CREATE TABLE post_likes (
+  post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (post_id, user_id)
+);
+```
+
+### comments
+Post comments
+```sql
+CREATE TABLE comments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  comment_text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### post_shares
+Post share tracking
+```sql
+CREATE TABLE post_shares (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  share_target TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### post_stats
+Aggregated post statistics
+```sql
+CREATE TABLE post_stats (
+  post_id UUID PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+  like_count INTEGER DEFAULT 0,
+  comment_count INTEGER DEFAULT 0,
+  share_count INTEGER DEFAULT 0,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+### blocks
+User blocks
+```sql
+CREATE TABLE blocks (
+  blocker_id TEXT NOT NULL,
+  blocked_id TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (blocker_id, blocked_id)
+);
+```
+
+### notifications
+User notifications
+```sql
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+## Trips/Boards System Tables
+
+### boards
+User-created trip boards for organizing saved content
+```sql
+CREATE TABLE boards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Enable Row Level Security
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-
--- Create policies
-CREATE POLICY "Public profiles are viewable by everyone"
-  ON profiles FOR SELECT
-  USING (true);
-
-CREATE POLICY "Users can insert their own profile"
-  ON profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);
-
-CREATE POLICY "Users can update their own profile"
-  ON profiles FOR UPDATE
-  USING (auth.uid() = id);
+CREATE INDEX idx_boards_user_id ON boards(user_id);
+CREATE INDEX idx_boards_updated_at ON boards(updated_at DESC);
 ```
 
-## Storage Buckets
-
-You need to create two storage buckets in your Supabase project for image uploads:
-
-### 1. Avatars Bucket
-- **Bucket Name**: `avatars`
-- **Public**: Yes (enable public access)
-- **File Size Limit**: 2MB recommended
-- **Allowed MIME Types**: image/jpeg, image/png, image/jpg
-
-### 2. Covers Bucket
-- **Bucket Name**: `covers`
-- **Public**: Yes (enable public access)
-- **File Size Limit**: 5MB recommended
-- **Allowed MIME Types**: image/jpeg, image/png, image/jpg
-
-### Storage Policies (CRITICAL - MUST BE SET UP)
-
-⚠️ **IMPORTANT**: The storage buckets MUST have proper RLS policies or uploads will fail with "row-level security policy" errors.
-
-For **BOTH** the `avatars` and `covers` buckets, you need to create the following policies in the Supabase Dashboard:
-
-#### Step-by-step instructions:
-
-1. Go to **Storage** in your Supabase Dashboard
-2. Click on the bucket name (`avatars` or `covers`)
-3. Click on **Policies** tab
-4. Click **New Policy**
-5. Create the following policies:
-
-**Policy 1: Allow authenticated users to upload**
+### board_posts (renamed from board_items)
+Videos saved to boards
 ```sql
--- Policy name: "Users can upload their own images"
--- Allowed operation: INSERT
--- Policy definition:
-(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
+CREATE TABLE board_posts (
+  board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  post_id UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (board_id, post_id)
+);
+
+CREATE INDEX idx_board_posts_board_id ON board_posts(board_id);
+CREATE INDEX idx_board_posts_post_id ON board_posts(post_id);
 ```
 
-**Policy 2: Allow public read access**
+### board_places
+Places/locations saved to boards
 ```sql
--- Policy name: "Public read access"
--- Allowed operation: SELECT
--- Policy definition:
-bucket_id = 'avatars'
+CREATE TABLE board_places (
+  board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  place_id TEXT NOT NULL,
+  place_name TEXT,
+  address TEXT,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  place_json JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  PRIMARY KEY (board_id, place_id)
+);
+
+CREATE INDEX idx_board_places_board_id ON board_places(board_id);
 ```
 
-**Policy 3: Allow users to update their own images**
+## Row Level Security (RLS) Policies
+
+### boards
 ```sql
--- Policy name: "Users can update their own images"
--- Allowed operation: UPDATE
--- Policy definition:
-(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
+-- Enable RLS
+ALTER TABLE boards ENABLE ROW LEVEL SECURITY;
+
+-- Users can view their own boards
+CREATE POLICY "Users can view own boards"
+  ON boards FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Users can create their own boards
+CREATE POLICY "Users can create own boards"
+  ON boards FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- Users can update their own boards
+CREATE POLICY "Users can update own boards"
+  ON boards FOR UPDATE
+  USING (auth.uid() = user_id);
+
+-- Users can delete their own boards
+CREATE POLICY "Users can delete own boards"
+  ON boards FOR DELETE
+  USING (auth.uid() = user_id);
 ```
 
-**Policy 4: Allow users to delete their own images**
+### board_posts
 ```sql
--- Policy name: "Users can delete their own images"
--- Allowed operation: DELETE
--- Policy definition:
-(bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1])
-```
+-- Enable RLS
+ALTER TABLE board_posts ENABLE ROW LEVEL SECURITY;
 
-**Repeat the same 4 policies for the `covers` bucket** (just replace `'avatars'` with `'covers'` in the policy definitions).
+-- Users can view items in their own boards
+CREATE POLICY "Users can view own board posts"
+  ON board_posts FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_posts.board_id
+      AND boards.user_id = auth.uid()
+    )
+  );
 
-### Alternative: SQL Script for Storage Policies
-
-If you prefer to use SQL, you can run this in the Supabase SQL Editor:
-
-```sql
--- Policies for avatars bucket
-CREATE POLICY "Users can upload avatars"
-  ON storage.objects FOR INSERT
+-- Users can add items to their own boards
+CREATE POLICY "Users can add to own boards"
+  ON board_posts FOR INSERT
   WITH CHECK (
-    bucket_id = 'avatars' AND
-    auth.uid()::text = (storage.foldername(name))[1]
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_posts.board_id
+      AND boards.user_id = auth.uid()
+    )
   );
 
-CREATE POLICY "Public read access for avatars"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'avatars');
-
-CREATE POLICY "Users can update their avatars"
-  ON storage.objects FOR UPDATE
+-- Users can remove items from their own boards
+CREATE POLICY "Users can remove from own boards"
+  ON board_posts FOR DELETE
   USING (
-    bucket_id = 'avatars' AND
-    auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-CREATE POLICY "Users can delete their avatars"
-  ON storage.objects FOR DELETE
-  USING (
-    bucket_id = 'avatars' AND
-    auth.uid()::text = (storage.foldername(name))[1]
-  );
-
--- Policies for covers bucket
-CREATE POLICY "Users can upload covers"
-  ON storage.objects FOR INSERT
-  WITH CHECK (
-    bucket_id = 'covers' AND
-    auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-CREATE POLICY "Public read access for covers"
-  ON storage.objects FOR SELECT
-  USING (bucket_id = 'covers');
-
-CREATE POLICY "Users can update their covers"
-  ON storage.objects FOR UPDATE
-  USING (
-    bucket_id = 'covers' AND
-    auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-CREATE POLICY "Users can delete their covers"
-  ON storage.objects FOR DELETE
-  USING (
-    bucket_id = 'covers' AND
-    auth.uid()::text = (storage.foldername(name))[1]
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_posts.board_id
+      AND boards.user_id = auth.uid()
+    )
   );
 ```
 
-## Configuration
+### board_places
+```sql
+-- Enable RLS
+ALTER TABLE board_places ENABLE ROW LEVEL SECURITY;
 
-The Supabase URL and Anon Key are already configured in `app.json`:
-- `supabaseUrl`: Your Supabase project URL
-- `supabaseAnonKey`: Your Supabase anonymous key
+-- Users can view places in their own boards
+CREATE POLICY "Users can view own board places"
+  ON board_places FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_places.board_id
+      AND boards.user_id = auth.uid()
+    )
+  );
 
-## Features
+-- Users can add places to their own boards
+CREATE POLICY "Users can add places to own boards"
+  ON board_places FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_places.board_id
+      AND boards.user_id = auth.uid()
+    )
+  );
 
-- **Sign Up**: Creates a new user account and profile in the `profiles` table
-- **Sign In**: Authenticates existing users
-- **Edit Profile**: Users can update their profile information including:
-  - Name (required) - stored as `display_name`
-  - Username (optional)
-  - Bio (optional)
-  - Profile Photo (avatar) - stored in `avatars` bucket
-  - Cover Photo - stored in `covers` bucket
-- **Light/Dark Mode**: Automatically adapts to the user's system preferences
-  - Light mode: Pink to orange gradient background
-  - Dark mode: Black gradient background
-- **Profile Display**: Shows user information on the profile tab:
-  - Name, username, and bio (email and password are NOT displayed)
-  - Profile photo and cover photo
-  - Stats (posts, followers, following)
+-- Users can remove places from their own boards
+CREATE POLICY "Users can remove places from own boards"
+  ON board_places FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM boards
+      WHERE boards.id = board_places.board_id
+      AND boards.user_id = auth.uid()
+    )
+  );
+```
 
-## Usage
+## Database Functions
 
-1. Navigate to `/auth` to access the authentication screen
-2. Sign up with your email, password, name, username (optional), and bio (optional)
-3. After signing in, navigate to the Profile tab to view your profile
-4. Tap "Edit Profile" to update your information and upload photos
-5. Profile and cover photos are automatically uploaded to Supabase storage
+### Update board updated_at timestamp
+```sql
+CREATE OR REPLACE FUNCTION update_board_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE boards
+  SET updated_at = NOW()
+  WHERE id = NEW.board_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-## Troubleshooting
+CREATE TRIGGER update_board_timestamp_on_post_insert
+  AFTER INSERT ON board_posts
+  FOR EACH ROW
+  EXECUTE FUNCTION update_board_timestamp();
 
-### "new row violates row-level security policy" error when uploading images
+CREATE TRIGGER update_board_timestamp_on_place_insert
+  AFTER INSERT ON board_places
+  FOR EACH ROW
+  EXECUTE FUNCTION update_board_timestamp();
+```
 
-This means the storage bucket policies are not set up correctly. Follow the **Storage Policies** section above to create the required policies for both `avatars` and `covers` buckets.
+## Setup Instructions
 
-### "Could not find the 'full_name' column" error
+1. Go to your Supabase project dashboard
+2. Navigate to the SQL Editor
+3. Run the SQL commands above to create the tables
+4. Enable Row Level Security policies
+5. Create the database functions and triggers
+6. Test the setup by creating a board and saving a post
 
-The database schema uses `display_name` instead of `full_name`. Make sure your `profiles` table has a `display_name` column (not `full_name`).
+## Notes
 
-### Images not displaying after upload
-
-1. Make sure the storage buckets are set to **Public**
-2. Verify that the "Public read access" policy is created for both buckets
-3. Check that the image URLs are being saved correctly in the `avatar_url` and `cover_url` columns
+- All timestamps use `TIMESTAMP WITH TIME ZONE` for proper timezone handling
+- UUIDs are used for primary keys for better scalability
+- Composite primary keys are used for many-to-many relationships
+- Indexes are created on foreign keys and frequently queried columns
+- RLS policies ensure users can only access their own data
+- The `updated_at` field on boards is automatically updated when items are added
