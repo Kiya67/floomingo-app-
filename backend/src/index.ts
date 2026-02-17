@@ -3,6 +3,8 @@ import * as appSchema from './db/schema.js';
 import * as authSchema from './db/auth-schema.js';
 import { registerBlockRoutes } from './routes/blocks.js';
 import { registerBoardRoutes } from './routes/boards.js';
+import { registerTripRoutes } from './routes/trips.js';
+import { registerProfileStatsRoutes } from './routes/profile-stats.js';
 
 const schema = { ...appSchema, ...authSchema };
 
@@ -19,6 +21,8 @@ app.withAuth();
 // IMPORTANT: Always use registration functions to avoid circular dependency issues
 registerBlockRoutes(app);
 registerBoardRoutes(app);
+registerTripRoutes(app);
+registerProfileStatsRoutes(app);
 
 await app.run();
 app.logger.info('Application running');

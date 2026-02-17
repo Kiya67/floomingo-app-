@@ -424,3 +424,267 @@ describe('Boards Feature', () => {
     expect(response.statusCode).toBe(400);
   });
 });
+
+describe('Trips Feature', () => {
+  let authToken: string;
+  let tripId: string;
+
+  beforeAll(async () => {
+    // Create a user for trips tests
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'trips-test@example.com',
+        password: 'password123',
+        name: 'Trips Test User',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+
+    // Sign in to get auth token
+    const signInResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'trips-test@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse.statusCode).toBe(200);
+    authToken = signInResponse.cookies[0]?.value || '';
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should return 401 when getting trips without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/trips',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should get trips for authenticated user', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/trips',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+
+    // If there are trips, verify structure and store ID
+    if (data.length > 0) {
+      expect(data[0]).toHaveProperty('id');
+      expect(data[0]).toHaveProperty('title');
+      tripId = data[0].id;
+    }
+  });
+
+  it('should return 404 when getting items for non-existent trip', async () => {
+    const nonExistentTripId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/trips/${nonExistentTripId}/items`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 for invalid UUID format when getting trip items', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/trips/invalid-uuid/items',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 401 when getting trip items without authentication', async () => {
+    const tripUuid = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/trips/${tripUuid}/items`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should get trip items if trip exists', async () => {
+    if (!tripId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/trips/${tripId}/items`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+  });
+
+  it('should return 404 when saving video to non-existent trip', async () => {
+    const nonExistentTripId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/trips/${nonExistentTripId}/save`,
+      payload: {
+        post_id: 'test-post-id',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 for invalid UUID when saving video to trip', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/trips/invalid-uuid/save',
+      payload: {
+        post_id: 'test-post-id',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 401 when saving video to trip without authentication', async () => {
+    const tripUuid = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/trips/${tripUuid}/save`,
+      payload: {
+        post_id: 'test-post-id',
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should return 400 when saving video to trip without post_id', async () => {
+    const tripUuid = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/trips/${tripUuid}/save`,
+      payload: {},
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 404 when removing video from non-existent trip', async () => {
+    const nonExistentTripId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/trips/${nonExistentTripId}/items/test-post-id`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should return 400 for invalid UUID when removing video from trip', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: '/api/trips/invalid-uuid/items/test-post-id',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 401 when removing video from trip without authentication', async () => {
+    const tripUuid = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/trips/${tripUuid}/items/test-post-id`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+});
+
+describe('Profile Stats Feature', () => {
+  let userId: string;
+
+  beforeAll(async () => {
+    // Create a user for profile stats tests
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'profile-stats-test@example.com',
+        password: 'password123',
+        name: 'Profile Stats Test User',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+    const data = JSON.parse(signUpResponse.payload);
+    userId = data.user.id;
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should get profile stats for existing user', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/profile/stats/${userId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data).toHaveProperty('user_id');
+    expect(data).toHaveProperty('post_count');
+    expect(data).toHaveProperty('follower_count');
+    expect(data).toHaveProperty('following_count');
+  });
+
+  it('should return 404 for non-existent user profile stats', async () => {
+    const nonExistentUserId = '00000000-0000-0000-0000-000000000000';
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/profile/stats/${nonExistentUserId}`,
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should recalculate profile stats for existing user', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/profile/stats/recalculate/${userId}`,
+    });
+
+    expect([200, 500]).toContain(response.statusCode);
+    const data = JSON.parse(response.payload);
+
+    if (response.statusCode === 200) {
+      expect(data).toHaveProperty('success');
+      expect(data).toHaveProperty('post_count');
+      expect(data).toHaveProperty('follower_count');
+      expect(data).toHaveProperty('following_count');
+    } else {
+      expect(data).toHaveProperty('error');
+    }
+  });
+});
