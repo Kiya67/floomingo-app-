@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer } from 'drizzle-orm/pg-core';
 
 export const blocks = pgTable('blocks', {
   blockerId: text('blocker_id').notNull(),
@@ -37,3 +37,27 @@ export const boardPlaces = pgTable('board_places', {
 }, (table) => [
   uniqueIndex('board_places_unique').on(table.boardId, table.placeId),
 ]);
+
+export const trips = pgTable('trips', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  title: text('title').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const tripItems = pgTable('trip_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tripId: uuid('trip_id').notNull(),
+  postId: text('post_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('trip_items_unique').on(table.tripId, table.postId),
+]);
+
+export const profileStats = pgTable('profile_stats', {
+  userId: text('user_id').primaryKey(),
+  followerCount: integer('follower_count').default(0).notNull(),
+  followingCount: integer('following_count').default(0).notNull(),
+  postCount: integer('post_count').default(0).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
