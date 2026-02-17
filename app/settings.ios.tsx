@@ -56,15 +56,12 @@ export default function SettingsScreen() {
     {
       title: 'Account',
       items: [
-        { label: 'Privacy', iosIcon: 'lock.fill', androidIcon: 'lock', onPress: () => console.log('Privacy tapped') },
         { label: 'Security', iosIcon: 'shield.fill', androidIcon: 'security', onPress: () => console.log('Security tapped') },
-        { label: 'Notifications', iosIcon: 'bell.fill', androidIcon: 'notifications', onPress: () => console.log('Notifications tapped') },
       ],
     },
     {
       title: 'Content',
       items: [
-        { label: 'Saved Posts', iosIcon: 'bookmark.fill', androidIcon: 'bookmark', onPress: () => console.log('Saved Posts tapped') },
         { label: 'Blocked Users', iosIcon: 'hand.raised.fill', androidIcon: 'block', onPress: () => console.log('Blocked Users tapped') },
       ],
     },

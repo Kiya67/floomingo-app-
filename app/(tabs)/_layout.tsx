@@ -4,14 +4,15 @@ import { Tabs } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { useColorScheme } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const tabBarActiveTintColor = '#fff';
-  const tabBarInactiveTintColor = 'rgba(255, 255, 255, 0.6)';
+  const tabBarActiveTintColor = isDark ? colors.primaryDark : colors.primary;
+  const tabBarInactiveTintColor = isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.4)';
+  const tabBarBackgroundColor = isDark ? 'rgba(28, 28, 30, 0.9)' : 'rgba(255, 255, 255, 0.9)';
 
   return (
     <Tabs
@@ -20,7 +21,7 @@ export default function TabLayout() {
         tabBarActiveTintColor,
         tabBarInactiveTintColor,
         tabBarStyle: {
-          backgroundColor: 'transparent',
+          backgroundColor: tabBarBackgroundColor,
           borderTopWidth: 0,
           height: 70,
           paddingBottom: 12,
@@ -32,16 +33,18 @@ export default function TabLayout() {
           borderRadius: 20,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
+          shadowOpacity: isDark ? 0.3 : 0.15,
           shadowRadius: 8,
           elevation: 8,
         },
         tabBarBackground: () => (
-          <LinearGradient
-            colors={['#FF6B9D', '#FFA06B']}
+          <BlurView
+            intensity={80}
             style={{
               flex: 1,
               borderRadius: 20,
+              backgroundColor: tabBarBackgroundColor,
+              overflow: 'hidden',
             }}
           />
         ),
