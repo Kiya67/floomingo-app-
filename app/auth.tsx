@@ -18,6 +18,8 @@ import { Modal } from "@/components/ui/Modal";
 
 type Mode = "signin" | "signup";
 
+const APP_VERSION = "1.0.1"; // Updated to confirm refresh
+
 export default function AuthScreen() {
   const router = useRouter();
 
@@ -190,6 +192,8 @@ export default function AuthScreen() {
               {mode === "signin" ? "Sign In" : "Sign Up"}
             </Text>
 
+            <Text style={styles.versionText}>v{APP_VERSION}</Text>
+
             {mode === "signup" && (
               <TextInput
                 style={styles.input}
@@ -306,9 +310,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: "bold",
-    marginBottom: 32,
+    marginBottom: 8,
     textAlign: "center",
     color: "#fff",
+  },
+  versionText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    marginBottom: 24,
   },
   input: {
     height: 50,
