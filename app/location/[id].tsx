@@ -144,7 +144,6 @@ export default function LocationDetailsScreen() {
   const handleDirections = async () => {
     console.log('User tapped Directions button');
     
-    // Check if google_place_id exists
     if (!id || typeof id !== 'string') {
       console.error('Missing Google Place ID');
       showToast('Directions unavailable - Missing location ID', 'error');
@@ -261,7 +260,6 @@ export default function LocationDetailsScreen() {
             </View>
           </View>
 
-          {/* Directions Button */}
           <TouchableOpacity
             style={[styles.directionsButton, { backgroundColor: primaryColor }]}
             onPress={handleDirections}

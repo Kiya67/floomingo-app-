@@ -241,24 +241,21 @@ export const authenticatedDelete = async <T = any>(endpoint: string, data: any =
 export interface Board {
   id: string;
   title: string;
-  cover_url: string | null;
   created_at: string;
 }
 
-export interface BoardPlace {
-  id: string;
+export interface BoardVideo {
   board_id: string;
-  place_id: string;
-  place_name: string;
-  place_primary_type: string;
-  place_address: string;
   post_id: string;
-  created_at: string;
+  post_caption: string;
+  post_video_url: string;
+  post_thumbnail_url: string | null;
+  post_created_at: string;
+  saved_at: string;
 }
 
 export interface SaveVideoResponse {
-  board_posts_count: number;
-  board_places_count: number;
+  success: boolean;
 }
 
 /**
@@ -270,54 +267,29 @@ export const getBoards = async (): Promise<Board[]> => {
 };
 
 /**
- * Get places for a specific board
+ * Get videos for a specific board
  */
-export const getBoardPlaces = async (boardId: string): Promise<BoardPlace[]> => {
-  console.log('[API] Fetching places for board:', boardId);
-  return authenticatedGet<BoardPlace[]>(`/api/boards/${boardId}/places`);
+export const getBoardVideos = async (boardId: string): Promise<BoardVideo[]> => {
+  console.log('[API] Fetching videos for board:', boardId);
+  return authenticatedGet<BoardVideo[]>(`/api/boards/${boardId}/videos`);
 };
 
 /**
- * Save video with location to a board
+ * Create a new board
  */
-export const saveVideoWithLocation = async (
-  boardId: string,
-  postId: string,
-  placeId: string,
-  placeName: string,
-  placeAddress: string,
-  placePrimaryType: string
-): Promise<SaveVideoResponse | { error: { code: number; message: string } }> => {
-  console.log('[API] Saving video with location to board:', boardId);
-  try {
-    return await authenticatedPost<SaveVideoResponse>(
-      `/api/boards/${boardId}/save-video-with-location`,
-      {
-        post_id: postId,
-        place_id: placeId,
-        place_name: placeName,
-        place_address: placeAddress,
-        place_primary_type: placePrimaryType,
-      }
-    );
-  } catch (error: any) {
-    console.error('[API] Error saving video with location:', error);
-    // Check if it's a 409 conflict (already saved)
-    if (error.message?.includes('409')) {
-      return { error: { code: 409, message: 'Video already saved to this board' } };
-    }
-    return { error: { code: 500, message: error.message || 'Failed to save video' } };
-  }
+export const createBoard = async (title: string): Promise<Board> => {
+  console.log('[API] Creating board:', title);
+  return authenticatedPost<Board>('/api/boards', { title });
 };
 
 /**
- * Save video only to a board
+ * Save video to a board (VIDEO-ONLY, no places)
  */
 export const saveVideoOnly = async (
   boardId: string,
   postId: string
 ): Promise<SaveVideoResponse | { error: { code: number; message: string } }> => {
-  console.log('[API] Saving video only to board:', boardId);
+  console.log('[API] Saving video to board:', boardId, 'post:', postId);
   try {
     return await authenticatedPost<SaveVideoResponse>(
       `/api/boards/${boardId}/save-video`,
@@ -326,7 +298,7 @@ export const saveVideoOnly = async (
       }
     );
   } catch (error: any) {
-    console.error('[API] Error saving video only:', error);
+    console.error('[API] Error saving video:', error);
     // Check if it's a 409 conflict (already saved)
     if (error.message?.includes('409')) {
       return { error: { code: 409, message: 'Video already saved to this board' } };

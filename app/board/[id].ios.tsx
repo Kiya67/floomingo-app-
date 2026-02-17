@@ -6,9 +6,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
-import { VideoGridItem } from '@/components/VideoGridItem';
 import { MiniVideoPreview } from '@/components/MiniVideoPreview';
-import { getBoardPlaces } from '@/utils/api';
 import CustomModal from '@/components/ui/Modal';
 
 interface Board {
@@ -30,19 +28,6 @@ interface Post {
   location_type: string | null;
   created_at: string;
 }
-
-interface BoardPlace {
-  id: string;
-  board_id: string;
-  place_id: string;
-  place_name: string | null;
-  place_primary_type: string | null;
-  place_address: string | null;
-  post_id: string | null;
-  created_at: string;
-}
-
-type TabType = 'videos' | 'places';
 
 const windowWidth = Dimensions.get('window').width;
 const videoCardWidth = (windowWidth - 48) / 2;
@@ -68,16 +53,12 @@ export default function BoardDetailScreen() {
 
   const [board, setBoard] = useState<Board | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [places, setPlaces] = useState<BoardPlace[]>([]);
-  const [placesWithVideos, setPlacesWithVideos] = useState<Map<string, Post>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('videos');
   const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
-  const [visiblePlaceIds, setVisiblePlaceIds] = useState<Set<string>>(new Set());
   const [coverImageUrl, setCoverImageUrl] = useState<string>('');
   const [modalState, setModalState] = useState<{
     visible: boolean;
@@ -95,6 +76,13 @@ export default function BoardDetailScreen() {
   const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error('No authenticated user');
+        setLoading(false);
+        return;
+      }
+
       const { data: boardData, error: boardError } = await supabase
         .from('boards')
         .select('*')
@@ -110,6 +98,7 @@ export default function BoardDetailScreen() {
       setBoard(boardData);
       setEditTitle(boardData.title);
 
+      // Fetch videos saved to this board by the current user
       const { data: postsData, error: postsError } = await supabase
         .from('board_posts')
         .select(`
@@ -127,6 +116,7 @@ export default function BoardDetailScreen() {
           )
         `)
         .eq('board_id', boardId)
+        .eq('saved_by', user.id)
         .order('created_at', { ascending: false });
 
       if (postsError) {
@@ -147,37 +137,6 @@ export default function BoardDetailScreen() {
           resolvedCoverUrl = postsArray[0].thumbnail_url;
         }
         setCoverImageUrl(resolvedCoverUrl);
-      }
-
-      // Fetch places using backend API
-      try {
-        const placesData = await getBoardPlaces(boardId);
-        console.log('Board places fetched successfully from backend:', placesData?.length || 0);
-        setPlaces(placesData || []);
-        
-        // Fetch videos for places that have post_id
-        const videosMap = new Map<string, Post>();
-        const postIds = (placesData || [])
-          .map(p => p.post_id)
-          .filter(Boolean) as string[];
-        
-        if (postIds.length > 0) {
-          const { data: postsForPlaces } = await supabase
-            .from('posts')
-            .select('id, video_url, thumbnail_url, caption')
-            .in('id', postIds);
-          
-          if (postsForPlaces) {
-            postsForPlaces.forEach(post => {
-              videosMap.set(post.id, post as Post);
-            });
-          }
-        }
-        
-        setPlacesWithVideos(videosMap);
-      } catch (placesError) {
-        console.error('Error fetching board places from backend:', placesError);
-        setPlaces([]);
       }
     } catch (error) {
       console.error('Error in fetchBoardDetails:', error);
@@ -205,15 +164,6 @@ export default function BoardDetailScreen() {
   const handleVideoPress = (post: Post) => {
     console.log('User tapped video:', post.id);
     router.push(`/video/${post.id}`);
-  };
-
-  const handlePlacePress = (place: BoardPlace) => {
-    console.log('User tapped place:', place.place_id);
-    if (place.post_id) {
-      router.push(`/video/${place.post_id}`);
-    } else if (place.place_id) {
-      router.push(`/location/${place.place_id}`);
-    }
   };
 
   const handleEditBoard = () => {
@@ -315,16 +265,6 @@ export default function BoardDetailScreen() {
     setVisibleVideoIds(visibleIds);
   }).current;
 
-  const onViewablePlacesChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const visibleIds = new Set(
-      viewableItems
-        .map(item => item.item?.id)
-        .filter(Boolean)
-    );
-    console.log('Viewable places changed:', visibleIds.size);
-    setVisiblePlaceIds(visibleIds);
-  }).current;
-
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
   }).current;
@@ -346,61 +286,6 @@ export default function BoardDetailScreen() {
           activeOpacity={0.9}
         />
       </View>
-    );
-  };
-
-  const renderPlaceItem = ({ item }: { item: BoardPlace }) => {
-    const placeName = item.place_name || 'Unknown Place';
-    const placeType = item.place_primary_type || '';
-    const placeAddress = item.place_address || 'No address available';
-    const shouldPlayVideo = visiblePlaceIds.has(item.id);
-    
-    const videoData = item.post_id ? placesWithVideos.get(item.post_id) : null;
-
-    return (
-      <TouchableOpacity
-        style={[styles.placeCard, { backgroundColor: cardColor }]}
-        onPress={() => handlePlacePress(item)}
-        activeOpacity={0.8}
-      >
-        {videoData?.video_url ? (
-          <MiniVideoPreview
-            videoUrl={videoData.video_url}
-            posterUrl={videoData.thumbnail_url || undefined}
-            size={72}
-            borderRadius={12}
-            shouldPlay={shouldPlayVideo}
-          />
-        ) : (
-          <View style={[styles.placeIconContainer, { backgroundColor: isDark ? '#333' : '#F5F5F5' }]}>
-            <IconSymbol 
-              ios_icon_name="mappin.circle.fill"
-              android_material_icon_name="location-on" 
-              size={24} 
-              color={primaryColor}
-            />
-          </View>
-        )}
-        <View style={styles.placeInfo}>
-          <Text style={[styles.placeName, { color: textColor }]} numberOfLines={1}>
-            {placeName}
-          </Text>
-          {placeType ? (
-            <Text style={[styles.placeType, { color: textSecondaryColor }]} numberOfLines={1}>
-              {placeType}
-            </Text>
-          ) : null}
-          <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={1}>
-            {placeAddress}
-          </Text>
-        </View>
-        <IconSymbol 
-          ios_icon_name="chevron.right"
-          android_material_icon_name="arrow-forward" 
-          size={20} 
-          color={textSecondaryColor}
-        />
-      </TouchableOpacity>
     );
   };
 
@@ -441,8 +326,6 @@ export default function BoardDetailScreen() {
   }
 
   const videoCountText = posts.length === 1 ? '1 video' : `${posts.length} videos`;
-  const placeCountText = places.length === 1 ? '1 place' : `${places.length} places`;
-  const countsText = `${videoCountText} • ${placeCountText}`;
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
@@ -528,116 +411,45 @@ export default function BoardDetailScreen() {
             </View>
             <View style={styles.coverInfo}>
               <Text style={styles.coverTitle}>{board.title}</Text>
-              <Text style={styles.coverCounts}>{countsText}</Text>
+              <Text style={styles.coverCounts}>{videoCountText}</Text>
             </View>
           </LinearGradient>
         </View>
 
-        <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#222' : '#F0F0F0' }]}>
-          <TouchableOpacity
-            style={[
-              styles.segmentButton,
-              activeTab === 'videos' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
-            ]}
-            onPress={() => setActiveTab('videos')}
-            activeOpacity={0.8}
-          >
-            <Text style={[
-              styles.segmentText,
-              { color: activeTab === 'videos' ? textColor : textSecondaryColor },
-              activeTab === 'videos' && styles.segmentTextActive
-            ]}>
-              Videos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.segmentButton,
-              activeTab === 'places' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
-            ]}
-            onPress={() => setActiveTab('places')}
-            activeOpacity={0.8}
-          >
-            <Text style={[
-              styles.segmentText,
-              { color: activeTab === 'places' ? textColor : textSecondaryColor },
-              activeTab === 'places' && styles.segmentTextActive
-            ]}>
-              Places
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {activeTab === 'videos' ? (
-          posts.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol 
-                ios_icon_name="video.fill"
-                android_material_icon_name="videocam" 
-                size={64} 
-                color={textSecondaryColor}
-              />
-              <Text style={[styles.emptyTitle, { color: textColor }]}>
-                No videos saved yet
-              </Text>
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-                Save videos from your feed to this trip
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: primaryColor }]}
-                onPress={handleSaveFromHome}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.emptyButtonText}>Save from Home</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={posts}
-              renderItem={renderVideoItem}
-              keyExtractor={(item) => item.id}
-              numColumns={2}
-              columnWrapperStyle={styles.videoRow}
-              contentContainerStyle={styles.videosContainer}
-              scrollEnabled={false}
-              onViewableItemsChanged={onViewableVideosChanged}
-              viewabilityConfig={viewabilityConfig}
+        {posts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol 
+              ios_icon_name="video.fill"
+              android_material_icon_name="videocam" 
+              size={64} 
+              color={textSecondaryColor}
             />
-          )
+            <Text style={[styles.emptyTitle, { color: textColor }]}>
+              No videos saved yet
+            </Text>
+            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              Save videos from your feed to this trip
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyButton, { backgroundColor: primaryColor }]}
+              onPress={handleSaveFromHome}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.emptyButtonText}>Save from Home</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
-          places.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol 
-                ios_icon_name="mappin.circle.fill"
-                android_material_icon_name="location-on" 
-                size={64} 
-                color={textSecondaryColor}
-              />
-              <Text style={[styles.emptyTitle, { color: textColor }]}>
-                No places saved yet
-              </Text>
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-                Save videos with locations to see them here
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: primaryColor }]}
-                onPress={handleSaveFromHome}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.emptyButtonText}>Save video + location</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={places}
-              renderItem={renderPlaceItem}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.placesContainer}
-              scrollEnabled={false}
-              onViewableItemsChanged={onViewablePlacesChanged}
-              viewabilityConfig={viewabilityConfig}
-            />
-          )
+          <FlatList
+            data={posts}
+            renderItem={renderVideoItem}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            columnWrapperStyle={styles.videoRow}
+            contentContainerStyle={styles.videosContainer}
+            scrollEnabled={false}
+            onViewableItemsChanged={onViewableVideosChanged}
+            viewabilityConfig={viewabilityConfig}
+          />
         )}
       </ScrollView>
 
@@ -792,26 +604,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  segmentedControl: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginVertical: 16,
-    borderRadius: 10,
-    padding: 4,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -884,45 +676,6 @@ const styles = StyleSheet.create({
   },
   videoOverlay: {
     ...StyleSheet.absoluteFillObject,
-  },
-  placesContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  placeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  placeIconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeInfo: {
-    flex: 1,
-  },
-  placeName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  placeType: {
-    fontSize: 13,
-    marginBottom: 2,
-  },
-  placeAddress: {
-    fontSize: 14,
   },
   modalOverlay: {
     flex: 1,

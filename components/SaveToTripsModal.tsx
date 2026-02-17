@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, TextInput, ScrollView, Image, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, TextInput, Image, ImageSourcePropType } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
-import { saveVideoWithLocation, saveVideoOnly } from '@/utils/api';
+import { saveVideoOnly } from '@/utils/api';
 import { Toast } from '@/components/ui/Toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,7 +31,7 @@ interface Post {
 interface SaveToTripsModalProps {
   isVisible: boolean;
   onClose: () => void;
-  post: Post; // Post is now a required prop
+  post: Post;
 }
 
 const LAST_USED_BOARD_KEY = 'lastUsedBoardId';
@@ -44,7 +44,6 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 
 export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalProps) {
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
-  // This is a fundamental React rule - hooks must be called in the same order every render
   const colorScheme = useColorScheme();
   const router = useRouter();
   const { session, user, loadingAuth } = useSupabaseAuth();
@@ -55,7 +54,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   const [boardCounts, setBoardCounts] = useState<Map<string, number>>(new Map());
   const [loadingBoards, setLoadingBoards] = useState(true);
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
-  const [saveOption, setSaveOption] = useState<'video_only' | 'video_and_place'>('video_only');
   const [isSaving, setIsSaving] = useState(false);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
@@ -84,13 +82,11 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     setLoadingBoards(true);
     
     try {
-      // Check if auth is still loading
       if (loadingAuth) {
         console.log('SaveToTripsModal - Auth still loading, waiting...');
         return;
       }
 
-      // Check if user is authenticated
       if (!session || !user) {
         console.warn('SaveToTripsModal - No session or user, cannot fetch boards');
         setBoards([]);
@@ -114,21 +110,16 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
         console.log('SaveToTripsModal - Boards fetched:', data?.length || 0);
         setBoards(data || []);
         
-        // Fetch counts for each board
+        // Fetch video counts for each board
         const counts = new Map<string, number>();
         for (const board of data || []) {
-          const { count: videoCount } = await supabase
+          const { count } = await supabase
             .from('board_posts')
             .select('*', { count: 'exact', head: true })
-            .eq('board_id', board.id);
+            .eq('board_id', board.id)
+            .eq('saved_by', user.id);
           
-          const { count: placeCount } = await supabase
-            .from('board_places')
-            .select('*', { count: 'exact', head: true })
-            .eq('board_id', board.id);
-          
-          const totalCount = (videoCount || 0) + (placeCount || 0);
-          counts.set(board.id, totalCount);
+          counts.set(board.id, count || 0);
         }
         setBoardCounts(counts);
         
@@ -162,13 +153,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       console.log('SaveToTripsModal - Modal opened for post:', post.id);
       bottomSheetRef.current?.expand();
       fetchBoards();
-      
-      // Set default save option based on place availability
-      if (post.place_id && post.place_name) {
-        setSaveOption('video_and_place');
-      } else {
-        setSaveOption('video_only');
-      }
     } else {
       bottomSheetRef.current?.close();
     }
@@ -181,7 +165,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       return;
     }
 
-    // Check auth before creating
     if (loadingAuth) {
       showToast('Loading authentication...', 'info');
       return;
@@ -230,20 +213,12 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       return;
     }
 
-    // Validate save option
-    if (saveOption === 'video_and_place' && !post.place_id) {
-      showToast('No place attached to this video', 'error');
-      return;
-    }
-
-    // Auth guard: Check if auth is still loading
     if (loadingAuth) {
       console.log('SaveToTripsModal - Auth still loading, blocking save');
       showToast('Loading authentication...', 'info');
       return;
     }
 
-    // Auth guard: Ensure session is valid before proceeding
     console.log('SaveToTripsModal - Fetching fresh session for handleSave');
     const { data: sessionData } = await supabase.auth.getSession();
     const currentSession = sessionData?.session;
@@ -255,35 +230,19 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       return;
     }
 
-    console.log('SaveToTripsModal - Saving post to board:', {
+    console.log('SaveToTripsModal - Saving video to board:', {
       boardId: selectedBoardId,
       postId: post.id,
       userId: currentSession.user.id,
-      saveOption,
     });
 
     setIsSaving(true);
     try {
-      let result;
-      
-      if (saveOption === 'video_and_place' && post.place_id && post.place_name) {
-        console.log('SaveToTripsModal - Saving video with location');
-        result = await saveVideoWithLocation(
-          selectedBoardId,
-          post.id,
-          post.place_id,
-          post.place_name,
-          '',
-          post.location_type || ''
-        );
-      } else {
-        console.log('SaveToTripsModal - Saving video only');
-        result = await saveVideoOnly(selectedBoardId, post.id);
-      }
+      console.log('SaveToTripsModal - Saving video only');
+      const result = await saveVideoOnly(selectedBoardId, post.id);
 
       console.log('SaveToTripsModal - Save result:', result);
 
-      // Check for errors in the result
       if (result?.error) {
         if (result.error.code === 409) {
           showToast('Already saved to this trip!', 'info');
@@ -297,7 +256,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
           showToast(`Failed to save: ${result.error.message}`, 'error');
         }
       } else {
-        // Save last used board to AsyncStorage
         try {
           await AsyncStorage.setItem(LAST_USED_BOARD_KEY, selectedBoardId);
           console.log('SaveToTripsModal - Saved last used board to storage:', selectedBoardId);
@@ -308,7 +266,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
         const selectedBoard = boards.find(b => b.id === selectedBoardId);
         const boardTitle = selectedBoard?.title || 'trip';
 
-        // Update board cover if it was null and we have a thumbnail
         if (!selectedBoard?.cover_url && post.thumbnail_url) {
           console.log('SaveToTripsModal - Updating board cover with post thumbnail');
           await supabase
@@ -317,7 +274,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
             .eq('id', selectedBoardId);
         }
 
-        // Trigger trips refresh if callback exists
         if (global.tripsRefreshCallback) {
           global.tripsRefreshCallback();
         }
@@ -343,7 +299,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     } finally {
       setIsSaving(false);
     }
-  }, [selectedBoardId, post, isSaving, saveOption, loadingAuth, router, showToast, boards, onClose]);
+  }, [selectedBoardId, post, isSaving, loadingAuth, router, showToast, boards, onClose]);
 
   const renderBackdrop = useCallback((props: any) => (
     <BottomSheetBackdrop
@@ -355,26 +311,18 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
     />
   ), []);
 
-  // Guard: Do not render modal content unless BOTH isVisible === true AND post exists
-  // This guard is AFTER all hooks to comply with React Hooks rules
   if (!isVisible || !post) {
     console.log('SaveToTripsModal - Not rendering: isVisible =', isVisible, ', post =', !!post);
     return null;
   }
 
-  // Safe access to post properties with optional chaining and nullish coalescing
   const postTitle = post?.caption ?? '';
   const postSubtitle = post?.place_name ?? '';
   const headerSubtitle = `${postTitle.substring(0, 40)}${postTitle.length > 40 ? '...' : ''}${postSubtitle ? ` • ${postSubtitle}` : ''}`;
   
-  const hasPlace = Boolean(post?.place_id && post?.place_name);
-  const showPlaceWarning = saveOption === 'video_and_place' && !hasPlace;
-  
-  // Determine if we can save
   const isAuthReady = !loadingAuth && !!session && !!user;
-  const canSave = selectedBoardId && isAuthReady && !isSaving && !showPlaceWarning;
+  const canSave = selectedBoardId && isAuthReady && !isSaving;
 
-  // Show loading state while auth is initializing
   const showAuthLoading = loadingAuth;
   const showAuthMissing = !loadingAuth && (!session || !user);
 
@@ -391,7 +339,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
         handleIndicatorStyle={{ backgroundColor: textSecondaryColor }}
       >
         <View style={[styles.container, { backgroundColor: bgColor }]}>
-          {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <Text style={[styles.headerTitle, { color: textColor }]}>Save to Trips</Text>
@@ -448,7 +395,6 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
           ) : (
             <>
               <BottomSheetScrollView style={styles.scrollContent}>
-                {/* Section 1: Board Picker */}
                 {showCreateNew ? (
                   <View style={[styles.createNewContainer, { backgroundColor: cardColor }]}>
                     <Text style={[styles.sectionTitle, { color: textColor }]}>Create New Trip</Text>
@@ -511,7 +457,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
                         {boards.map((board) => {
                           const isSelected = selectedBoardId === board.id;
                           const itemCount = boardCounts.get(board.id) || 0;
-                          const itemCountText = itemCount === 1 ? '1 item' : `${itemCount} items`;
+                          const itemCountText = itemCount === 1 ? '1 video' : `${itemCount} videos`;
                           
                           return (
                             <TouchableOpacity
@@ -562,83 +508,10 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
                         })}
                       </View>
                     )}
-
-                    {/* Section 2: Save Options */}
-                    <View style={styles.saveOptionsSection}>
-                      <Text style={[styles.sectionTitle, { color: textColor }]}>Save Options</Text>
-                      <View style={styles.segmentedControl}>
-                        <TouchableOpacity
-                          style={[
-                            styles.segment,
-                            { borderColor: textSecondaryColor },
-                            saveOption === 'video_only' && { backgroundColor: primaryColor, borderColor: primaryColor },
-                          ]}
-                          onPress={() => setSaveOption('video_only')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[
-                            styles.segmentText,
-                            { color: saveOption === 'video_only' ? '#FFFFFF' : textColor }
-                          ]}>
-                            Video only
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[
-                            styles.segment,
-                            { borderColor: textSecondaryColor },
-                            saveOption === 'video_and_place' && { backgroundColor: primaryColor, borderColor: primaryColor },
-                          ]}
-                          onPress={() => setSaveOption('video_and_place')}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[
-                            styles.segmentText,
-                            { color: saveOption === 'video_and_place' ? '#FFFFFF' : textColor }
-                          ]}>
-                            Video + place
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                      {showPlaceWarning && (
-                        <View style={styles.warningContainer}>
-                          <IconSymbol
-                            ios_icon_name="exclamationmark.triangle"
-                            android_material_icon_name="warning"
-                            size={16}
-                            color="#FF9500"
-                          />
-                          <Text style={styles.warningText}>No place attached to this video</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Section 3: Place Preview */}
-                    {saveOption === 'video_and_place' && hasPlace && (
-                      <View style={[styles.placePreviewSection, { backgroundColor: cardColor }]}>
-                        <View style={styles.placePreviewContent}>
-                          <IconSymbol
-                            ios_icon_name="mappin.circle.fill"
-                            android_material_icon_name="location-on"
-                            size={24}
-                            color={primaryColor}
-                          />
-                          <View style={styles.placePreviewInfo}>
-                            <Text style={[styles.placePreviewName, { color: textColor }]} numberOfLines={1}>
-                              {post.place_name}
-                            </Text>
-                            <Text style={[styles.placePreviewSubtext, { color: textSecondaryColor }]}>
-                              This will use the video's place
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    )}
                   </>
                 )}
               </BottomSheetScrollView>
 
-              {/* Footer with gradient and Save button */}
               {!showCreateNew && (
                 <LinearGradient
                   colors={isDark ? ['rgba(0,0,0,0)', 'rgba(0,0,0,0.9)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,0.95)']}
@@ -790,65 +663,6 @@ const styles = StyleSheet.create({
   boardItemCount: {
     fontSize: 13,
   },
-  saveOptionsSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  warningContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: 'rgba(255, 149, 0, 0.1)',
-    borderRadius: 8,
-  },
-  warningText: {
-    fontSize: 13,
-    color: '#FF9500',
-    flex: 1,
-  },
-  placePreviewSection: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-  },
-  placePreviewContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  placePreviewInfo: {
-    flex: 1,
-  },
-  placePreviewName: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  placePreviewSubtext: {
-    fontSize: 13,
-  },
   footer: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -868,6 +682,11 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
   },
   input: {
     borderWidth: 1,

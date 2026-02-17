@@ -14,7 +14,6 @@ interface Board {
   cover_url?: string;
   created_at: string;
   video_count: number;
-  place_count: number;
   cover_image_url: string;
 }
 
@@ -69,17 +68,12 @@ export default function TripsScreen() {
       // Fetch counts for each board
       const boardsWithCounts = await Promise.all(
         (boardsData || []).map(async (board) => {
-          // Count videos
+          // Count videos saved by this user
           const { count: videoCount } = await supabase
             .from('board_posts')
             .select('*', { count: 'exact', head: true })
-            .eq('board_id', board.id);
-
-          // Count places
-          const { count: placeCount } = await supabase
-            .from('board_places')
-            .select('*', { count: 'exact', head: true })
-            .eq('board_id', board.id);
+            .eq('board_id', board.id)
+            .eq('saved_by', user.id);
 
           // Get cover image
           let coverImageUrl = board.cover_url || '';
@@ -88,6 +82,7 @@ export default function TripsScreen() {
               .from('board_posts')
               .select('post_id, posts(thumbnail_url)')
               .eq('board_id', board.id)
+              .eq('saved_by', user.id)
               .limit(1)
               .single();
 
@@ -103,7 +98,6 @@ export default function TripsScreen() {
             cover_url: board.cover_url,
             created_at: board.created_at,
             video_count: videoCount || 0,
-            place_count: placeCount || 0,
             cover_image_url: coverImageUrl,
           };
         })
@@ -220,8 +214,6 @@ export default function TripsScreen() {
           <View style={styles.gridContainer}>
             {boards.map((board) => {
               const videoText = board.video_count === 1 ? '1 video' : `${board.video_count} videos`;
-              const placeText = board.place_count === 1 ? '1 place' : `${board.place_count} places`;
-              const subtitle = `${videoText} • ${placeText}`;
               
               return (
                 <TouchableOpacity
@@ -261,7 +253,7 @@ export default function TripsScreen() {
                           {board.title}
                         </Text>
                         <Text style={styles.boardSubtitle}>
-                          {subtitle}
+                          {videoText}
                         </Text>
                       </View>
                     </LinearGradient>
