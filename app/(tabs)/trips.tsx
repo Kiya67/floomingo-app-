@@ -13,8 +13,9 @@ interface Board {
   title: string;
   cover_url?: string;
   created_at: string;
-  item_count?: number;
-  first_thumbnail?: string;
+  video_count: number;
+  place_count: number;
+  cover_image_url: string;
 }
 
 const windowWidth = Dimensions.get('window').width;
@@ -34,7 +35,6 @@ export default function TripsScreen() {
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
-  const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
   const [boards, setBoards] = useState<Board[]>([]);
@@ -61,6 +61,9 @@ export default function TripsScreen() {
             posts (
               thumbnail_url
             )
+          ),
+          board_places (
+            id
           )
         `)
         .eq('user_id', user.id)
@@ -71,9 +74,17 @@ export default function TripsScreen() {
         setBoards([]);
       } else {
         const boardsWithCounts = (data || []).map(board => {
-          const items = board.board_posts || [];
-          const itemCount = items.length;
-          const firstThumbnail = items[0]?.posts?.thumbnail_url || null;
+          const posts = board.board_posts || [];
+          const places = board.board_places || [];
+          const videoCount = posts.length;
+          const placeCount = places.length;
+          
+          let coverImageUrl = '';
+          if (board.cover_url) {
+            coverImageUrl = board.cover_url;
+          } else if (posts.length > 0 && posts[0]?.posts?.thumbnail_url) {
+            coverImageUrl = posts[0].posts.thumbnail_url;
+          }
           
           return {
             id: board.id,
@@ -81,8 +92,9 @@ export default function TripsScreen() {
             title: board.title,
             cover_url: board.cover_url,
             created_at: board.created_at,
-            item_count: itemCount,
-            first_thumbnail: firstThumbnail,
+            video_count: videoCount,
+            place_count: placeCount,
+            cover_image_url: coverImageUrl,
           };
         });
         
@@ -192,8 +204,9 @@ export default function TripsScreen() {
         ) : (
           <View style={styles.gridContainer}>
             {boards.map((board) => {
-              const itemCountText = board.item_count === 1 ? '1 item' : `${board.item_count || 0} items`;
-              const coverImage = board.cover_url || board.first_thumbnail;
+              const videoText = board.video_count === 1 ? '1 video' : `${board.video_count} videos`;
+              const placeText = board.place_count === 1 ? '1 place' : `${board.place_count} places`;
+              const subtitle = `${videoText} • ${placeText}`;
               
               return (
                 <TouchableOpacity
@@ -203,9 +216,9 @@ export default function TripsScreen() {
                   activeOpacity={0.9}
                 >
                   <View style={styles.cardImageContainer}>
-                    {coverImage ? (
+                    {board.cover_image_url ? (
                       <Image
-                        source={resolveImageSource(coverImage)}
+                        source={resolveImageSource(board.cover_image_url)}
                         style={styles.boardImage}
                         resizeMode="cover"
                       />
@@ -231,8 +244,8 @@ export default function TripsScreen() {
                         <Text style={styles.boardTitle} numberOfLines={2}>
                           {board.title}
                         </Text>
-                        <Text style={styles.boardCount}>
-                          {itemCountText}
+                        <Text style={styles.boardSubtitle}>
+                          {subtitle}
                         </Text>
                       </View>
                     </LinearGradient>
@@ -381,7 +394,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  boardCount: {
+  boardSubtitle: {
     fontSize: 13,
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '500',

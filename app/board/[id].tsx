@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, Alert, FlatList, ViewToken } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, Alert, FlatList, ViewToken, Image, ImageSourcePropType } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { VideoGridItem } from '@/components/VideoGridItem';
@@ -12,6 +13,7 @@ interface Board {
   id: string;
   user_id: string;
   title: string;
+  cover_url: string | null;
   created_at: string;
 }
 
@@ -49,7 +51,13 @@ interface BoardPlace {
 type TabType = 'videos' | 'places';
 
 const windowWidth = Dimensions.get('window').width;
-const gridItemSize = (windowWidth - 48) / 3;
+const videoCardWidth = (windowWidth - 48) / 2;
+
+function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+  if (!source) return { uri: '' };
+  if (typeof source === 'string') return { uri: source };
+  return source as ImageSourcePropType;
+}
 
 export default function BoardDetailScreen() {
   const router = useRouter();
@@ -73,7 +81,9 @@ export default function BoardDetailScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [activeTab, setActiveTab] = useState<TabType>('videos');
+  const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
   const [visiblePlaceIds, setVisiblePlaceIds] = useState<Set<string>>(new Set());
+  const [coverImageUrl, setCoverImageUrl] = useState<string>('');
 
   const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
@@ -122,6 +132,14 @@ export default function BoardDetailScreen() {
         
         console.log('Board posts fetched successfully:', postsArray.length);
         setPosts(postsArray);
+        
+        let resolvedCoverUrl = '';
+        if (boardData.cover_url) {
+          resolvedCoverUrl = boardData.cover_url;
+        } else if (postsArray.length > 0 && postsArray[0].thumbnail_url) {
+          resolvedCoverUrl = postsArray[0].thumbnail_url;
+        }
+        setCoverImageUrl(resolvedCoverUrl);
       }
 
       const { data: placesData, error: placesError } = await supabase
@@ -271,7 +289,22 @@ export default function BoardDetailScreen() {
     }
   };
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+  const handleSaveFromHome = () => {
+    console.log('User tapped Save from Home');
+    router.push('/(tabs)/(home)');
+  };
+
+  const onViewableVideosChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const visibleIds = new Set(
+      viewableItems
+        .map(item => item.item?.id)
+        .filter(Boolean)
+    );
+    console.log('Viewable videos changed:', visibleIds.size);
+    setVisibleVideoIds(visibleIds);
+  }).current;
+
+  const onViewablePlacesChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const visibleIds = new Set(
       viewableItems
         .map(item => item.item?.id)
@@ -284,6 +317,26 @@ export default function BoardDetailScreen() {
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
   }).current;
+
+  const renderVideoItem = ({ item, index }: { item: Post; index: number }) => {
+    const shouldPlay = visibleVideoIds.has(item.id);
+    return (
+      <View style={[styles.videoCard, { width: videoCardWidth }]}>
+        <MiniVideoPreview
+          videoUrl={item.video_url}
+          posterUrl={item.thumbnail_url || undefined}
+          size={videoCardWidth}
+          borderRadius={12}
+          shouldPlay={shouldPlay}
+        />
+        <TouchableOpacity
+          style={styles.videoOverlay}
+          onPress={() => handleVideoPress(item)}
+          activeOpacity={0.9}
+        />
+      </View>
+    );
+  };
 
   const renderPlaceItem = ({ item }: { item: BoardPlace }) => {
     const placeName = item.place_name || 'Unknown Place';
@@ -365,161 +418,200 @@ export default function BoardDetailScreen() {
     );
   }
 
+  const videoCountText = posts.length === 1 ? '1 video' : `${posts.length} videos`;
+  const placeCountText = places.length === 1 ? '1 place' : `${places.length} places`;
+  const countsText = `${videoCountText} • ${placeCountText}`;
+
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <Stack.Screen options={{ headerShown: false }} />
       
-      <View style={[styles.header, { backgroundColor: bgColor }]}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={handleBack}
-          activeOpacity={0.7}
-        >
-          <IconSymbol 
-            android_material_icon_name="arrow-back" 
-            size={24} 
-            color={textColor}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={primaryColor}
+            colors={[primaryColor]}
           />
-        </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={handleEditBoard}
-            activeOpacity={0.7}
-          >
-            <IconSymbol 
-              android_material_icon_name="edit" 
-              size={24} 
-              color={textColor}
+        }
+      >
+        <View style={styles.coverSection}>
+          {coverImageUrl ? (
+            <Image
+              source={resolveImageSource(coverImageUrl)}
+              style={styles.coverImage}
+              resizeMode="cover"
             />
+          ) : (
+            <LinearGradient
+              colors={['#FF69B4', '#FF8C94', '#FFA07A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.coverImagePlaceholder}
+            >
+              <IconSymbol 
+                android_material_icon_name="location-on" 
+                size={64} 
+                color="rgba(255, 255, 255, 0.8)"
+              />
+            </LinearGradient>
+          )}
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0.6)', 'transparent', 'rgba(0, 0, 0, 0.8)']}
+            style={styles.coverOverlay}
+          >
+            <View style={styles.coverHeader}>
+              <TouchableOpacity
+                style={styles.coverHeaderButton}
+                onPress={handleBack}
+                activeOpacity={0.7}
+              >
+                <IconSymbol 
+                  android_material_icon_name="arrow-back" 
+                  size={24} 
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+              <View style={styles.coverHeaderActions}>
+                <TouchableOpacity
+                  style={styles.coverHeaderButton}
+                  onPress={handleEditBoard}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    android_material_icon_name="edit" 
+                    size={24} 
+                    color="#FFFFFF"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.coverHeaderButton}
+                  onPress={handleDeleteBoard}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    android_material_icon_name="delete" 
+                    size={24} 
+                    color="#FF3B30"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.coverInfo}>
+              <Text style={styles.coverTitle}>{board.title}</Text>
+              <Text style={styles.coverCounts}>{countsText}</Text>
+            </View>
+          </LinearGradient>
+        </View>
+
+        <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#222' : '#F0F0F0' }]}>
+          <TouchableOpacity
+            style={[
+              styles.segmentButton,
+              activeTab === 'videos' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
+            ]}
+            onPress={() => setActiveTab('videos')}
+            activeOpacity={0.8}
+          >
+            <Text style={[
+              styles.segmentText,
+              { color: activeTab === 'videos' ? textColor : textSecondaryColor },
+              activeTab === 'videos' && styles.segmentTextActive
+            ]}>
+              Videos
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.headerButton}
-            onPress={handleDeleteBoard}
-            activeOpacity={0.7}
+            style={[
+              styles.segmentButton,
+              activeTab === 'places' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
+            ]}
+            onPress={() => setActiveTab('places')}
+            activeOpacity={0.8}
           >
-            <IconSymbol 
-              android_material_icon_name="delete" 
-              size={24} 
-              color="#FF3B30"
-            />
+            <Text style={[
+              styles.segmentText,
+              { color: activeTab === 'places' ? textColor : textSecondaryColor },
+              activeTab === 'places' && styles.segmentTextActive
+            ]}>
+              Places
+            </Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.titleContainer}>
-        <Text style={[styles.title, { color: textColor }]}>{board.title}</Text>
-        <Text style={[styles.itemCount, { color: textSecondaryColor }]}>
-          {posts.length} {posts.length === 1 ? 'video' : 'videos'} • {places.length} {places.length === 1 ? 'place' : 'places'}
-        </Text>
-      </View>
-
-      <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#222' : '#F0F0F0' }]}>
-        <TouchableOpacity
-          style={[
-            styles.segmentButton,
-            activeTab === 'videos' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
-          ]}
-          onPress={() => setActiveTab('videos')}
-          activeOpacity={0.8}
-        >
-          <Text style={[
-            styles.segmentText,
-            { color: activeTab === 'videos' ? textColor : textSecondaryColor },
-            activeTab === 'videos' && styles.segmentTextActive
-          ]}>
-            Videos
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.segmentButton,
-            activeTab === 'places' && { backgroundColor: isDark ? '#444' : '#FFFFFF' }
-          ]}
-          onPress={() => setActiveTab('places')}
-          activeOpacity={0.8}
-        >
-          <Text style={[
-            styles.segmentText,
-            { color: activeTab === 'places' ? textColor : textSecondaryColor },
-            activeTab === 'places' && styles.segmentTextActive
-          ]}>
-            Places
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {activeTab === 'videos' ? (
-        <ScrollView
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={primaryColor}
-              colors={[primaryColor]}
-            />
-          }
-        >
-          {posts.length === 0 ? (
+        {activeTab === 'videos' ? (
+          posts.length === 0 ? (
             <View style={styles.emptyContainer}>
               <IconSymbol 
                 android_material_icon_name="videocam" 
                 size={64} 
                 color={textSecondaryColor}
               />
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              <Text style={[styles.emptyTitle, { color: textColor }]}>
                 No videos saved yet
               </Text>
+              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+                Save videos from your feed to this trip
+              </Text>
+              <TouchableOpacity
+                style={[styles.emptyButton, { backgroundColor: primaryColor }]}
+                onPress={handleSaveFromHome}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyButtonText}>Save from Home</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.gridContainer}>
-              {posts.map((post) => (
-                <VideoGridItem
-                  key={post.id}
-                  post={post}
-                  size={gridItemSize}
-                  onPress={() => handleVideoPress(post)}
-                  shouldPlay={false}
-                  showFollowButton={false}
-                />
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      ) : (
-        places.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol 
-              android_material_icon_name="location-on" 
-              size={64} 
-              color={textSecondaryColor}
+            <FlatList
+              data={posts}
+              renderItem={renderVideoItem}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.videoRow}
+              contentContainerStyle={styles.videosContainer}
+              scrollEnabled={false}
+              onViewableItemsChanged={onViewableVideosChanged}
+              viewabilityConfig={viewabilityConfig}
             />
-            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              No places saved yet
-            </Text>
-          </View>
+          )
         ) : (
-          <FlatList
-            data={places}
-            renderItem={renderPlaceItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.placesContainer}
-            showsVerticalScrollIndicator={false}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={primaryColor}
-                colors={[primaryColor]}
+          places.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <IconSymbol 
+                android_material_icon_name="location-on" 
+                size={64} 
+                color={textSecondaryColor}
               />
-            }
-          />
-        )
-      )}
+              <Text style={[styles.emptyTitle, { color: textColor }]}>
+                No places saved yet
+              </Text>
+              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+                Save videos with locations to see them here
+              </Text>
+              <TouchableOpacity
+                style={[styles.emptyButton, { backgroundColor: primaryColor }]}
+                onPress={handleSaveFromHome}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyButtonText}>Save video + location</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={places}
+              renderItem={renderPlaceItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.placesContainer}
+              scrollEnabled={false}
+              onViewableItemsChanged={onViewablePlacesChanged}
+              viewabilityConfig={viewabilityConfig}
+            />
+          )
+        )}
+      </ScrollView>
 
       <Modal
         visible={editModalVisible}
@@ -597,25 +689,86 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  scrollView: {
+    flex: 1,
+  },
+  coverSection: {
+    position: 'relative',
+    height: 300,
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+  },
+  coverHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 60,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
-  headerButton: {
+  coverHeaderButton: {
     width: 44,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 22,
   },
-  headerActions: {
+  coverHeaderActions: {
     flexDirection: 'row',
     gap: 8,
+  },
+  coverInfo: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  coverTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  coverCounts: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginVertical: 16,
+    borderRadius: 10,
+    padding: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  segmentText: {
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  segmentTextActive: {
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,
@@ -647,60 +800,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  titleContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  itemCount: {
-    fontSize: 16,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 10,
-    padding: 4,
-  },
-  segmentButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  segmentTextActive: {
-    fontWeight: '600',
-  },
-  scrollView: {
-    flex: 1,
-  },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 80,
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    marginTop: 16,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
   },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 12,
-    gap: 6,
+  emptyButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  videosContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  videoRow: {
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  videoCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   placesContainer: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     gap: 12,
   },
   placeCard: {
