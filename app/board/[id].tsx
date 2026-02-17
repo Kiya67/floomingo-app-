@@ -118,7 +118,7 @@ export default function BoardDetailScreen() {
           )
         `)
         .eq('board_id', boardId)
-        .eq('saved_by', user.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (postsError) {

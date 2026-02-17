@@ -252,10 +252,8 @@ export default function ProfileScreen() {
   const avatarUrl = profile?.avatar_url || '';
   const coverUrl = profile?.cover_url || '';
   const initials = getInitials(displayName);
-  const postsCount = stats.post_count;
   const followersCount = stats.follower_count;
   const followingCount = stats.following_count;
-  const postsCountText = postsCount.toString();
   const followersCountText = followersCount.toString();
   const followingCountText = followingCount.toString();
   const emptyText = 'No travel videos yet';
@@ -335,10 +333,6 @@ export default function ProfileScreen() {
           ) : null}
 
           <View style={styles.statsSection}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>{postsCountText}</Text>
-              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
-            </View>
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: textColor }]}>{followersCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>

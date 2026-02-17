@@ -73,7 +73,7 @@ export default function TripsScreen() {
             .from('board_posts')
             .select('*', { count: 'exact', head: true })
             .eq('board_id', board.id)
-            .eq('saved_by', user.id);
+            .eq('user_id', user.id);
 
           // Get cover image
           let coverImageUrl = board.cover_url || '';
@@ -82,7 +82,7 @@ export default function TripsScreen() {
               .from('board_posts')
               .select('post_id, posts(thumbnail_url)')
               .eq('board_id', board.id)
-              .eq('saved_by', user.id)
+              .eq('user_id', user.id)
               .limit(1)
               .single();
 
