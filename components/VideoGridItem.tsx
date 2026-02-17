@@ -22,9 +22,12 @@ interface VideoGridItemProps {
   size: number;
   onPress: () => void;
   shouldPlay: boolean;
+  showFollowButton?: boolean;
+  onFollowToggle?: (userId: string, isFollowing: boolean) => void;
+  isFollowing?: boolean;
 }
 
-export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItemProps) {
+export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButton = false, onFollowToggle, isFollowing = false }: VideoGridItemProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const cardColor = isDark ? colors.cardDark : colors.card;
@@ -145,6 +148,16 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
     );
   }
 
+  const handleFollowPress = (e: any) => {
+    e.stopPropagation();
+    if (onFollowToggle && post?.user_id) {
+      console.log('User tapped follow button on grid item');
+      onFollowToggle(post.user_id, isFollowing);
+    }
+  };
+
+  const followButtonText = isFollowing ? 'Following' : 'Follow';
+
   return (
     <TouchableOpacity 
       style={[styles.gridItem, { width: size, height: size * 1.5, backgroundColor: cardColor }]}
@@ -187,6 +200,18 @@ export function VideoGridItem({ post, size, onPress, shouldPlay }: VideoGridItem
           <Text style={styles.errorText}>Video unavailable</Text>
         </View>
       )}
+      {showFollowButton && (
+        <TouchableOpacity
+          style={[
+            styles.followButtonOverlay,
+            { backgroundColor: isFollowing ? 'rgba(0, 0, 0, 0.7)' : '#FF69B4' }
+          ]}
+          onPress={handleFollowPress}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.followButtonOverlayText}>{followButtonText}</Text>
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 }
@@ -221,5 +246,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     textAlign: 'center',
+  },
+  followButtonOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  followButtonOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

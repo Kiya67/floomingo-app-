@@ -43,6 +43,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
 
   // Filter state
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
@@ -64,7 +65,34 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchPosts();
+    checkFollowingStatus();
   }, [filterPlaceId, filterKeywords]);
+
+  const checkFollowingStatus = async () => {
+    console.log('Checking following status for all users');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', user.id);
+
+      if (error) {
+        console.error('Error checking following status:', error);
+      } else if (data) {
+        const map: Record<string, boolean> = {};
+        data.forEach(follow => {
+          map[follow.following_id] = true;
+        });
+        setFollowingMap(map);
+        console.log('Following status loaded:', Object.keys(map).length, 'users');
+      }
+    } catch (error) {
+      console.error('Error in checkFollowingStatus:', error);
+    }
+  };
 
   const fetchPosts = async () => {
     console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
@@ -162,6 +190,50 @@ export default function HomeScreen() {
     setFilterModalVisible(false);
   };
 
+  const handleFollowToggle = async (userId: string, isCurrentlyFollowing: boolean) => {
+    console.log('User toggled follow for user:', userId, 'Currently following:', isCurrentlyFollowing);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('No authenticated user');
+        return;
+      }
+
+      if (isCurrentlyFollowing) {
+        console.log('Unfollowing user:', userId);
+        const { error } = await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', user.id)
+          .eq('following_id', userId);
+
+        if (error) throw error;
+
+        setFollowingMap(prev => {
+          const newMap = { ...prev };
+          delete newMap[userId];
+          return newMap;
+        });
+        console.log('Successfully unfollowed user');
+      } else {
+        console.log('Following user:', userId);
+        const { error } = await supabase
+          .from('follows')
+          .insert({
+            follower_id: user.id,
+            following_id: userId,
+          });
+
+        if (error) throw error;
+
+        setFollowingMap(prev => ({ ...prev, [userId]: true }));
+        console.log('Successfully followed user');
+      }
+    } catch (error: any) {
+      console.error('Error toggling follow:', error);
+    }
+  };
+
   const emptyText = activeFiltersCount > 0 
     ? 'No videos found. Try clearing filters.' 
     : 'No videos yet. Be the first to post!';
@@ -243,6 +315,9 @@ export default function HomeScreen() {
                 size={gridItemSize}
                 onPress={() => handleGridItemPress(post)}
                 shouldPlay={index < MAX_PLAYING_VIDEOS}
+                showFollowButton={true}
+                onFollowToggle={handleFollowToggle}
+                isFollowing={followingMap[post.user_id] || false}
               />
             ))}
           </View>

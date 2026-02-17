@@ -45,6 +45,8 @@ export default function VideoFullScreenScreen() {
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [showControls, setShowControls] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   const fetchPost = useCallback(async () => {
     console.log('Loading video post with ID:', id);
@@ -79,6 +81,20 @@ export default function VideoFullScreenScreen() {
           ...data,
           video_url: videoUrl
         });
+
+        // Check follow status
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && data.user_id !== user.id) {
+          const { data: followData } = await supabase
+            .from('follows')
+            .select('*')
+            .eq('follower_id', user.id)
+            .eq('following_id', data.user_id)
+            .limit(1);
+          
+          setIsFollowing(followData && followData.length > 0);
+          console.log('Follow status:', followData && followData.length > 0);
+        }
       }
     } catch (error) {
       console.error('Error in fetchPost:', error);
@@ -186,6 +202,59 @@ export default function VideoFullScreenScreen() {
     }
   };
 
+  const handleProfilePress = () => {
+    if (post?.user_id) {
+      console.log('User tapped profile, navigating to user profile:', post.user_id);
+      router.push(`/user/${post.user_id}`);
+    }
+  };
+
+  const handleFollowToggle = async () => {
+    console.log('User tapped follow/unfollow button');
+    if (followLoading || !post?.user_id) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('No authenticated user');
+        return;
+      }
+
+      setFollowLoading(true);
+
+      if (isFollowing) {
+        console.log('Unfollowing user:', post.user_id);
+        const { error } = await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', user.id)
+          .eq('following_id', post.user_id);
+
+        if (error) throw error;
+
+        setIsFollowing(false);
+        console.log('Successfully unfollowed user');
+      } else {
+        console.log('Following user:', post.user_id);
+        const { error } = await supabase
+          .from('follows')
+          .insert({
+            follower_id: user.id,
+            following_id: post.user_id,
+          });
+
+        if (error) throw error;
+
+        setIsFollowing(true);
+        console.log('Successfully followed user');
+      }
+    } catch (error: any) {
+      console.error('Error toggling follow:', error);
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
   const displayName = post?.profiles?.display_name || 'Unknown User';
   const avatarUrl = post?.profiles?.avatar_url || '';
   const caption = post?.caption || '';
@@ -276,18 +345,41 @@ export default function VideoFullScreenScreen() {
 
           <View style={styles.bottomInfo}>
             <View style={styles.infoContent}>
-              <View style={styles.userRow}>
-                {avatarUrl ? (
-                  <Image 
-                    source={resolveImageSource(avatarUrl)} 
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Text style={styles.avatarInitials}>{initials}</Text>
-                  </View>
-                )}
-                <Text style={styles.displayName}>{displayName}</Text>
+              <View style={styles.userRowContainer}>
+                <TouchableOpacity 
+                  style={styles.userRow}
+                  onPress={handleProfilePress}
+                  activeOpacity={0.7}
+                >
+                  {avatarUrl ? (
+                    <Image 
+                      source={resolveImageSource(avatarUrl)} 
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarInitials}>{initials}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.displayName}>{displayName}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.followButtonSmall,
+                    { backgroundColor: isFollowing ? 'rgba(255, 255, 255, 0.2)' : '#FF69B4' }
+                  ]}
+                  onPress={handleFollowToggle}
+                  disabled={followLoading}
+                  activeOpacity={0.7}
+                >
+                  {followLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.followButtonSmallText}>
+                      {isFollowing ? 'Following' : 'Follow'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
               </View>
               {caption ? (
                 <Text style={styles.caption}>{caption}</Text>
@@ -390,10 +482,29 @@ const styles = StyleSheet.create({
   infoContent: {
     gap: 8,
   },
+  userRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+  },
+  followButtonSmall: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followButtonSmallText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   avatar: {
     width: 40,
