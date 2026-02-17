@@ -30,6 +30,12 @@ interface Post {
   created_at: string;
 }
 
+interface ProfileStats {
+  follower_count: number;
+  following_count: number;
+  post_count: number;
+}
+
 const { width } = Dimensions.get('window');
 const gridItemSize = (width - 48) / 3;
 
@@ -57,12 +63,14 @@ export default function ProfileScreen() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [stats, setStats] = useState<ProfileStats>({ follower_count: 0, following_count: 0, post_count: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchProfile();
     fetchUserPosts();
+    fetchStats();
   }, []);
 
   const fetchProfile = async () => {
@@ -123,11 +131,39 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchStats = async () => {
+    console.log('Fetching profile stats');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('profile_stats')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching stats:', error);
+      } else {
+        console.log('Profile stats fetched successfully:', data);
+        setStats(data || { follower_count: 0, following_count: 0, post_count: 0 });
+      }
+    } catch (error) {
+      console.error('Error in fetchStats:', error);
+    }
+  };
+
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
     setRefreshing(true);
     await fetchProfile();
     await fetchUserPosts();
+    await fetchStats();
     setRefreshing(false);
   };
 
@@ -158,8 +194,12 @@ export default function ProfileScreen() {
   const avatarUrl = profile?.avatar_url || '';
   const coverUrl = profile?.cover_url || '';
   const initials = getInitials(displayName);
-  const postsCount = posts.length;
+  const postsCount = stats.post_count;
+  const followersCount = stats.follower_count;
+  const followingCount = stats.following_count;
   const postsCountText = postsCount.toString();
+  const followersCountText = followersCount.toString();
+  const followingCountText = followingCount.toString();
   const emptyText = 'No travel videos yet';
 
   if (loading) {
@@ -240,6 +280,14 @@ export default function ProfileScreen() {
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: textColor }]}>{postsCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: textColor }]}>{followersCountText}</Text>
+              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: textColor }]}>{followingCountText}</Text>
+              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
             </View>
           </View>
 

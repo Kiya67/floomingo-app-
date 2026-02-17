@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, ScrollView } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -20,6 +20,12 @@ interface Post {
     display_name: string;
     avatar_url: string | null;
   };
+}
+
+interface ProfileStats {
+  follower_count: number;
+  following_count: number;
+  post_count: number;
 }
 
 const { width, height } = Dimensions.get('window');
@@ -47,10 +53,17 @@ export default function VideoFullScreenScreen() {
   const [showControls, setShowControls] = useState(true);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchPost = useCallback(async () => {
     console.log('Loading video post with ID:', id);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+
       const { data, error } = await supabase
         .from('posts')
         .select(`
@@ -83,7 +96,6 @@ export default function VideoFullScreenScreen() {
         });
 
         // Check follow status
-        const { data: { user } } = await supabase.auth.getUser();
         if (user && data.user_id !== user.id) {
           const { data: followData } = await supabase
             .from('follows')
@@ -94,6 +106,19 @@ export default function VideoFullScreenScreen() {
           
           setIsFollowing(followData && followData.length > 0);
           console.log('Follow status:', followData && followData.length > 0);
+        }
+
+        // Check if post is saved
+        if (user) {
+          const { data: savedData } = await supabase
+            .from('board_items')
+            .select('id, board_id, boards!inner(user_id)')
+            .eq('post_id', id)
+            .eq('boards.user_id', user.id)
+            .limit(1);
+          
+          setIsSaved(savedData && savedData.length > 0);
+          console.log('Save status:', savedData && savedData.length > 0);
         }
       }
     } catch (error) {
@@ -166,7 +191,6 @@ export default function VideoFullScreenScreen() {
       }
     };
     
-    // Start attempting playback after a short delay
     playTimeout = setTimeout(attemptPlay, 300);
     
     return () => {
@@ -255,10 +279,31 @@ export default function VideoFullScreenScreen() {
     }
   };
 
+  const handleLike = () => {
+    console.log('User tapped like button');
+    // TODO: Implement like functionality
+  };
+
+  const handleComment = () => {
+    console.log('User tapped comment button');
+    // TODO: Implement comment functionality
+  };
+
+  const handleSave = () => {
+    console.log('User tapped save button');
+    // TODO: Open save to trips modal
+  };
+
+  const handleShare = () => {
+    console.log('User tapped share button');
+    // TODO: Implement share functionality
+  };
+
   const displayName = post?.profiles?.display_name || 'Unknown User';
   const avatarUrl = post?.profiles?.avatar_url || '';
   const caption = post?.caption || '';
   const placeName = post?.place_name || '';
+  const isOwnVideo = currentUserId === post?.user_id;
 
   const getInitials = (name: string) => {
     const names = name.split(' ');
@@ -290,7 +335,6 @@ export default function VideoFullScreenScreen() {
         <StatusBar hidden />
         <View style={styles.errorContainer}>
           <IconSymbol 
-            ios_icon_name="exclamationmark.triangle.fill"
             android_material_icon_name="error" 
             size={64} 
             color={textSecondaryColor}
@@ -335,7 +379,6 @@ export default function VideoFullScreenScreen() {
               onPress={handleClose}
             >
               <IconSymbol 
-                ios_icon_name="xmark"
                 android_material_icon_name="close" 
                 size={28} 
                 color="#FFFFFF"
@@ -344,61 +387,122 @@ export default function VideoFullScreenScreen() {
           </View>
 
           <View style={styles.bottomInfo}>
-            <View style={styles.infoContent}>
-              <View style={styles.userRowContainer}>
-                <TouchableOpacity 
-                  style={styles.userRow}
-                  onPress={handleProfilePress}
-                  activeOpacity={0.7}
-                >
-                  {avatarUrl ? (
-                    <Image 
-                      source={resolveImageSource(avatarUrl)} 
-                      style={styles.avatar}
+            <ScrollView 
+              style={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.infoContent}>
+                <View style={styles.userRowContainer}>
+                  <TouchableOpacity 
+                    style={styles.userRow}
+                    onPress={handleProfilePress}
+                    activeOpacity={0.7}
+                  >
+                    {avatarUrl ? (
+                      <Image 
+                        source={resolveImageSource(avatarUrl)} 
+                        style={styles.avatar}
+                      />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Text style={styles.avatarInitials}>{initials}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.displayName}>{displayName}</Text>
+                  </TouchableOpacity>
+                  {!isOwnVideo && (
+                    <TouchableOpacity
+                      style={[
+                        styles.followButtonSmall,
+                        { backgroundColor: isFollowing ? 'rgba(255, 255, 255, 0.2)' : '#FF69B4' }
+                      ]}
+                      onPress={handleFollowToggle}
+                      disabled={followLoading}
+                      activeOpacity={0.7}
+                    >
+                      {followLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.followButtonSmallText}>
+                          {isFollowing ? 'Following' : 'Follow'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+                {caption ? (
+                  <Text style={styles.caption}>{caption}</Text>
+                ) : null}
+                {placeName ? (
+                  <TouchableOpacity 
+                    style={styles.locationRow}
+                    onPress={handleLocationPress}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name="location-on" 
+                      size={16} 
+                      color="#FF69B4"
                     />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarInitials}>{initials}</Text>
-                    </View>
-                  )}
-                  <Text style={styles.displayName}>{displayName}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.followButtonSmall,
-                    { backgroundColor: isFollowing ? 'rgba(255, 255, 255, 0.2)' : '#FF69B4' }
-                  ]}
-                  onPress={handleFollowToggle}
-                  disabled={followLoading}
-                  activeOpacity={0.7}
-                >
-                  {followLoading ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.followButtonSmallText}>
-                      {isFollowing ? 'Following' : 'Follow'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                    <Text style={styles.placeName}>{placeName}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleLike}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name="favorite-border" 
+                      size={28} 
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>Like</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleComment}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name="chat-bubble-outline" 
+                      size={28} 
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>Comment</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleSave}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name={isSaved ? "bookmark" : "bookmark-border"} 
+                      size={28} 
+                      color={isSaved ? "#FF69B4" : "#FFFFFF"}
+                    />
+                    <Text style={styles.actionButtonText}>Save</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleShare}
+                    activeOpacity={0.7}
+                  >
+                    <IconSymbol 
+                      android_material_icon_name="share" 
+                      size={28} 
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.actionButtonText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              {caption ? (
-                <Text style={styles.caption}>{caption}</Text>
-              ) : null}
-              {placeName ? (
-                <TouchableOpacity 
-                  style={styles.locationRow}
-                  onPress={handleLocationPress}
-                  activeOpacity={0.7}
-                >
-                  <IconSymbol 
-                    android_material_icon_name="location-on" 
-                    size={16} 
-                    color="#FF69B4"
-                  />
-                  <Text style={styles.placeName}>{placeName}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+            </ScrollView>
           </View>
         </>
       )}
@@ -474,12 +578,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
+    maxHeight: height * 0.5,
     paddingBottom: 40,
-    paddingHorizontal: 16,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
+  scrollContent: {
+    paddingHorizontal: 16,
+  },
   infoContent: {
-    gap: 8,
+    gap: 12,
+    paddingTop: 16,
   },
   userRowContainer: {
     flexDirection: 'row',
@@ -543,5 +651,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FF69B4',
     fontWeight: '600',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  actionButton: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
