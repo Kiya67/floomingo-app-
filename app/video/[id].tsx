@@ -52,12 +52,6 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 
 // Video Player Component - uses public URLs directly
 function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
-  // Guard: Don't render if video_url is missing
-  if (!videoUrl) {
-    console.log('VideoPlayer: No video URL provided for post:', postId);
-    return null;
-  }
-
   const [isMuted, setIsMuted] = useState(true);
   const isMountedRef = useRef(true);
 
@@ -110,6 +104,12 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
     console.log('User tapped video, toggling mute');
     setIsMuted(prev => !prev);
   };
+
+  // Guard: Don't render if video_url is missing
+  if (!videoUrl) {
+    console.log('VideoPlayer: No video URL provided for post:', postId);
+    return null;
+  }
 
   return (
     <TouchableOpacity 

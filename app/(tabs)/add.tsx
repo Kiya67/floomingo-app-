@@ -271,7 +271,11 @@ export default function AddScreen() {
         <Text style={[styles.headerTitle, { color: textColor }]}>Create Post</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.content} 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {!videoUri ? (
           <View style={styles.videoPickerSection}>
             <TouchableOpacity 
@@ -429,6 +433,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
   },
+  scrollContent: {
+    paddingBottom: 120,
+  },
   videoPickerSection: {
     marginTop: 24,
   },
@@ -526,7 +533,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     marginTop: 24,
-    marginBottom: 32,
     gap: 8,
   },
   postButtonText: {
