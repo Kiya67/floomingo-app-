@@ -143,6 +143,7 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
         {!isPlaying && (
           <View style={styles.playPauseIndicator}>
             <IconSymbol 
+              ios_icon_name="play.fill"
               android_material_icon_name="play-arrow" 
               size={64} 
               color="#FFFFFF"
@@ -157,6 +158,7 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
         activeOpacity={0.7}
       >
         <IconSymbol 
+          ios_icon_name={isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill"}
           android_material_icon_name={isMuted ? "volume-off" : "volume-up"} 
           size={24} 
           color="#FFFFFF"
@@ -238,7 +240,7 @@ export default function VideoFullScreenScreen() {
       } : { like_count: 0, comment_count: 0, share_count: 0 };
       
       const { data: savedData } = await supabase
-        .from('board_items')
+        .from('board_posts')
         .select('id, board_id, boards!inner(user_id)')
         .eq('post_id', postId)
         .eq('boards.user_id', userId)
@@ -886,6 +888,7 @@ export default function VideoFullScreenScreen() {
               onPress={handleClose}
             >
               <IconSymbol 
+                ios_icon_name="xmark"
                 android_material_icon_name="close" 
                 size={28} 
                 color="#FFFFFF"
@@ -943,6 +946,7 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
+                    ios_icon_name="mappin.circle.fill"
                     android_material_icon_name="location-on" 
                     size={16} 
                     color="#FF69B4"
@@ -959,6 +963,7 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
+                    ios_icon_name={interaction.isLiked ? "heart.fill" : "heart"}
                     android_material_icon_name={interaction.isLiked ? "favorite" : "favorite-border"} 
                     size={28} 
                     color={interaction.isLiked ? "#FF69B4" : "#FFFFFF"}
@@ -972,6 +977,7 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
+                    ios_icon_name="bubble.left"
                     android_material_icon_name="chat-bubble-outline" 
                     size={28} 
                     color="#FFFFFF"
@@ -985,6 +991,7 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
+                    ios_icon_name={interaction.isSaved ? "bookmark.fill" : "bookmark"}
                     android_material_icon_name={interaction.isSaved ? "bookmark" : "bookmark-border"} 
                     size={28} 
                     color={interaction.isSaved ? "#FF69B4" : "#FFFFFF"}
@@ -999,6 +1006,7 @@ export default function VideoFullScreenScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
+                    ios_icon_name="square.and.arrow.up"
                     android_material_icon_name="share" 
                     size={28} 
                     color="#FFFFFF"
@@ -1013,6 +1021,7 @@ export default function VideoFullScreenScreen() {
                     activeOpacity={0.7}
                   >
                     <IconSymbol 
+                      ios_icon_name="ellipsis"
                       android_material_icon_name="more-horiz" 
                       size={28} 
                       color="#FFFFFF"
@@ -1048,6 +1057,7 @@ export default function VideoFullScreenScreen() {
         <StatusBar hidden />
         <View style={styles.errorContainer}>
           <IconSymbol 
+            ios_icon_name="exclamationmark.triangle"
             android_material_icon_name="error" 
             size={64} 
             color={textSecondaryColor}
@@ -1111,6 +1121,7 @@ export default function VideoFullScreenScreen() {
               ) : (
                 <>
                   <IconSymbol 
+                    ios_icon_name={isBlocked ? "checkmark.circle" : "hand.raised.fill"}
                     android_material_icon_name={isBlocked ? "check-circle" : "block"} 
                     size={24} 
                     color={isBlocked ? primaryColor : '#FF3B30'}
@@ -1128,6 +1139,7 @@ export default function VideoFullScreenScreen() {
               activeOpacity={0.7}
             >
               <IconSymbol 
+                ios_icon_name="flag"
                 android_material_icon_name="flag" 
                 size={24} 
                 color={textColor}
@@ -1231,6 +1243,7 @@ export default function VideoFullScreenScreen() {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <IconSymbol 
+                    ios_icon_name="paperplane.fill"
                     android_material_icon_name="send" 
                     size={20} 
                     color="#FFFFFF"
@@ -1346,7 +1359,7 @@ const styles = StyleSheet.create({
   },
   muteButton: {
     position: 'absolute',
-    top: 60,
+    top: 110,
     right: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 20,

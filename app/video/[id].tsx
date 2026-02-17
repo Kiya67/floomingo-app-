@@ -155,7 +155,7 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute }: { videoUrl: st
         )}
       </TouchableOpacity>
       
-      {/* Mute/Unmute button - positioned at top right */}
+      {/* Mute/Unmute button - positioned at top right, below close button */}
       <TouchableOpacity 
         style={styles.muteButton}
         onPress={onToggleMute}
@@ -1376,7 +1376,7 @@ const styles = StyleSheet.create({
   },
   muteButton: {
     position: 'absolute',
-    top: 60,
+    top: 110,
     right: 20,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 20,

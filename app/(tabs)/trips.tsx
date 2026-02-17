@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Image, ImageSourcePropType } from 'react-native';
 import { IconSymbol } from '@/components/IconSymbol';
+import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
@@ -10,6 +11,7 @@ interface Board {
   id: string;
   user_id: string;
   title: string;
+  cover_url?: string;
   created_at: string;
   item_count?: number;
   first_thumbnail?: string;
@@ -54,7 +56,7 @@ export default function TripsScreen() {
         .from('boards')
         .select(`
           *,
-          board_items (
+          board_posts (
             id,
             posts (
               thumbnail_url
@@ -62,14 +64,14 @@ export default function TripsScreen() {
           )
         `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('updated_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching boards:', error);
         setBoards([]);
       } else {
         const boardsWithCounts = (data || []).map(board => {
-          const items = board.board_items || [];
+          const items = board.board_posts || [];
           const itemCount = items.length;
           const firstThumbnail = items[0]?.posts?.thumbnail_url || null;
           
@@ -77,6 +79,7 @@ export default function TripsScreen() {
             id: board.id,
             user_id: board.user_id,
             title: board.title,
+            cover_url: board.cover_url,
             created_at: board.created_at,
             item_count: itemCount,
             first_thumbnail: firstThumbnail,
@@ -97,14 +100,12 @@ export default function TripsScreen() {
   useEffect(() => {
     fetchBoards();
     
-    // Set up global refresh callback for TRIPS_REFRESH event
     global.tripsRefreshCallback = () => {
       console.log('TRIPS_REFRESH event received - refreshing boards');
       fetchBoards();
     };
     
     return () => {
-      // Clean up callback on unmount
       global.tripsRefreshCallback = undefined;
     };
   }, [fetchBoards]);
@@ -139,7 +140,7 @@ export default function TripsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
-      <View style={[styles.header, { backgroundColor: bgColor }]}>
+      <View style={[styles.header, { backgroundColor: bgColor, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
         <Text style={[styles.headerTitle, { color: textColor }]}>My Trips</Text>
         <TouchableOpacity
           style={[styles.createButton, { backgroundColor: primaryColor }]}
@@ -156,6 +157,7 @@ export default function TripsScreen() {
 
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -168,14 +170,16 @@ export default function TripsScreen() {
       >
         {boards.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <IconSymbol 
-              android_material_icon_name="explore" 
-              size={64} 
-              color={textSecondaryColor}
-            />
+            <View style={[styles.emptyIconCircle, { backgroundColor: isDark ? 'rgba(255, 105, 180, 0.1)' : 'rgba(255, 105, 180, 0.1)' }]}>
+              <IconSymbol 
+                android_material_icon_name="explore" 
+                size={48} 
+                color={primaryColor}
+              />
+            </View>
             <Text style={[styles.emptyTitle, { color: textColor }]}>No trips yet</Text>
             <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              Save videos to trips to organize your favorite content
+              Create your first trip to organize your favorite content
             </Text>
             <TouchableOpacity
               style={[styles.emptyButton, { backgroundColor: primaryColor }]}
@@ -189,36 +193,49 @@ export default function TripsScreen() {
           <View style={styles.gridContainer}>
             {boards.map((board) => {
               const itemCountText = board.item_count === 1 ? '1 item' : `${board.item_count || 0} items`;
+              const coverImage = board.cover_url || board.first_thumbnail;
               
               return (
                 <TouchableOpacity
                   key={board.id}
-                  style={[styles.boardCard, { width: cardWidth, backgroundColor: cardColor }]}
+                  style={[styles.boardCard, { width: cardWidth }]}
                   onPress={() => handleBoardPress(board.id)}
-                  activeOpacity={0.8}
+                  activeOpacity={0.9}
                 >
-                  {board.first_thumbnail ? (
-                    <Image
-                      source={resolveImageSource(board.first_thumbnail)}
-                      style={styles.boardImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={[styles.boardImagePlaceholder, { backgroundColor: isDark ? '#333' : '#E0E0E0' }]}>
-                      <IconSymbol 
-                        android_material_icon_name="image" 
-                        size={48} 
-                        color={textSecondaryColor}
+                  <View style={styles.cardImageContainer}>
+                    {coverImage ? (
+                      <Image
+                        source={resolveImageSource(coverImage)}
+                        style={styles.boardImage}
+                        resizeMode="cover"
                       />
-                    </View>
-                  )}
-                  <View style={styles.boardInfo}>
-                    <Text style={[styles.boardTitle, { color: textColor }]} numberOfLines={2}>
-                      {board.title}
-                    </Text>
-                    <Text style={[styles.boardCount, { color: textSecondaryColor }]}>
-                      {itemCountText}
-                    </Text>
+                    ) : (
+                      <LinearGradient
+                        colors={['#FF69B4', '#FF8C94', '#FFA07A']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.boardImagePlaceholder}
+                      >
+                        <IconSymbol 
+                          android_material_icon_name="location-on" 
+                          size={40} 
+                          color="rgba(255, 255, 255, 0.8)"
+                        />
+                      </LinearGradient>
+                    )}
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0, 0, 0, 0.7)']}
+                      style={styles.boardOverlay}
+                    >
+                      <View style={styles.boardInfo}>
+                        <Text style={styles.boardTitle} numberOfLines={2}>
+                          {board.title}
+                        </Text>
+                        <Text style={styles.boardCount}>
+                          {itemCountText}
+                        </Text>
+                      </View>
+                    </LinearGradient>
                   </View>
                 </TouchableOpacity>
               );
@@ -238,15 +255,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
+    letterSpacing: -0.5,
   },
   createButton: {
     width: 44,
@@ -254,6 +271,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   loadingContainer: {
     flex: 1,
@@ -267,6 +289,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -274,21 +299,34 @@ const styles = StyleSheet.create({
     paddingVertical: 80,
     paddingHorizontal: 32,
   },
+  emptyIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   emptyTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    marginTop: 16,
+    marginBottom: 12,
   },
   emptyText: {
     fontSize: 16,
-    marginTop: 8,
     textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
   },
   emptyButton: {
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyButtonText: {
     color: '#FFFFFF',
@@ -298,33 +336,57 @@ const styles = StyleSheet.create({
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 12,
-    gap: 12,
+    padding: 16,
+    gap: 16,
   },
   boardCard: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardImageContainer: {
+    position: 'relative',
   },
   boardImage: {
     width: '100%',
-    height: cardWidth * 1.2,
+    height: cardWidth * 1.3,
   },
   boardImagePlaceholder: {
     width: '100%',
-    height: cardWidth * 1.2,
+    height: cardWidth * 1.3,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  boardOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 40,
   },
   boardInfo: {
     padding: 12,
   },
   boardTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   boardCount: {
-    fontSize: 14,
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });
