@@ -52,6 +52,7 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 
 // Video Player Component - uses public URLs directly
 function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string }) {
+  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT THE TOP
   const [isMuted, setIsMuted] = useState(true);
   const isMountedRef = useRef(true);
 
@@ -105,7 +106,7 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
     setIsMuted(prev => !prev);
   };
 
-  // Guard: Don't render if video_url is missing
+  // GUARD CLAUSE AFTER ALL HOOKS
   if (!videoUrl) {
     console.log('VideoPlayer: No video URL provided for post:', postId);
     return null;
