@@ -35,9 +35,12 @@ export function VideoGridItem({ post, size, shouldPlay = false, onPress, onLongP
   const viewCount = post.view_count || 0;
   const viewCountText = viewCount >= 1000 ? `${(viewCount / 1000).toFixed(1)}K` : viewCount.toString();
 
+  // Make grid items taller (1.5x aspect ratio instead of 1:1)
+  const itemHeight = size * 1.5;
+
   return (
     <TouchableOpacity
-      style={[styles.container, { width: size, height: size }]}
+      style={[styles.container, { width: size, height: itemHeight }]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.9}

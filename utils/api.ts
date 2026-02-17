@@ -1,7 +1,9 @@
+
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { BEARER_TOKEN_KEY } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 /**
  * Backend URL is configured in app.json under expo.extra.backendUrl
@@ -284,25 +286,51 @@ export const createBoard = async (title: string): Promise<Board> => {
 
 /**
  * Save video to a board (VIDEO-ONLY, no places)
+ * Uses Supabase client directly with active session
  */
 export const saveVideoOnly = async (
   boardId: string,
   postId: string
 ): Promise<SaveVideoResponse | { error: { code: number; message: string } }> => {
   console.log('[API] Saving video to board:', boardId, 'post:', postId);
+  
   try {
-    return await authenticatedPost<SaveVideoResponse>(
-      `/api/boards/${boardId}/save-video`,
-      {
+    // Get active Supabase session
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      console.error('[API] No active session found');
+      throw new Error("Authentication token not found. Please sign in.");
+    }
+
+    console.log('[API] Active session found, user:', session.user.id);
+
+    // Insert into board_posts using Supabase client (which has the session)
+    const { data, error } = await supabase
+      .from('board_posts')
+      .insert({
+        board_id: boardId,
         post_id: postId,
+        user_id: session.user.id,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[API] Supabase insert error:', error);
+      
+      // Check for duplicate constraint violation
+      if (error.code === '23505') {
+        return { error: { code: 409, message: 'Video already saved to this board' } };
       }
-    );
+      
+      throw error;
+    }
+
+    console.log('[API] Video saved successfully:', data);
+    return { success: true };
   } catch (error: any) {
     console.error('[API] Error saving video:', error);
-    // Check if it's a 409 conflict (already saved)
-    if (error.message?.includes('409')) {
-      return { error: { code: 409, message: 'Video already saved to this board' } };
-    }
     return { error: { code: 500, message: error.message || 'Failed to save video' } };
   }
 };

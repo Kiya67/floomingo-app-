@@ -27,6 +27,7 @@ interface Post {
 
 const windowWidth = Dimensions.get('window').width;
 const gridItemSize = (windowWidth - 48) / 3;
+const gridItemHeight = gridItemSize * 1.5;
 const MAX_PLAYING_VIDEOS = 2;
 
 export default function HomeScreen() {
