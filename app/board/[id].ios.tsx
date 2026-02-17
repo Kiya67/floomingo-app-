@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, Alert, FlatList, ViewToken, Image, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, RefreshControl, Dimensions, Modal, TextInput, FlatList, ViewToken, Image, ImageSourcePropType } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,6 +8,8 @@ import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { VideoGridItem } from '@/components/VideoGridItem';
 import { MiniVideoPreview } from '@/components/MiniVideoPreview';
+import { getBoardPlaces } from '@/utils/api';
+import CustomModal from '@/components/ui/Modal';
 
 interface Board {
   id: string;
@@ -34,18 +36,10 @@ interface BoardPlace {
   board_id: string;
   place_id: string;
   place_name: string | null;
-  address: string | null;
-  lat: number | null;
-  lng: number | null;
-  place_json: any;
+  place_primary_type: string | null;
+  place_address: string | null;
+  post_id: string | null;
   created_at: string;
-  post_id?: string;
-  post?: {
-    id: string;
-    video_url: string;
-    thumbnail_url: string | null;
-    caption: string | null;
-  };
 }
 
 type TabType = 'videos' | 'places';
@@ -75,6 +69,7 @@ export default function BoardDetailScreen() {
   const [board, setBoard] = useState<Board | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [places, setPlaces] = useState<BoardPlace[]>([]);
+  const [placesWithVideos, setPlacesWithVideos] = useState<Map<string, Post>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -84,6 +79,18 @@ export default function BoardDetailScreen() {
   const [visibleVideoIds, setVisibleVideoIds] = useState<Set<string>>(new Set());
   const [visiblePlaceIds, setVisiblePlaceIds] = useState<Set<string>>(new Set());
   const [coverImageUrl, setCoverImageUrl] = useState<string>('');
+  const [modalState, setModalState] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const fetchBoardDetails = useCallback(async () => {
     console.log('Fetching board details for:', boardId);
@@ -142,56 +149,35 @@ export default function BoardDetailScreen() {
         setCoverImageUrl(resolvedCoverUrl);
       }
 
-      const { data: placesData, error: placesError } = await supabase
-        .from('board_places')
-        .select(`
-          id,
-          board_id,
-          place_id,
-          place_name,
-          address,
-          lat,
-          lng,
-          place_json,
-          created_at
-        `)
-        .eq('board_id', boardId)
-        .order('created_at', { ascending: false });
-
-      if (placesError) {
-        console.error('Error fetching board places:', placesError);
-        setPlaces([]);
-      } else {
-        console.log('Board places fetched successfully:', placesData?.length || 0);
+      // Fetch places using backend API
+      try {
+        const placesData = await getBoardPlaces(boardId);
+        console.log('Board places fetched successfully from backend:', placesData?.length || 0);
+        setPlaces(placesData || []);
         
-        const placesWithPosts = await Promise.all(
-          (placesData || []).map(async (place) => {
-            const { data: postData } = await supabase
-              .from('board_posts')
-              .select(`
-                post_id,
-                posts (
-                  id,
-                  video_url,
-                  thumbnail_url,
-                  caption,
-                  place_id
-                )
-              `)
-              .eq('board_id', boardId)
-              .eq('posts.place_id', place.place_id)
-              .limit(1)
-              .single();
-
-            return {
-              ...place,
-              post_id: postData?.post_id || undefined,
-              post: postData?.posts || undefined,
-            };
-          })
-        );
-
-        setPlaces(placesWithPosts);
+        // Fetch videos for places that have post_id
+        const videosMap = new Map<string, Post>();
+        const postIds = (placesData || [])
+          .map(p => p.post_id)
+          .filter(Boolean) as string[];
+        
+        if (postIds.length > 0) {
+          const { data: postsForPlaces } = await supabase
+            .from('posts')
+            .select('id, video_url, thumbnail_url, caption')
+            .in('id', postIds);
+          
+          if (postsForPlaces) {
+            postsForPlaces.forEach(post => {
+              videosMap.set(post.id, post as Post);
+            });
+          }
+        }
+        
+        setPlacesWithVideos(videosMap);
+      } catch (placesError) {
+        console.error('Error fetching board places from backend:', placesError);
+        setPlaces([]);
       }
     } catch (error) {
       console.error('Error in fetchBoardDetails:', error);
@@ -237,7 +223,12 @@ export default function BoardDetailScreen() {
 
   const handleSaveEdit = async () => {
     if (!editTitle.trim()) {
-      Alert.alert('Error', 'Please enter a title');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Please enter a title',
+        type: 'error',
+      });
       return;
     }
 
@@ -250,7 +241,12 @@ export default function BoardDetailScreen() {
 
       if (error) {
         console.error('Error updating board:', error);
-        Alert.alert('Error', 'Could not update trip');
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: 'Could not update trip',
+          type: 'error',
+        });
       } else {
         console.log('Board updated successfully');
         setBoard(prev => prev ? { ...prev, title: editTitle.trim() } : null);
@@ -258,7 +254,12 @@ export default function BoardDetailScreen() {
       }
     } catch (error) {
       console.error('Error in handleSaveEdit:', error);
-      Alert.alert('Error', 'Could not update trip');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not update trip',
+        type: 'error',
+      });
     }
   };
 
@@ -277,7 +278,12 @@ export default function BoardDetailScreen() {
 
       if (error) {
         console.error('Error deleting board:', error);
-        Alert.alert('Error', 'Could not delete trip');
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: 'Could not delete trip',
+          type: 'error',
+        });
       } else {
         console.log('Board deleted successfully');
         setDeleteModalVisible(false);
@@ -285,7 +291,12 @@ export default function BoardDetailScreen() {
       }
     } catch (error) {
       console.error('Error in confirmDelete:', error);
-      Alert.alert('Error', 'Could not delete trip');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not delete trip',
+        type: 'error',
+      });
     }
   };
 
@@ -340,8 +351,11 @@ export default function BoardDetailScreen() {
 
   const renderPlaceItem = ({ item }: { item: BoardPlace }) => {
     const placeName = item.place_name || 'Unknown Place';
-    const placeAddress = item.address || 'No address available';
+    const placeType = item.place_primary_type || '';
+    const placeAddress = item.place_address || 'No address available';
     const shouldPlayVideo = visiblePlaceIds.has(item.id);
+    
+    const videoData = item.post_id ? placesWithVideos.get(item.post_id) : null;
 
     return (
       <TouchableOpacity
@@ -349,10 +363,10 @@ export default function BoardDetailScreen() {
         onPress={() => handlePlacePress(item)}
         activeOpacity={0.8}
       >
-        {item.post?.video_url ? (
+        {videoData?.video_url ? (
           <MiniVideoPreview
-            videoUrl={item.post.video_url}
-            posterUrl={item.post.thumbnail_url || undefined}
+            videoUrl={videoData.video_url}
+            posterUrl={videoData.thumbnail_url || undefined}
             size={72}
             borderRadius={12}
             shouldPlay={shouldPlayVideo}
@@ -371,7 +385,12 @@ export default function BoardDetailScreen() {
           <Text style={[styles.placeName, { color: textColor }]} numberOfLines={1}>
             {placeName}
           </Text>
-          <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={2}>
+          {placeType ? (
+            <Text style={[styles.placeType, { color: textSecondaryColor }]} numberOfLines={1}>
+              {placeType}
+            </Text>
+          ) : null}
+          <Text style={[styles.placeAddress, { color: textSecondaryColor }]} numberOfLines={1}>
             {placeAddress}
           </Text>
         </View>
@@ -690,6 +709,20 @@ export default function BoardDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <CustomModal
+        visible={modalState.visible}
+        title={modalState.title}
+        message={modalState.message}
+        type={modalState.type}
+        onClose={() => {
+          setModalState({ ...modalState, visible: false });
+          if (modalState.onConfirm) {
+            modalState.onConfirm();
+          }
+        }}
+        confirmText="OK"
+      />
     </View>
   );
 }
@@ -882,11 +915,14 @@ const styles = StyleSheet.create({
   placeName: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  placeType: {
+    fontSize: 13,
+    marginBottom: 2,
   },
   placeAddress: {
     fontSize: 14,
-    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

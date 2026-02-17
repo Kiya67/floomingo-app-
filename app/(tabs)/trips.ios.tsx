@@ -52,55 +52,65 @@ export default function TripsScreen() {
         return;
       }
 
-      const { data, error } = await supabase
+      // Simple query for boards
+      const { data: boardsData, error: boardsError } = await supabase
         .from('boards')
-        .select(`
-          *,
-          board_posts (
-            id,
-            posts (
-              thumbnail_url
-            )
-          ),
-          board_places (
-            id
-          )
-        `)
+        .select('id, title, cover_url, created_at')
         .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
+        .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching boards:', error);
+      if (boardsError) {
+        console.error('Error fetching boards:', boardsError);
         setBoards([]);
-      } else {
-        const boardsWithCounts = (data || []).map(board => {
-          const posts = board.board_posts || [];
-          const places = board.board_places || [];
-          const videoCount = posts.length;
-          const placeCount = places.length;
-          
-          let coverImageUrl = '';
-          if (board.cover_url) {
-            coverImageUrl = board.cover_url;
-          } else if (posts.length > 0 && posts[0]?.posts?.thumbnail_url) {
-            coverImageUrl = posts[0].posts.thumbnail_url;
+        setLoading(false);
+        return;
+      }
+
+      // Fetch counts for each board
+      const boardsWithCounts = await Promise.all(
+        (boardsData || []).map(async (board) => {
+          // Count videos
+          const { count: videoCount } = await supabase
+            .from('board_posts')
+            .select('*', { count: 'exact', head: true })
+            .eq('board_id', board.id);
+
+          // Count places
+          const { count: placeCount } = await supabase
+            .from('board_places')
+            .select('*', { count: 'exact', head: true })
+            .eq('board_id', board.id);
+
+          // Get cover image
+          let coverImageUrl = board.cover_url || '';
+          if (!coverImageUrl) {
+            const { data: firstPost } = await supabase
+              .from('board_posts')
+              .select('post_id, posts(thumbnail_url)')
+              .eq('board_id', board.id)
+              .limit(1)
+              .single();
+
+            if (firstPost?.posts?.thumbnail_url) {
+              coverImageUrl = firstPost.posts.thumbnail_url;
+            }
           }
-          
+
           return {
             id: board.id,
-            user_id: board.user_id,
+            user_id: user.id,
             title: board.title,
             cover_url: board.cover_url,
             created_at: board.created_at,
-            video_count: videoCount,
-            place_count: placeCount,
+            video_count: videoCount || 0,
+            place_count: placeCount || 0,
             cover_image_url: coverImageUrl,
           };
-        });
-        
-        console.log('Boards fetched successfully:', boardsWithCounts.length);
-        setBoards(boardsWithCounts);
-      }
+        })
+      );
+      
+      console.log('Boards fetched successfully:', boardsWithCounts.length);
+      setBoards(boardsWithCounts);
     } catch (error) {
       console.error('Error in fetchBoards:', error);
       setBoards([]);
@@ -153,7 +163,10 @@ export default function TripsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <View style={[styles.header, { backgroundColor: bgColor, borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>My Trips</Text>
+        <View>
+          <Text style={[styles.headerTitle, { color: textColor }]}>My Trips</Text>
+          <Text style={[styles.versionLabel, { color: primaryColor }]}>TRIPS V2</Text>
+        </View>
         <TouchableOpacity
           style={[styles.createButton, { backgroundColor: primaryColor }]}
           onPress={handleCreateBoard}
@@ -280,6 +293,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     letterSpacing: -0.5,
+  },
+  versionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 1,
   },
   createButton: {
     width: 44,

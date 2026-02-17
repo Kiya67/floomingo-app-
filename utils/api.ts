@@ -233,3 +233,86 @@ export const authenticatedDelete = async <T = any>(endpoint: string, data: any =
     body: JSON.stringify(data),
   });
 };
+
+// ============================================
+// BOARDS API HELPERS
+// ============================================
+
+export interface Board {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  created_at: string;
+}
+
+export interface BoardPlace {
+  id: string;
+  board_id: string;
+  place_id: string;
+  place_name: string;
+  place_primary_type: string;
+  place_address: string;
+  post_id: string;
+  created_at: string;
+}
+
+export interface SaveVideoResponse {
+  board_posts_count: number;
+  board_places_count: number;
+}
+
+/**
+ * Get all boards for the authenticated user
+ */
+export const getBoards = async (): Promise<Board[]> => {
+  console.log('[API] Fetching boards');
+  return authenticatedGet<Board[]>('/api/boards');
+};
+
+/**
+ * Get places for a specific board
+ */
+export const getBoardPlaces = async (boardId: string): Promise<BoardPlace[]> => {
+  console.log('[API] Fetching places for board:', boardId);
+  return authenticatedGet<BoardPlace[]>(`/api/boards/${boardId}/places`);
+};
+
+/**
+ * Save video with location to a board
+ */
+export const saveVideoWithLocation = async (
+  boardId: string,
+  postId: string,
+  placeId: string,
+  placeName: string,
+  placeAddress: string,
+  placePrimaryType: string
+): Promise<SaveVideoResponse> => {
+  console.log('[API] Saving video with location to board:', boardId);
+  return authenticatedPost<SaveVideoResponse>(
+    `/api/boards/${boardId}/save-video-with-location`,
+    {
+      post_id: postId,
+      place_id: placeId,
+      place_name: placeName,
+      place_address: placeAddress,
+      place_primary_type: placePrimaryType,
+    }
+  );
+};
+
+/**
+ * Save video only to a board
+ */
+export const saveVideoOnly = async (
+  boardId: string,
+  postId: string
+): Promise<SaveVideoResponse> => {
+  console.log('[API] Saving video only to board:', boardId);
+  return authenticatedPost<SaveVideoResponse>(
+    `/api/boards/${boardId}/save-video`,
+    {
+      post_id: postId,
+    }
+  );
+};

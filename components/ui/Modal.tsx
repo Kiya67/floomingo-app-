@@ -12,6 +12,11 @@ interface ModalProps {
   cancelText?: string;
   onConfirm?: () => void;
   confirmColor?: string;
+  type?: 'success' | 'error' | 'info';
+  secondaryAction?: {
+    label: string;
+    onPress: () => void;
+  };
   children?: React.ReactNode;
 }
 
@@ -24,6 +29,8 @@ export function Modal({
   cancelText = 'Cancel',
   onConfirm,
   confirmColor,
+  type = 'info',
+  secondaryAction,
   children,
 }: ModalProps) {
   const colorScheme = useColorScheme();
@@ -41,6 +48,13 @@ export function Modal({
     } else {
       onClose();
     }
+  };
+
+  const getConfirmColor = () => {
+    if (confirmColor) return confirmColor;
+    if (type === 'error') return '#FF3B30';
+    if (type === 'success') return '#34C759';
+    return primaryColor;
   };
 
   return (
@@ -75,14 +89,26 @@ export function Modal({
             <TouchableOpacity
               style={[
                 styles.button,
-                { backgroundColor: confirmColor || primaryColor },
-                !onConfirm && { flex: 1 }
+                { backgroundColor: getConfirmColor() },
+                !onConfirm && !secondaryAction && { flex: 1 }
               ]}
               onPress={handleConfirm}
               activeOpacity={0.8}
             >
               <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>{confirmText}</Text>
             </TouchableOpacity>
+            {secondaryAction && (
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: primaryColor }]}
+                onPress={() => {
+                  secondaryAction.onPress();
+                  onClose();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.buttonText, { color: '#FFFFFF' }]}>{secondaryAction.label}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -129,3 +155,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+export default Modal;

@@ -1,11 +1,13 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, TextInput, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
+import { saveVideoWithLocation, saveVideoOnly } from '@/utils/api';
+import CustomModal from '@/components/ui/Modal';
 
 interface Board {
   id: string;
@@ -45,6 +47,22 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [alreadySavedBoards, setAlreadySavedBoards] = useState<Set<string>>(new Set());
+  const [modalState, setModalState] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+    secondaryAction?: {
+      label: string;
+      onPress: () => void;
+    };
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
 
   const fetchBoards = useCallback(async () => {
     console.log('Fetching user boards for save modal');
@@ -115,7 +133,12 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const handleCreateNewBoard = async () => {
     const trimmedTitle = newBoardTitle.trim();
     if (!trimmedTitle) {
-      Alert.alert('Error', 'Please enter a trip name');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Please enter a trip name',
+        type: 'error',
+      });
       return;
     }
 
@@ -124,7 +147,12 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        Alert.alert('Error', 'You must be logged in to create a trip');
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: 'You must be logged in to create a trip',
+          type: 'error',
+        });
         return;
       }
 
@@ -139,7 +167,12 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
 
       if (error) {
         console.error('Error creating board:', error);
-        Alert.alert('Error', 'Could not create trip. Please try again.');
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: 'Could not create trip. Please try again.',
+          type: 'error',
+        });
       } else {
         console.log('Board created successfully:', data.id);
         setSelectedBoardId(data.id);
@@ -149,7 +182,12 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
       }
     } catch (error) {
       console.error('Error in handleCreateNewBoard:', error);
-      Alert.alert('Error', 'Could not create trip. Please try again.');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not create trip. Please try again.',
+        type: 'error',
+      });
     } finally {
       setCreating(false);
     }
@@ -157,69 +195,59 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
 
   const handleSave = async () => {
     if (!selectedBoardId) {
-      Alert.alert('Error', 'Please select a trip');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Please select a trip',
+        type: 'error',
+      });
       return;
     }
 
     console.log('Saving post to board:', selectedBoardId);
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to save');
-        return;
-      }
-
       // Check if already saved to this board
       if (alreadySavedBoards.has(selectedBoardId)) {
-        Alert.alert('Already Saved', 'This video is already in this trip');
-        setSaving(false);
-        return;
-      }
-
-      // Save video to board
-      const { error: itemError } = await supabase
-        .from('board_posts')
-        .insert({
-          board_id: selectedBoardId,
-          post_id: postId,
+        setModalState({
+          visible: true,
+          title: 'Already Saved',
+          message: 'This video is already in this trip',
+          type: 'info',
         });
-
-      if (itemError) {
-        console.error('Error saving to board:', itemError);
-        Alert.alert('Error', 'Could not save to trip. Please try again.');
         setSaving(false);
         return;
       }
 
-      console.log('Video saved to board successfully');
+      let response;
+      
+      // Save video with or without location using backend API
+      if (saveWithLocation && placeId && placeName) {
+        console.log('Saving video with location to board:', placeId);
+        
+        // Fetch post details to get place address
+        const { data: postData } = await supabase
+          .from('posts')
+          .select('place_id, place_name, location_type')
+          .eq('id', postId)
+          .single();
 
-      // Save location if selected and available
-      if (saveWithLocation && placeId) {
-        console.log('Saving location to board:', placeId);
-        const { error: placeError } = await supabase
-          .from('board_places')
-          .upsert({
-            board_id: selectedBoardId,
-            place_id: placeId,
-            place_name: placeName,
-            address: null,
-            lat: null,
-            lng: null,
-            place_json: null,
-          }, {
-            onConflict: 'board_id,place_id',
-          });
-
-        if (placeError) {
-          console.error('Error saving location:', placeError);
-          // Don't fail the whole operation if location save fails
-        } else {
-          console.log('Location saved to board successfully');
-        }
+        response = await saveVideoWithLocation(
+          selectedBoardId,
+          postId,
+          placeId,
+          placeName,
+          '', // place_address - we don't have this in the current data
+          locationType || postData?.location_type || ''
+        );
+      } else {
+        console.log('Saving video only to board');
+        response = await saveVideoOnly(selectedBoardId, postId);
       }
 
-      // Get board title for toast
+      console.log('Video saved successfully:', response);
+
+      // Get board title for message
       const selectedBoard = boards.find(b => b.id === selectedBoardId);
       const boardTitle = selectedBoard?.title || 'Trip';
 
@@ -229,23 +257,40 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         global.tripsRefreshCallback();
       }
 
-      Alert.alert(
-        'Saved!',
-        `Saved to ${boardTitle}`,
-        [
-          { text: 'OK', onPress: () => onClose() },
-          {
-            text: 'View Trip',
-            onPress: () => {
-              onClose();
-              router.push(`/board/${selectedBoardId}`);
-            },
+      setModalState({
+        visible: true,
+        title: 'Saved!',
+        message: `Saved to ${boardTitle}`,
+        type: 'success',
+        onConfirm: () => onClose(),
+        secondaryAction: {
+          label: 'View Trip',
+          onPress: () => {
+            onClose();
+            router.push(`/board/${selectedBoardId}`);
           },
-        ]
-      );
-    } catch (error) {
+        },
+      });
+    } catch (error: any) {
       console.error('Error in handleSave:', error);
-      Alert.alert('Error', 'Could not save to trip. Please try again.');
+      const errorMessage = error?.message || 'Could not save to trip. Please try again.';
+      
+      // Check if it's a duplicate error (409)
+      if (errorMessage.includes('409') || errorMessage.includes('already saved')) {
+        setModalState({
+          visible: true,
+          title: 'Already Saved',
+          message: 'This video is already in this trip',
+          type: 'info',
+        });
+      } else {
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: errorMessage,
+          type: 'error',
+        });
+      }
     } finally {
       setSaving(false);
     }
@@ -262,7 +307,12 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
 
       if (error) {
         console.error('Error removing from board:', error);
-        Alert.alert('Error', 'Could not remove from trip');
+        setModalState({
+          visible: true,
+          title: 'Error',
+          message: 'Could not remove from trip',
+          type: 'error',
+        });
       } else {
         console.log('Post removed from board successfully');
         setAlreadySavedBoards(prev => {
@@ -276,11 +326,21 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
           global.tripsRefreshCallback();
         }
         
-        Alert.alert('Removed', 'Video removed from trip');
+        setModalState({
+          visible: true,
+          title: 'Removed',
+          message: 'Video removed from trip',
+          type: 'success',
+        });
       }
     } catch (error) {
       console.error('Error in handleRemove:', error);
-      Alert.alert('Error', 'Could not remove from trip');
+      setModalState({
+        visible: true,
+        title: 'Error',
+        message: 'Could not remove from trip',
+        type: 'error',
+      });
     }
   };
 
@@ -297,16 +357,17 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   if (!isVisible) return null;
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onClose={onClose}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: bgColor }}
-      handleIndicatorStyle={{ backgroundColor: textSecondaryColor }}
-    >
+    <>
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        onClose={onClose}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{ backgroundColor: bgColor }}
+        handleIndicatorStyle={{ backgroundColor: textSecondaryColor }}
+      >
       <BottomSheetScrollView style={[styles.container, { backgroundColor: bgColor }]}>
         <Text style={[styles.title, { color: textColor }]}>Save to Trips</Text>
 
@@ -428,7 +489,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                   </View>
                 )}
 
-                {placeId && (
+                {placeId && placeName && (
                   <View style={[styles.optionsContainer, { backgroundColor: cardColor }]}>
                     <Text style={[styles.optionsTitle, { color: textColor }]}>Save Options</Text>
                     <TouchableOpacity
@@ -483,6 +544,22 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         )}
       </BottomSheetScrollView>
     </BottomSheet>
+
+    <CustomModal
+      visible={modalState.visible}
+      title={modalState.title}
+      message={modalState.message}
+      type={modalState.type}
+      onClose={() => {
+        setModalState({ ...modalState, visible: false });
+        if (modalState.onConfirm) {
+          modalState.onConfirm();
+        }
+      }}
+      confirmText="OK"
+      secondaryAction={modalState.secondaryAction}
+    />
+    </>
   );
 }
 
