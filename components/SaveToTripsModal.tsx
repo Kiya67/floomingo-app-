@@ -48,6 +48,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
   const [creating, setCreating] = useState(false);
   const [alreadySavedBoards, setAlreadySavedBoards] = useState<Set<string>>(new Set());
   const [sessionReady, setSessionReady] = useState(false);
+  const [authMissing, setAuthMissing] = useState(false);
   const [modalState, setModalState] = useState<{
     visible: boolean;
     title: string;
@@ -69,15 +70,18 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     console.log('Fetching user boards for save modal');
     setLoading(true);
     setSessionReady(false);
+    setAuthMissing(false);
+    
     try {
-      // Load session on modal open
+      // CRITICAL: Check for authenticated session before fetching boards
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session?.user) {
-        console.log('No authenticated user or session');
+      if (sessionError || !session?.user?.id) {
+        console.warn('No session or user ID found for fetching boards:', sessionError);
         setBoards([]);
-        setLoading(false);
+        setAuthMissing(true);
         setSessionReady(false);
+        setLoading(false);
         return;
       }
 
@@ -85,36 +89,26 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
       setSessionReady(true);
       console.log('Session loaded successfully for user:', session.user.id);
 
-      // Fetch boards with counts
+      // Use the user_id from the session to query boards
       const { data, error } = await supabase
         .from('boards')
-        .select(`
-          id,
-          title,
-          board_posts (id)
-        `)
+        .select('id,title,cover_url,created_at')
         .eq('user_id', session.user.id)
-        .order('updated_at', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching boards:', error);
         setBoards([]);
       } else {
-        const boardsWithCounts = (data || []).map(board => ({
-          id: board.id,
-          title: board.title,
-          item_count: board.board_posts?.length || 0,
-        }));
-        console.log('Boards fetched for modal:', boardsWithCounts.length);
-        setBoards(boardsWithCounts);
+        console.log('Boards fetched for modal:', data?.length || 0);
+        setBoards(data || []);
       }
 
       // Check which boards already have this post saved
       const { data: savedData, error: savedError } = await supabase
         .from('board_posts')
-        .select('board_id, boards!inner(user_id)')
-        .eq('post_id', postId)
-        .eq('boards.user_id', session.user.id);
+        .select('board_id')
+        .eq('post_id', postId);
 
       if (!savedError && savedData) {
         const savedBoardIds = new Set(savedData.map(item => item.board_id));
@@ -125,6 +119,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
       console.error('Error in fetchBoards:', error);
       setBoards([]);
       setSessionReady(false);
+      setAuthMissing(true);
     } finally {
       setLoading(false);
     }
@@ -155,8 +150,8 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
     console.log('Creating new board:', trimmedTitle);
     setCreating(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
         setModalState({
           visible: true,
           title: 'Error',
@@ -169,7 +164,7 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
       const { data, error } = await supabase
         .from('boards')
         .insert({
-          user_id: user.id,
+          user_id: session.user.id,
           title: trimmedTitle,
         })
         .select()
@@ -412,6 +407,19 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={primaryColor} />
+            <Text style={[styles.loadingText, { color: textSecondaryColor }]}>Loading session...</Text>
+          </View>
+        ) : authMissing ? (
+          <View style={styles.emptyContainer}>
+            <IconSymbol
+              ios_icon_name="person.crop.circle.badge.exclamationmark"
+              android_material_icon_name="error"
+              size={48}
+              color={textSecondaryColor}
+            />
+            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              Please sign in to save videos to trips
+            </Text>
           </View>
         ) : (
           <>
@@ -497,9 +505,11 @@ export function SaveToTripsModal({ isVisible, onClose, postId, placeId, placeNam
                               <Text style={[styles.boardItemTitle, { color: textColor }]} numberOfLines={1}>
                                 {board.title}
                               </Text>
-                              <Text style={[styles.boardItemCount, { color: textSecondaryColor }]}>
-                                {itemCountText}
-                              </Text>
+                              {board.item_count !== undefined && (
+                                <Text style={[styles.boardItemCount, { color: textSecondaryColor }]}>
+                                  {itemCountText}
+                                </Text>
+                              )}
                             </View>
                             <View style={styles.boardItemActions}>
                               {isSaved && (
@@ -617,6 +627,10 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     alignItems: 'center',
   },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+  },
   createNewButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -678,6 +692,7 @@ const styles = StyleSheet.create({
   emptyContainer: {
     paddingVertical: 40,
     alignItems: 'center',
+    gap: 12,
   },
   emptyText: {
     fontSize: 16,
