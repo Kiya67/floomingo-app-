@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -209,6 +209,8 @@ export default function VideoFullScreenScreen() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [commentSubmitting, setCommentSubmitting] = useState(false);
+  const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
+  const [showDeleteCommentModal, setShowDeleteCommentModal] = useState(false);
   
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -593,6 +595,64 @@ export default function VideoFullScreenScreen() {
     }
   };
 
+  const handleDeleteComment = (commentId: string, commentUserId: string) => {
+    console.log('User long-pressed comment - checking ownership');
+    
+    // Only allow deleting own comments
+    if (commentUserId !== currentUserId) {
+      console.warn('Cannot delete another user\'s comment');
+      return;
+    }
+    
+    setDeleteCommentId(commentId);
+    setShowDeleteCommentModal(true);
+  };
+
+  const confirmDeleteComment = async () => {
+    if (!deleteCommentId || !currentUserId) return;
+
+    console.log('User confirmed delete comment:', deleteCommentId);
+    
+    try {
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', deleteCommentId)
+        .eq('user_id', currentUserId); // Double-check ownership
+
+      if (error) throw error;
+
+      console.log('Comment deleted successfully');
+      
+      // Optimistic UI update
+      setComments(prev => prev.filter(c => c.id !== deleteCommentId));
+      
+      // Update comment count
+      const currentPost = posts[currentIndex];
+      if (currentPost) {
+        setPostInteractions(prev => {
+          const newMap = new Map(prev);
+          const interaction = newMap.get(currentPost.id);
+          if (interaction) {
+            newMap.set(currentPost.id, {
+              ...interaction,
+              stats: {
+                ...interaction.stats,
+                comment_count: Math.max(0, interaction.stats.comment_count - 1),
+              }
+            });
+          }
+          return newMap;
+        });
+      }
+      
+      setShowDeleteCommentModal(false);
+      setDeleteCommentId(null);
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+    }
+  };
+
   const handleToggleMute = () => {
     console.log('User toggled mute/unmute');
     setIsMuted(prev => !prev);
@@ -942,9 +1002,15 @@ export default function VideoFullScreenScreen() {
                   const commentAvatarUrl = comment.profiles?.avatar_url || '';
                   const commentInitials = getInitials(commentDisplayName);
                   const commentText = comment.comment_text || '';
+                  const isOwnComment = comment.user_id === currentUserId;
                   
                   return (
-                    <View key={comment.id} style={styles.commentItem}>
+                    <TouchableOpacity
+                      key={comment.id}
+                      style={styles.commentItem}
+                      onLongPress={() => isOwnComment ? handleDeleteComment(comment.id, comment.user_id) : null}
+                      activeOpacity={isOwnComment ? 0.7 : 1}
+                    >
                       <View style={styles.commentHeader}>
                         {commentAvatarUrl ? (
                           <Image 
@@ -957,15 +1023,20 @@ export default function VideoFullScreenScreen() {
                           </View>
                         )}
                         <View style={styles.commentContent}>
-                          <Text style={[styles.commentAuthor, { color: textColor }]}>
-                            {commentDisplayName}
-                          </Text>
+                          <View style={styles.commentAuthorRow}>
+                            <Text style={[styles.commentAuthor, { color: textColor }]}>
+                              {commentDisplayName}
+                            </Text>
+                            {isOwnComment && (
+                              <Text style={[styles.commentYouBadge, { color: primaryColor }]}>You</Text>
+                            )}
+                          </View>
                           <Text style={[styles.commentText, { color: textColor }]}>
                             {commentText}
                           </Text>
                         </View>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })
               )}
@@ -1000,6 +1071,42 @@ export default function VideoFullScreenScreen() {
           </View>
         </BottomSheet>
       )}
+
+      {/* Delete Comment Confirmation Modal */}
+      <Modal
+        visible={showDeleteCommentModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteCommentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: isDark ? colors.cardDark : colors.card }]}>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Comment?</Text>
+            <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
+              This will permanently delete your comment.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: isDark ? '#444' : '#E0E0E0' }]}
+                onPress={() => {
+                  setShowDeleteCommentModal(false);
+                  setDeleteCommentId(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalButtonText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#FF3B30' }]}
+                onPress={confirmDeleteComment}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Save to Trips Modal */}
       {selectedPost && (
@@ -1230,10 +1337,19 @@ const styles = StyleSheet.create({
   commentContent: {
     flex: 1,
   },
+  commentAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   commentAuthor: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 4,
+  },
+  commentYouBadge: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   commentText: {
     fontSize: 14,
@@ -1261,5 +1377,42 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  modalMessage: {
+    fontSize: 16,
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

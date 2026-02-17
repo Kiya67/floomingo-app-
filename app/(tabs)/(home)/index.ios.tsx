@@ -43,6 +43,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   // Filter state
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
@@ -51,6 +52,25 @@ export default function HomeScreen() {
 
   // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
+
+  const fetchUnreadNotifications = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      if (!error && data) {
+        setUnreadNotificationsCount(data.length);
+      }
+    } catch (error) {
+      console.error('Error fetching unread notifications:', error);
+    }
+  }, []);
 
   const fetchPosts = useCallback(async () => {
     console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
@@ -122,12 +142,14 @@ export default function HomeScreen() {
 
   useEffect(() => {
     fetchPosts();
-  }, [fetchPosts]);
+    fetchUnreadNotifications();
+  }, [fetchPosts, fetchUnreadNotifications]);
 
   const onRefresh = async () => {
     console.log('User pulled to refresh posts');
     setRefreshing(true);
     await fetchPosts();
+    await fetchUnreadNotifications();
     setRefreshing(false);
   };
 
@@ -141,9 +163,9 @@ export default function HomeScreen() {
     setFilterModalVisible(true);
   };
 
-  const handleFavoritePress = () => {
-    console.log('User tapped favorite icon');
-    // TODO: Implement favorites functionality
+  const handleNotificationsPress = () => {
+    console.log('User tapped notifications icon - navigating to notifications tab');
+    router.push('/(tabs)/notifications');
   };
 
   const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
@@ -182,15 +204,24 @@ export default function HomeScreen() {
       <View style={[styles.headerBar, { backgroundColor: bgColor }]}>
         <TouchableOpacity 
           style={styles.iconButton}
-          onPress={handleFavoritePress}
+          onPress={handleNotificationsPress}
           activeOpacity={0.7}
         >
-          <IconSymbol 
-            ios_icon_name="heart.fill"
-            android_material_icon_name="favorite" 
-            size={28} 
-            color={primaryColor}
-          />
+          <View>
+            <IconSymbol 
+              ios_icon_name="heart.fill"
+              android_material_icon_name="favorite" 
+              size={28} 
+              color={primaryColor}
+            />
+            {unreadNotificationsCount > 0 && (
+              <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
+                <Text style={styles.badgeText}>
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.iconButton}
