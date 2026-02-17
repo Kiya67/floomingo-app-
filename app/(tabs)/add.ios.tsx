@@ -116,11 +116,11 @@ export default function AddScreen() {
       const postId = uuidv4();
       const timestamp = Date.now();
       const videoPath = `videos/${user.id}/${timestamp}.mp4`;
-      const thumbPath = `${user.id}/${postId}.jpg`;
+      const thumbPath = `thumbs/${user.id}/${timestamp}.jpg`;
       
       console.log('Generated postId:', postId);
       console.log('Video path for video_public bucket:', videoPath);
-      console.log('Thumbnail path:', thumbPath);
+      console.log('Thumbnail path for video_public bucket:', thumbPath);
 
       // Step 3: Upload VIDEO to Supabase Storage (video_public bucket)
       console.log('Step 3: Uploading video to video_public bucket (iOS)');
@@ -162,7 +162,7 @@ export default function AddScreen() {
       }
       
       const videoPublicUrl = videoPublicUrlData.publicUrl;
-      console.log('Video public URL:', videoPublicUrl);
+      console.log('✅ VIDEO UPLOAD SUCCESS - Bucket: video_public, Path:', videoPath, 'Public URL:', videoPublicUrl);
 
       // Step 5: Generate THUMBNAIL (client side)
       console.log('Step 5: Generating thumbnail from video');
@@ -173,23 +173,23 @@ export default function AddScreen() {
       
       console.log('Thumbnail generated:', thumbnailUri);
 
-      // Step 6: Upload THUMBNAIL to Supabase Storage
-      console.log('Step 6: Uploading thumbnail to Supabase Storage (iOS)');
+      // Step 6: Upload THUMBNAIL to Supabase Storage (video_public bucket)
+      console.log('Step 6: Uploading thumbnail to video_public bucket (iOS)');
       
       const thumbnailFormData = new FormData();
       
       const thumbnailFile = {
         uri: thumbnailUri,
         type: 'image/jpeg',
-        name: `${postId}.jpg`,
+        name: `${timestamp}.jpg`,
       } as any;
       
       thumbnailFormData.append('file', thumbnailFile);
       
-      console.log('Uploading thumbnail via FormData');
+      console.log('Uploading thumbnail via FormData to video_public bucket');
       
       const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
-        .from('thumbnails')
+        .from('video_public')
         .upload(thumbPath, thumbnailFormData, {
           contentType: 'image/jpeg',
           cacheControl: '3600',
@@ -201,18 +201,18 @@ export default function AddScreen() {
         throw thumbnailUploadError;
       }
 
-      console.log('Thumbnail uploaded successfully:', thumbnailUploadData);
+      console.log('Thumbnail uploaded successfully to video_public:', thumbnailUploadData);
 
       // Get public URL for thumbnail
       const { data: thumbnailPublicUrlData } = supabase.storage
-        .from('thumbnails')
+        .from('video_public')
         .getPublicUrl(thumbPath);
       
       const thumbnailPublicUrl = thumbnailPublicUrlData.publicUrl;
-      console.log('Thumbnail public URL:', thumbnailPublicUrl);
+      console.log('✅ THUMBNAIL UPLOAD SUCCESS - Bucket: video_public, Path:', thumbPath, 'Public URL:', thumbnailPublicUrl);
 
       // Step 7: Insert DB row into posts with PUBLIC URL
-      console.log('Step 7: Inserting post into database with public URL');
+      console.log('Step 7: Inserting post into database with public URLs');
       
       const { error: insertError } = await supabase
         .from('posts')
@@ -232,7 +232,7 @@ export default function AddScreen() {
         throw insertError;
       }
 
-      console.log('Post created successfully in database with public URL:', videoPublicUrl);
+      console.log('✅ Post created successfully in database with public URLs - Video:', videoPublicUrl, 'Thumbnail:', thumbnailPublicUrl);
 
       // Step 8: Success UX
       Alert.alert('Posted!', 'Your video has been posted successfully');
