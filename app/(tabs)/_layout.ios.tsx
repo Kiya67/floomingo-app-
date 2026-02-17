@@ -62,6 +62,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="trips"
+        options={{
+          title: 'Trips',
+          tabBarIcon: ({ color, size }) => (
+            <IconSymbol 
+              ios_icon_name="map.fill"
+              android_material_icon_name="explore" 
+              size={size} 
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
