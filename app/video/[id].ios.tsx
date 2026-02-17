@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -193,6 +193,7 @@ export default function VideoFullScreenScreen() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(true);
+  const [isSharing, setIsSharing] = useState(false);
   
   // Action button states per post
   const [postInteractions, setPostInteractions] = useState<Map<string, {
@@ -677,45 +678,84 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleShare = async (post: Post) => {
-    console.log('User tapped share button');
+    console.log('User tapped share button for post:', post.id);
+    
+    // Edge case: Check if video_url is missing
+    if (!post.video_url) {
+      console.warn('Share failed: No video URL available');
+      Alert.alert('No share link available');
+      return;
+    }
+    
+    // Prevent double taps
+    if (isSharing) {
+      console.log('Share already in progress, ignoring tap');
+      return;
+    }
+    
+    setIsSharing(true);
     
     try {
-      const shareMessage = post.caption || 'Amazing travel content!';
+      // Build share message
+      let shareMessage = post.caption || '';
+      
+      // Include place_name if available
+      if (post.place_name) {
+        shareMessage = shareMessage 
+          ? `${shareMessage} • ${post.place_name}` 
+          : post.place_name;
+      }
+      
+      console.log('Sharing with message:', shareMessage);
+      console.log('Sharing video URL:', post.video_url);
+      
       const result = await Share.share({
-        message: `Check out this video: ${shareMessage}`,
-        url: `floomingo://post/${post.id}`,
+        message: shareMessage,
+        url: post.video_url,
       });
 
-      if (result.action === Share.sharedAction && currentUserId) {
-        // Log the share
-        await supabase
-          .from('post_shares')
-          .insert({
-            post_id: post.id,
-            user_id: currentUserId,
-            share_target: 'system',
-          });
+      console.log('Share result:', result);
+
+      // Check if user completed the share
+      if (result.action === Share.sharedAction) {
+        console.log('User completed share successfully');
         
-        // Update share count
-        setPostInteractions(prev => {
-          const newMap = new Map(prev);
-          const interaction = newMap.get(post.id);
-          if (interaction) {
-            newMap.set(post.id, {
-              ...interaction,
-              stats: {
-                ...interaction.stats,
-                share_count: interaction.stats.share_count + 1,
-              }
-            });
+        // Log the share in database
+        if (currentUserId) {
+          try {
+            const { error: insertError } = await supabase
+              .from('post_shares')
+              .insert({
+                post_id: post.id,
+                user_id: currentUserId,
+                share_target: 'system',
+              });
+            
+            if (insertError) {
+              console.error('Error logging share:', insertError);
+            } else {
+              console.log('Share logged to database successfully');
+              
+              // Refresh post_stats to update share_count
+              await loadPostInteractions(post.id, currentUserId);
+            }
+          } catch (dbError) {
+            console.error('Database error logging share:', dbError);
           }
-          return newMap;
-        });
+        }
         
-        console.log('Share logged successfully');
+        // Show success toast
+        Alert.alert('Shared');
+      } else if (result.action === Share.dismissedAction) {
+        // User cancelled - do not log or increment
+        console.log('User cancelled share');
       }
     } catch (error) {
       console.error('Error sharing:', error);
+      // Show failure toast
+      Alert.alert('Couldn\'t share');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -761,6 +801,9 @@ export default function VideoFullScreenScreen() {
     const likeCountText = String(interaction.stats.like_count);
     const commentCountText = String(interaction.stats.comment_count);
     const shareCountText = String(interaction.stats.share_count);
+    
+    // Disable share button if no video_url or if sharing is in progress
+    const shareDisabled = !post.video_url || isSharing;
 
     return (
       <View style={styles.videoSlide}>
@@ -893,8 +936,9 @@ export default function VideoFullScreenScreen() {
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={styles.actionButton}
+                  style={[styles.actionButton, { opacity: shareDisabled ? 0.5 : 1 }]}
                   onPress={() => handleShare(post)}
+                  disabled={shareDisabled}
                   activeOpacity={0.7}
                 >
                   <IconSymbol 
