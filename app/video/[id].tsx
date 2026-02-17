@@ -53,7 +53,7 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-// Generate signed URL for private video
+// Generate signed URL for video from video_public bucket
 async function generateSignedUrl(videoPath: string, postId: string): Promise<string | null> {
   if (!videoPath) return null;
 
@@ -65,15 +65,15 @@ async function generateSignedUrl(videoPath: string, postId: string): Promise<str
   }
 
   try {
-    console.log('Generating signed URL for video path:', videoPath);
+    console.log('Generating signed URL for video path from video_public bucket:', videoPath);
     const { data, error } = await supabase.storage
-      .from('videos')
+      .from('video_public')
       .createSignedUrl(videoPath, 3600); // 1 hour expiration
 
     if (error) throw error;
 
     if (data?.signedUrl) {
-      console.log('Signed URL generated successfully');
+      console.log('Signed URL generated successfully from video_public bucket');
       signedUrlCache.set(postId, { 
         url: data.signedUrl, 
         expiresAt: Date.now() + 3600 * 1000 
@@ -83,7 +83,7 @@ async function generateSignedUrl(videoPath: string, postId: string): Promise<str
 
     return null;
   } catch (error) {
-    console.error('Error generating signed URL:', error);
+    console.error('Error generating signed URL from video_public bucket:', error);
     return null;
   }
 }
@@ -182,7 +182,7 @@ export default function VideoFullScreenScreen() {
             videoUrl = signedUrl || videoUrl;
           } else if (videoUrl && videoUrl.includes('/storage/v1/object/')) {
             // Extract path from URL and generate signed URL
-            const pathMatch = videoUrl.match(/\/videos\/(.+?)(\?|$)/);
+            const pathMatch = videoUrl.match(/\/video_public\/(.+?)(\?|$)/);
             if (pathMatch) {
               const path = pathMatch[1];
               const signedUrl = await generateSignedUrl(path, post.id);
@@ -997,7 +997,7 @@ function VideoPlayer({ videoUrl, postId }: { videoUrl: string; postId: string })
       signedUrlCache.delete(postId);
       
       // Try to regenerate signed URL
-      const videoPath = videoUrl.split('/videos/')[1]?.split('?')[0];
+      const videoPath = videoUrl.split('/video_public/')[1]?.split('?')[0];
       if (videoPath) {
         console.log('Attempting to regenerate signed URL for path:', videoPath);
         const newSignedUrl = await generateSignedUrl(videoPath, postId);

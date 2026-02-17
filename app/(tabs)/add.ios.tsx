@@ -121,8 +121,8 @@ export default function AddScreen() {
       console.log('Video path (to be stored in DB):', videoPath);
       console.log('Thumbnail path (to be stored in DB):', thumbPath);
 
-      // Step 3: Upload VIDEO to Supabase Storage (iOS native approach)
-      console.log('Step 3: Uploading video to Supabase Storage (iOS)');
+      // Step 3: Upload VIDEO to Supabase Storage (iOS native approach - video_public bucket)
+      console.log('Step 3: Uploading video to Supabase Storage (iOS - video_public bucket)');
       
       // For iOS, we need to use FormData with the file URI directly
       const videoFormData = new FormData();
@@ -136,11 +136,11 @@ export default function AddScreen() {
       
       videoFormData.append('file', videoFile);
       
-      console.log('Uploading video via FormData');
+      console.log('Uploading video via FormData to video_public bucket');
       
       // Use Supabase storage upload with FormData
       const { data: videoUploadData, error: videoUploadError } = await supabase.storage
-        .from('videos')
+        .from('video_public')
         .upload(videoPath, videoFormData, {
           contentType: 'video/mp4',
           cacheControl: '3600',
@@ -152,7 +152,7 @@ export default function AddScreen() {
         throw videoUploadError;
       }
 
-      console.log('Video uploaded successfully:', videoUploadData);
+      console.log('Video uploaded successfully to video_public:', videoUploadData);
 
       // Step 4: Generate THUMBNAIL (client side)
       console.log('Step 4: Generating thumbnail from video');
@@ -202,7 +202,7 @@ export default function AddScreen() {
       console.log('Thumbnail public URL:', thumbnail_public_url);
 
       // Step 6: Insert DB row into posts
-      // CRITICAL: Store videoPath (not public URL) for private bucket
+      // CRITICAL: Store videoPath (not public URL) for video_public bucket
       console.log('Step 6: Inserting post into database');
       
       const { error: insertError } = await supabase
@@ -210,7 +210,7 @@ export default function AddScreen() {
         .insert({
           id: postId,
           user_id: user.id,
-          video_url: videoPath, // Store path for private bucket
+          video_url: videoPath, // Store path for video_public bucket
           thumbnail_url: thumbnail_public_url, // Store public URL for public bucket
           caption: caption.trim() || null,
           place_id: selectedPlace?.place_id || null,
