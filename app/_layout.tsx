@@ -41,12 +41,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session check:', !!session);
+      console.log('RootLayout - Initial session check:', !!session);
       setIsReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log('Auth state changed:', _event, !!session);
+      console.log('RootLayout - Auth state changed:', _event, !!session);
     });
 
     return () => {
@@ -80,6 +80,7 @@ export default function RootLayout() {
           <WidgetProvider>
             <SystemBars style={colorScheme === "dark" ? "light" : "dark"} />
             <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="auth" options={{ headerShown: false }} />
               <Stack.Screen name="auth-popup" options={{ headerShown: false }} />
               <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
