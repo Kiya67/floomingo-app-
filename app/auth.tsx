@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -20,7 +20,7 @@ type Mode = "signin" | "signup";
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple, signInWithGitHub, loading: authLoading } =
+  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple, signInWithGitHub, loading: authLoading } =
     useAuth();
 
   const [mode, setMode] = useState<Mode>("signin");
@@ -28,6 +28,14 @@ export default function AuthScreen() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Redirect to home if user is already authenticated
+  useEffect(() => {
+    if (user && !authLoading) {
+      console.log('User authenticated, redirecting to home...');
+      router.replace("/(tabs)/(home)");
+    }
+  }, [user, authLoading]);
 
   if (authLoading) {
     return (
@@ -49,17 +57,22 @@ export default function AuthScreen() {
     setLoading(true);
     try {
       if (mode === "signin") {
+        console.log('Signing in with email...');
         await signInWithEmail(email, password);
-        router.replace("/");
+        console.log('Sign in successful');
+        // Don't manually redirect - useEffect will handle it when user state updates
       } else {
+        console.log('Signing up with email...');
         await signUpWithEmail(email, password, name);
+        console.log('Sign up successful');
         Alert.alert(
           "Success",
-          "Account created! Please check your email to verify your account."
+          "Account created successfully!"
         );
-        router.replace("/");
+        // Don't manually redirect - useEffect will handle it when user state updates
       }
     } catch (error: any) {
+      console.error('Auth error:', error);
       Alert.alert("Error", error.message || "Authentication failed");
     } finally {
       setLoading(false);
@@ -69,6 +82,7 @@ export default function AuthScreen() {
   const handleSocialAuth = async (provider: "google" | "apple" | "github") => {
     setLoading(true);
     try {
+      console.log(`Signing in with ${provider}...`);
       if (provider === "google") {
         await signInWithGoogle();
       } else if (provider === "apple") {
@@ -76,8 +90,10 @@ export default function AuthScreen() {
       } else if (provider === "github") {
         await signInWithGitHub();
       }
-      router.replace("/");
+      console.log(`${provider} sign in successful`);
+      // Don't manually redirect - useEffect will handle it when user state updates
     } catch (error: any) {
+      console.error(`${provider} auth error:`, error);
       Alert.alert("Error", error.message || "Authentication failed");
     } finally {
       setLoading(false);
