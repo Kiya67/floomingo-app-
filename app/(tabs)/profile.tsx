@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useTheme } from "@react-navigation/native";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, Modal } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
@@ -66,6 +66,9 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState<ProfileStats>({ follower_count: 0, following_count: 0, post_count: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [postToDelete, setPostToDelete] = useState<Post | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -175,6 +178,51 @@ export default function ProfileScreen() {
   const handleSettings = () => {
     console.log('User tapped Settings button');
     router.push('/settings');
+  };
+
+  const handleLongPress = (post: Post) => {
+    console.log('User long pressed on post:', post.id);
+    setPostToDelete(post);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeletePost = async () => {
+    if (!postToDelete) return;
+
+    console.log('User confirmed delete for post:', postToDelete.id);
+    setDeleting(true);
+
+    try {
+      // Delete from posts table (cascading deletes will handle related records)
+      const { error: postError } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postToDelete.id);
+
+      if (postError) throw postError;
+
+      console.log('Post deleted successfully');
+      
+      // Update local state
+      setPosts(prevPosts => prevPosts.filter(p => p.id !== postToDelete.id));
+      
+      // Close modal
+      setShowDeleteModal(false);
+      setPostToDelete(null);
+      
+      // Refresh stats
+      await fetchStats();
+    } catch (error) {
+      console.error('Error deleting post:', error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    console.log('User cancelled delete');
+    setShowDeleteModal(false);
+    setPostToDelete(null);
   };
 
   const getInitials = (name: string) => {
@@ -336,12 +384,52 @@ export default function ProfileScreen() {
                     console.log('User tapped video:', post.id);
                     router.push(`/video/${post.id}`);
                   }}
+                  onLongPress={() => handleLongPress(post)}
                 />
               ))}
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelDelete}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Post</Text>
+            <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
+              Are you sure you want to delete this post? This action cannot be undone.
+            </Text>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton, { borderColor: textSecondaryColor }]}
+                onPress={handleCancelDelete}
+                disabled={deleting}
+              >
+                <Text style={[styles.cancelButtonText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.deleteButton, { backgroundColor: '#FF3B30' }]}
+                onPress={handleDeletePost}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -493,5 +581,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    lineHeight: 22,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    borderWidth: 1,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteButton: {
+    minHeight: 44,
+  },
+  deleteButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

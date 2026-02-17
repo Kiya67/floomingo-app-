@@ -25,9 +25,10 @@ interface VideoGridItemProps {
   showFollowButton?: boolean;
   onFollowToggle?: (userId: string, isFollowing: boolean) => void;
   isFollowing?: boolean;
+  onLongPress?: () => void;
 }
 
-export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButton = false, onFollowToggle, isFollowing = false }: VideoGridItemProps) {
+export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButton = false, onFollowToggle, isFollowing = false, onLongPress }: VideoGridItemProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const cardColor = isDark ? colors.cardDark : colors.card;
@@ -164,6 +165,7 @@ export function VideoGridItem({ post, size, onPress, shouldPlay, showFollowButto
       style={[styles.gridItem, { width: size, height: size * 1.5, backgroundColor: cardColor }]}
       activeOpacity={0.8}
       onPress={onPress}
+      onLongPress={onLongPress}
     >
       {shouldPlay && formattedVideoUrl && !showThumbnail && player ? (
         <>
@@ -237,7 +239,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   errorContainer: {
     flex: 1,
