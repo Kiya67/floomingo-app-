@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -8,6 +8,7 @@ import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { SaveToTripsModal } from '@/components/SaveToTripsModal';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 interface Post {
   id: string;
@@ -24,10 +25,21 @@ interface Post {
   };
 }
 
-interface ProfileStats {
-  follower_count: number;
-  following_count: number;
-  post_count: number;
+interface PostStats {
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+}
+
+interface Comment {
+  id: string;
+  content: string;
+  created_at: string;
+  user_id: string;
+  profiles?: {
+    display_name: string;
+    avatar_url: string | null;
+  };
 }
 
 const { width, height } = Dimensions.get('window');
@@ -50,24 +62,41 @@ export default function VideoFullScreenScreen() {
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
-  const [post, setPost] = useState<Post | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showControls, setShowControls] = useState(true);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  
+  // Action button states
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [stats, setStats] = useState<PostStats>({ like_count: 0, comment_count: 0, share_count: 0 });
+  const [isSaved, setIsSaved] = useState(false);
+  
+  // Comments modal
+  const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  
+  const commentsSheetRef = useRef<BottomSheet>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  const fetchPost = useCallback(async () => {
-    console.log('Loading video post with ID:', id);
+  const fetchPosts = useCallback(async () => {
+    console.log('Loading video posts starting from ID:', id);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
       }
 
-      const { data, error } = await supabase
+      // Fetch the initial post
+      const { data: initialPost, error: initialError } = await supabase
         .from('posts')
         .select(`
           *,
@@ -79,174 +108,155 @@ export default function VideoFullScreenScreen() {
         .eq('id', id)
         .single();
 
-      if (error) {
-        console.error('Error fetching post:', error);
-      } else {
-        console.log('Post fetched successfully:', data);
-        
-        let videoUrl = data.video_url;
+      if (initialError) {
+        console.error('Error fetching initial post:', initialError);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch more posts from the same user or related posts
+      const { data: morePosts, error: moreError } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles!posts_user_id_fkey (
+            display_name,
+            avatar_url
+          )
+        `)
+        .neq('id', id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      const allPosts = [initialPost, ...(morePosts || [])];
+      
+      // Convert video URLs
+      const postsWithUrls = allPosts.map(post => {
+        let videoUrl = post.video_url;
         if (videoUrl && !videoUrl.startsWith('http')) {
           const { data: urlData } = supabase.storage
             .from('videos')
             .getPublicUrl(videoUrl);
           videoUrl = urlData.publicUrl;
-          console.log('Converted video path to public URL:', videoUrl);
         }
-        
-        setPost({
-          ...data,
-          video_url: videoUrl
-        });
+        return { ...post, video_url: videoUrl };
+      });
 
-        // Check follow status
-        if (user && data.user_id !== user.id) {
-          const { data: followData } = await supabase
-            .from('follows')
-            .select('*')
-            .eq('follower_id', user.id)
-            .eq('following_id', data.user_id)
-            .limit(1);
-          
-          setIsFollowing(followData && followData.length > 0);
-          console.log('Follow status:', followData && followData.length > 0);
-        }
-
-        // Check if post is saved
-        if (user) {
-          const { data: savedData } = await supabase
-            .from('board_items')
-            .select('id, board_id, boards!inner(user_id)')
-            .eq('post_id', id)
-            .eq('boards.user_id', user.id)
-            .limit(1);
-          
-          setIsSaved(savedData && savedData.length > 0);
-          console.log('Save status:', savedData && savedData.length > 0);
-        }
+      console.log('Posts fetched successfully:', postsWithUrls.length);
+      setPosts(postsWithUrls);
+      
+      // Load stats and like status for first post
+      if (user && postsWithUrls[0]) {
+        await loadPostInteractions(postsWithUrls[0].id, user.id);
       }
     } catch (error) {
-      console.error('Error in fetchPost:', error);
+      console.error('Error in fetchPosts:', error);
     } finally {
       setLoading(false);
     }
   }, [id]);
 
+  const loadPostInteractions = async (postId: string, userId: string) => {
+    console.log('Loading interactions for post:', postId);
+    
+    // Check if liked
+    const { data: likeData } = await supabase
+      .from('post_likes')
+      .select('*')
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+      .limit(1);
+    
+    setIsLiked(likeData && likeData.length > 0);
+    
+    // Get stats
+    const { data: statsData } = await supabase
+      .from('post_stats')
+      .select('*')
+      .eq('post_id', postId)
+      .single();
+    
+    if (statsData) {
+      setStats({
+        like_count: statsData.like_count || 0,
+        comment_count: statsData.comment_count || 0,
+        share_count: statsData.share_count || 0,
+      });
+    }
+    
+    // Check if saved
+    const { data: savedData } = await supabase
+      .from('board_items')
+      .select('id, board_id, boards!inner(user_id)')
+      .eq('post_id', postId)
+      .eq('boards.user_id', userId)
+      .limit(1);
+    
+    setIsSaved(savedData && savedData.length > 0);
+  };
+
   useEffect(() => {
     isMountedRef.current = true;
-    fetchPost();
+    fetchPosts();
     
     return () => {
       isMountedRef.current = false;
     };
-  }, [fetchPost]);
+  }, [fetchPosts]);
 
-  const player = useVideoPlayer(post?.video_url || '', (player) => {
-    if (post?.video_url) {
-      player.loop = true;
-      player.muted = false;
-    }
-  });
-
-  useEffect(() => {
-    if (!player || !post?.video_url || !isMountedRef.current) {
-      return;
-    }
-
-    console.log('Setting up video playback for URL:', post.video_url);
-    
-    let playTimeout: NodeJS.Timeout | null = null;
-    let retryCount = 0;
-    const maxRetries = 5;
-    
-    const attemptPlay = async () => {
-      if (!isMountedRef.current) {
-        console.log('Component unmounted, stopping playback attempts');
-        return;
-      }
+  const handleViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      const newIndex = viewableItems[0].index;
+      setCurrentIndex(newIndex);
       
-      try {
-        const status = player.status;
-        console.log(`Full screen video attempt ${retryCount + 1}: Player status:`, status);
+      const currentPost = posts[newIndex];
+      if (currentPost && currentUserId) {
+        loadPostInteractions(currentPost.id, currentUserId);
         
-        if (status === 'readyToPlay') {
-          console.log('Player ready, starting playback');
-          player.play();
-          player.volume = 1;
-          console.log('Full screen video playback started with sound');
-        } else if (status === 'idle' || status === 'loading') {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            const delay = 500 * retryCount;
-            console.log(`Player not ready (${status}), retrying in ${delay}ms`);
-            playTimeout = setTimeout(attemptPlay, delay);
-          } else {
-            console.log('Max retries reached, player still not ready');
-          }
-        } else if (status === 'error') {
-          console.error('Player in error state - video may be corrupted or unavailable');
-        }
-      } catch (error) {
-        console.error('Error in attemptPlay:', error);
-        if (retryCount < maxRetries) {
-          retryCount++;
-          playTimeout = setTimeout(attemptPlay, 1000);
+        // Check follow status
+        if (currentPost.user_id !== currentUserId) {
+          supabase
+            .from('follows')
+            .select('*')
+            .eq('follower_id', currentUserId)
+            .eq('following_id', currentPost.user_id)
+            .limit(1)
+            .then(({ data }) => {
+              setIsFollowing(data && data.length > 0);
+            });
         }
       }
-    };
-    
-    playTimeout = setTimeout(attemptPlay, 300);
-    
-    return () => {
-      console.log('Cleaning up video playback');
-      if (playTimeout) {
-        clearTimeout(playTimeout);
-        playTimeout = null;
-      }
-      try {
-        if (player && player.playing) {
-          player.pause();
-          console.log('Video paused on cleanup');
-        }
-      } catch (error) {
-        console.log('Error pausing video during cleanup (safe to ignore):', error);
-      }
-    };
-  }, [player, post?.video_url]);
+    }
+  }, [posts, currentUserId]);
+
+  const viewabilityConfig = {
+    itemVisiblePercentThreshold: 50,
+  };
 
   const handleClose = () => {
     console.log('User tapped close button');
     router.back();
   };
 
-  const toggleControls = () => {
-    setShowControls(!showControls);
-  };
-
-  const handleLocationPress = () => {
+  const handleLocationPress = (post: Post) => {
     if (post?.place_id) {
       console.log('User tapped location, navigating to location details:', post.place_id);
       router.push(`/location/${post.place_id}`);
     }
   };
 
-  const handleProfilePress = () => {
+  const handleProfilePress = (post: Post) => {
     if (post?.user_id) {
       console.log('User tapped profile, navigating to user profile:', post.user_id);
       router.push(`/user/${post.user_id}`);
     }
   };
 
-  const handleFollowToggle = async () => {
+  const handleFollowToggle = async (post: Post) => {
     console.log('User tapped follow/unfollow button');
-    if (followLoading || !post?.user_id) return;
+    if (followLoading || !post?.user_id || !currentUserId) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.log('No authenticated user');
-        return;
-      }
-
       setFollowLoading(true);
 
       if (isFollowing) {
@@ -254,7 +264,7 @@ export default function VideoFullScreenScreen() {
         const { error } = await supabase
           .from('follows')
           .delete()
-          .eq('follower_id', user.id)
+          .eq('follower_id', currentUserId)
           .eq('following_id', post.user_id);
 
         if (error) throw error;
@@ -266,7 +276,7 @@ export default function VideoFullScreenScreen() {
         const { error } = await supabase
           .from('follows')
           .insert({
-            follower_id: user.id,
+            follower_id: currentUserId,
             following_id: post.user_id,
           });
 
@@ -282,38 +292,170 @@ export default function VideoFullScreenScreen() {
     }
   };
 
-  const handleLike = () => {
+  const handleLike = async (post: Post) => {
     console.log('User tapped like button');
-    // TODO: Implement like functionality
+    if (likeLoading || !currentUserId) return;
+
+    setLikeLoading(true);
+    
+    // Optimistic update
+    const wasLiked = isLiked;
+    setIsLiked(!wasLiked);
+    setStats(prev => ({
+      ...prev,
+      like_count: wasLiked ? prev.like_count - 1 : prev.like_count + 1,
+    }));
+
+    try {
+      if (wasLiked) {
+        // Unlike
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', post.id)
+          .eq('user_id', currentUserId);
+
+        if (error) throw error;
+        console.log('Post unliked successfully');
+      } else {
+        // Like
+        const { error } = await supabase
+          .from('post_likes')
+          .insert({
+            post_id: post.id,
+            user_id: currentUserId,
+          });
+
+        if (error) throw error;
+        console.log('Post liked successfully');
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      // Revert optimistic update
+      setIsLiked(wasLiked);
+      setStats(prev => ({
+        ...prev,
+        like_count: wasLiked ? prev.like_count + 1 : prev.like_count - 1,
+      }));
+    } finally {
+      setLikeLoading(false);
+    }
   };
 
-  const handleComment = () => {
-    console.log('User tapped comment button');
-    // TODO: Implement comment functionality
+  const handleComment = async (post: Post) => {
+    console.log('User tapped comment button - opening comments');
+    setShowCommentsModal(true);
+    commentsSheetRef.current?.expand();
+    
+    setCommentsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          profiles!comments_user_id_fkey (
+            display_name,
+            avatar_url
+          )
+        `)
+        .eq('post_id', post.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      
+      setComments(data || []);
+      console.log('Comments loaded:', data?.length || 0);
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    } finally {
+      setCommentsLoading(false);
+    }
   };
 
-  const handleSave = () => {
+  const handleSubmitComment = async () => {
+    const trimmedComment = newComment.trim();
+    if (!trimmedComment || commentSubmitting || !currentUserId) return;
+
+    const currentPost = posts[currentIndex];
+    if (!currentPost) return;
+
+    console.log('Submitting comment:', trimmedComment);
+    setCommentSubmitting(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .insert({
+          post_id: currentPost.id,
+          user_id: currentUserId,
+          content: trimmedComment,
+        })
+        .select(`
+          *,
+          profiles!comments_user_id_fkey (
+            display_name,
+            avatar_url
+          )
+        `)
+        .single();
+
+      if (error) throw error;
+
+      console.log('Comment submitted successfully');
+      setComments(prev => [...prev, data]);
+      setStats(prev => ({ ...prev, comment_count: prev.comment_count + 1 }));
+      setNewComment('');
+    } catch (error) {
+      console.error('Error submitting comment:', error);
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  const handleSave = (post: Post) => {
     console.log('User tapped save button - opening Save to Trips modal');
+    setSelectedPostId(post.id);
     setShowSaveModal(true);
   };
 
   const handleSaveModalClose = () => {
     console.log('Closing Save to Trips modal');
     setShowSaveModal(false);
+    setSelectedPostId(null);
+    
     // Refresh saved status
-    fetchPost();
+    const currentPost = posts[currentIndex];
+    if (currentPost && currentUserId) {
+      loadPostInteractions(currentPost.id, currentUserId);
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async (post: Post) => {
     console.log('User tapped share button');
-    // TODO: Implement share functionality
-  };
+    
+    try {
+      const result = await Share.share({
+        message: `Check out this video: ${post.caption || 'Amazing travel content!'}`,
+        url: `floomingo://post/${post.id}`,
+      });
 
-  const displayName = post?.profiles?.display_name || 'Unknown User';
-  const avatarUrl = post?.profiles?.avatar_url || '';
-  const caption = post?.caption || '';
-  const placeName = post?.place_name || '';
-  const isOwnVideo = currentUserId === post?.user_id;
+      if (result.action === Share.sharedAction && currentUserId) {
+        // Log the share
+        await supabase
+          .from('post_shares')
+          .insert({
+            post_id: post.id,
+            user_id: currentUserId,
+            share_target: 'system',
+          });
+        
+        setStats(prev => ({ ...prev, share_count: prev.share_count + 1 }));
+        console.log('Share logged successfully');
+      }
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
+  };
 
   const getInitials = (name: string) => {
     const names = name.split(' ');
@@ -323,7 +465,169 @@ export default function VideoFullScreenScreen() {
     return name.substring(0, 2).toUpperCase();
   };
 
-  const initials = getInitials(displayName);
+  const renderBackdrop = (props: any) => (
+    <BottomSheetBackdrop
+      {...props}
+      disappearsOnIndex={-1}
+      appearsOnIndex={0}
+      opacity={0.5}
+      pressBehavior="close"
+    />
+  );
+
+  const renderVideoItem = ({ item: post }: { item: Post }) => {
+    const displayName = post?.profiles?.display_name || 'Unknown User';
+    const avatarUrl = post?.profiles?.avatar_url || '';
+    const caption = post?.caption || '';
+    const placeName = post?.place_name || '';
+    const isOwnVideo = currentUserId === post?.user_id;
+    const initials = getInitials(displayName);
+
+    return (
+      <View style={styles.videoSlide}>
+        <VideoPlayer videoUrl={post.video_url} />
+        
+        {/* Overlay content */}
+        <View style={styles.overlay}>
+          {/* Top controls */}
+          <View style={styles.topControls}>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={handleClose}
+            >
+              <IconSymbol 
+                ios_icon_name="xmark"
+                android_material_icon_name="close" 
+                size={28} 
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Bottom info */}
+          <View style={styles.bottomInfo}>
+            <View style={styles.infoContent}>
+              <View style={styles.userRowContainer}>
+                <TouchableOpacity 
+                  style={styles.userRow}
+                  onPress={() => handleProfilePress(post)}
+                  activeOpacity={0.7}
+                >
+                  {avatarUrl ? (
+                    <Image 
+                      source={resolveImageSource(avatarUrl)} 
+                      style={styles.avatar}
+                    />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarInitials}>{initials}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.displayName}>{displayName}</Text>
+                </TouchableOpacity>
+                {!isOwnVideo && (
+                  <TouchableOpacity
+                    style={[
+                      styles.followButtonSmall,
+                      { backgroundColor: isFollowing ? 'rgba(255, 255, 255, 0.2)' : '#FF69B4' }
+                    ]}
+                    onPress={() => handleFollowToggle(post)}
+                    disabled={followLoading}
+                    activeOpacity={0.7}
+                  >
+                    {followLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.followButtonSmallText}>
+                        {isFollowing ? 'Following' : 'Follow'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+              {caption ? (
+                <Text style={styles.caption} numberOfLines={3}>{caption}</Text>
+              ) : null}
+              {placeName ? (
+                <TouchableOpacity 
+                  style={styles.locationRow}
+                  onPress={() => handleLocationPress(post)}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    ios_icon_name="location.fill"
+                    android_material_icon_name="location-on" 
+                    size={16} 
+                    color="#FF69B4"
+                  />
+                  <Text style={styles.placeName}>{placeName}</Text>
+                </TouchableOpacity>
+              ) : null}
+              
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleLike(post)}
+                  disabled={likeLoading}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    ios_icon_name={isLiked ? "heart.fill" : "heart"}
+                    android_material_icon_name={isLiked ? "favorite" : "favorite-border"} 
+                    size={28} 
+                    color={isLiked ? "#FF69B4" : "#FFFFFF"}
+                  />
+                  <Text style={styles.actionButtonText}>{stats.like_count}</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleComment(post)}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    ios_icon_name="bubble.left"
+                    android_material_icon_name="chat-bubble-outline" 
+                    size={28} 
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.actionButtonText}>{stats.comment_count}</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleSave(post)}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    ios_icon_name={isSaved ? "bookmark.fill" : "bookmark"}
+                    android_material_icon_name={isSaved ? "bookmark" : "bookmark-border"} 
+                    size={28} 
+                    color={isSaved ? "#FF69B4" : "#FFFFFF"}
+                  />
+                  <Text style={styles.actionButtonText}>Save</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleShare(post)}
+                  activeOpacity={0.7}
+                >
+                  <IconSymbol 
+                    ios_icon_name="square.and.arrow.up"
+                    android_material_icon_name="share" 
+                    size={28} 
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.actionButtonText}>{stats.share_count}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   if (loading) {
     return (
@@ -332,13 +636,13 @@ export default function VideoFullScreenScreen() {
         <StatusBar hidden />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
-          <Text style={[styles.loadingText, { color: textColor }]}>Loading video...</Text>
+          <Text style={[styles.loadingText, { color: textColor }]}>Loading videos...</Text>
         </View>
       </View>
     );
   }
 
-  if (!post) {
+  if (posts.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: bgColor }]}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -362,179 +666,163 @@ export default function VideoFullScreenScreen() {
     );
   }
 
+  const selectedPost = selectedPostId ? posts.find(p => p.id === selectedPostId) : null;
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
       
-      <TouchableOpacity 
-        style={styles.videoContainer}
-        activeOpacity={1}
-        onPress={toggleControls}
-      >
-        <VideoView
-          style={styles.video}
-          player={player}
-          nativeControls={false}
-          contentFit="contain"
-          allowsFullscreen={false}
-          allowsPictureInPicture={false}
-        />
-      </TouchableOpacity>
+      <FlatList
+        ref={flatListRef}
+        data={posts}
+        renderItem={renderVideoItem}
+        keyExtractor={(item) => item.id}
+        pagingEnabled
+        showsVerticalScrollIndicator={false}
+        snapToInterval={height}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        onViewableItemsChanged={handleViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        removeClippedSubviews
+        maxToRenderPerBatch={2}
+        windowSize={3}
+      />
 
-      {showControls && (
-        <>
-          <View style={styles.topControls}>
-            <TouchableOpacity 
-              style={styles.closeButton}
-              onPress={handleClose}
-            >
-              <IconSymbol 
-                ios_icon_name="xmark"
-                android_material_icon_name="close" 
-                size={28} 
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.bottomInfo}>
-            <ScrollView 
-              style={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.infoContent}>
-                <View style={styles.userRowContainer}>
-                  <TouchableOpacity 
-                    style={styles.userRow}
-                    onPress={handleProfilePress}
-                    activeOpacity={0.7}
-                  >
-                    {avatarUrl ? (
-                      <Image 
-                        source={resolveImageSource(avatarUrl)} 
-                        style={styles.avatar}
-                      />
-                    ) : (
-                      <View style={styles.avatarPlaceholder}>
-                        <Text style={styles.avatarInitials}>{initials}</Text>
+      {/* Comments Modal */}
+      {showCommentsModal && (
+        <BottomSheet
+          ref={commentsSheetRef}
+          index={0}
+          snapPoints={['75%']}
+          enablePanDownToClose
+          onClose={() => setShowCommentsModal(false)}
+          backdropComponent={renderBackdrop}
+          backgroundStyle={{ backgroundColor: bgColor }}
+          handleIndicatorStyle={{ backgroundColor: textSecondaryColor }}
+        >
+          <View style={[styles.commentsContainer, { backgroundColor: bgColor }]}>
+            <Text style={[styles.commentsTitle, { color: textColor }]}>Comments</Text>
+            
+            <BottomSheetScrollView style={styles.commentsList}>
+              {commentsLoading ? (
+                <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 20 }} />
+              ) : comments.length === 0 ? (
+                <Text style={[styles.noCommentsText, { color: textSecondaryColor }]}>
+                  No comments yet. Be the first to comment!
+                </Text>
+              ) : (
+                comments.map((comment) => {
+                  const commentDisplayName = comment.profiles?.display_name || 'Unknown User';
+                  const commentAvatarUrl = comment.profiles?.avatar_url || '';
+                  const commentInitials = getInitials(commentDisplayName);
+                  
+                  return (
+                    <View key={comment.id} style={styles.commentItem}>
+                      <View style={styles.commentHeader}>
+                        {commentAvatarUrl ? (
+                          <Image 
+                            source={resolveImageSource(commentAvatarUrl)} 
+                            style={styles.commentAvatar}
+                          />
+                        ) : (
+                          <View style={styles.commentAvatarPlaceholder}>
+                            <Text style={styles.commentAvatarInitials}>{commentInitials}</Text>
+                          </View>
+                        )}
+                        <View style={styles.commentContent}>
+                          <Text style={[styles.commentAuthor, { color: textColor }]}>
+                            {commentDisplayName}
+                          </Text>
+                          <Text style={[styles.commentText, { color: textColor }]}>
+                            {comment.content}
+                          </Text>
+                        </View>
                       </View>
-                    )}
-                    <Text style={styles.displayName}>{displayName}</Text>
-                  </TouchableOpacity>
-                  {!isOwnVideo && (
-                    <TouchableOpacity
-                      style={[
-                        styles.followButtonSmall,
-                        { backgroundColor: isFollowing ? 'rgba(255, 255, 255, 0.2)' : '#FF69B4' }
-                      ]}
-                      onPress={handleFollowToggle}
-                      disabled={followLoading}
-                      activeOpacity={0.7}
-                    >
-                      {followLoading ? (
-                        <ActivityIndicator size="small" color="#FFFFFF" />
-                      ) : (
-                        <Text style={styles.followButtonSmallText}>
-                          {isFollowing ? 'Following' : 'Follow'}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {caption ? (
-                  <Text style={styles.caption}>{caption}</Text>
-                ) : null}
-                {placeName ? (
-                  <TouchableOpacity 
-                    style={styles.locationRow}
-                    onPress={handleLocationPress}
-                    activeOpacity={0.7}
-                  >
-                    <IconSymbol 
-                      ios_icon_name="location.fill"
-                      android_material_icon_name="location-on" 
-                      size={16} 
-                      color="#FF69B4"
-                    />
-                    <Text style={styles.placeName}>{placeName}</Text>
-                  </TouchableOpacity>
-                ) : null}
-                
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={handleLike}
-                    activeOpacity={0.7}
-                  >
-                    <IconSymbol 
-                      ios_icon_name="heart"
-                      android_material_icon_name="favorite-border" 
-                      size={28} 
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Like</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={handleComment}
-                    activeOpacity={0.7}
-                  >
-                    <IconSymbol 
-                      ios_icon_name="bubble.left"
-                      android_material_icon_name="chat-bubble-outline" 
-                      size={28} 
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Comment</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={handleSave}
-                    activeOpacity={0.7}
-                  >
-                    <IconSymbol 
-                      ios_icon_name={isSaved ? "bookmark.fill" : "bookmark"}
-                      android_material_icon_name={isSaved ? "bookmark" : "bookmark-border"} 
-                      size={28} 
-                      color={isSaved ? "#FF69B4" : "#FFFFFF"}
-                    />
-                    <Text style={styles.actionButtonText}>Save</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={handleShare}
-                    activeOpacity={0.7}
-                  >
-                    <IconSymbol 
-                      ios_icon_name="square.and.arrow.up"
-                      android_material_icon_name="share" 
-                      size={28} 
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.actionButtonText}>Share</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </ScrollView>
+                    </View>
+                  );
+                })
+              )}
+            </BottomSheetScrollView>
+            
+            <View style={[styles.commentInputContainer, { backgroundColor: bgColor, borderTopColor: textSecondaryColor }]}>
+              <BottomSheetTextInput
+                style={[styles.commentInput, { backgroundColor: isDark ? '#333' : '#F0F0F0', color: textColor }]}
+                placeholder="Add a comment..."
+                placeholderTextColor={textSecondaryColor}
+                value={newComment}
+                onChangeText={setNewComment}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.commentSendButton, { backgroundColor: primaryColor }]}
+                onPress={handleSubmitComment}
+                disabled={commentSubmitting || !newComment.trim()}
+              >
+                {commentSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <IconSymbol 
+                    ios_icon_name="paperplane.fill"
+                    android_material_icon_name="send" 
+                    size={20} 
+                    color="#FFFFFF"
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </>
+        </BottomSheet>
       )}
 
-      {post && (
+      {/* Save to Trips Modal */}
+      {selectedPost && (
         <SaveToTripsModal
           isVisible={showSaveModal}
           onClose={handleSaveModalClose}
-          postId={post.id}
-          placeId={post.place_id}
-          placeName={post.place_name}
-          locationType={post.location_type}
+          postId={selectedPost.id}
+          placeId={selectedPost.place_id}
+          placeName={selectedPost.place_name}
+          locationType={selectedPost.location_type}
         />
       )}
     </GestureHandlerRootView>
+  );
+}
+
+// Video Player Component
+function VideoPlayer({ videoUrl }: { videoUrl: string }) {
+  const player = useVideoPlayer(videoUrl, (player) => {
+    player.loop = true;
+    player.muted = false;
+  });
+
+  useEffect(() => {
+    const playTimeout = setTimeout(() => {
+      if (player.status === 'readyToPlay') {
+        player.play();
+        player.volume = 1;
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(playTimeout);
+      if (player.playing) {
+        player.pause();
+      }
+    };
+  }, [player]);
+
+  return (
+    <VideoView
+      style={styles.video}
+      player={player}
+      nativeControls={false}
+      contentFit="contain"
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+    />
   );
 }
 
@@ -573,25 +861,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  videoContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  videoSlide: {
+    width: width,
+    height: height,
+    backgroundColor: '#000000',
   },
   video: {
     width: width,
     height: height,
   },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+  },
   topControls: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     paddingTop: 50,
     paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   closeButton: {
     width: 44,
@@ -602,20 +889,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bottomInfo: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    maxHeight: height * 0.5,
     paddingBottom: 40,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  scrollContent: {
     paddingHorizontal: 16,
+    backgroundColor: 'linear-gradient(transparent, rgba(0, 0, 0, 0.7))',
   },
   infoContent: {
     gap: 12,
-    paddingTop: 16,
   },
   userRowContainer: {
     flexDirection: 'row',
@@ -683,10 +962,8 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
   },
   actionButton: {
     alignItems: 'center',
@@ -696,5 +973,83 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '500',
+  },
+  commentsContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  commentsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  commentsList: {
+    flex: 1,
+  },
+  noCommentsText: {
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 16,
+  },
+  commentItem: {
+    marginBottom: 16,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  commentAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#333',
+  },
+  commentAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FF69B4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  commentAvatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  commentContent: {
+    flex: 1,
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  commentText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  commentInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+  },
+  commentInput: {
+    flex: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    maxHeight: 100,
+  },
+  commentSendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
