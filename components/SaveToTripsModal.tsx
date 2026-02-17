@@ -10,6 +10,7 @@ import { saveVideoWithLocation, saveVideoOnly } from '@/utils/api';
 import { Toast } from '@/components/ui/Toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 
 interface Board {
   id: string;
@@ -21,6 +22,7 @@ interface Board {
 interface Post {
   id: string;
   caption: string;
+  thumbnail_url?: string;
   place_id: string | null;
   place_name: string | null;
   location_type: string | null;
@@ -44,6 +46,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const { session, user, loadingAuth } = useSupabaseAuth();
   
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
@@ -56,15 +59,13 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
 
   const [boards, setBoards] = useState<Board[]>([]);
   const [boardCounts, setBoardCounts] = useState<Map<string, number>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [loadingBoards, setLoadingBoards] = useState(true);
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
   const [saveOption, setSaveOption] = useState<'video_only' | 'video_and_place'>('video_only');
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [newBoardTitle, setNewBoardTitle] = useState('');
   const [creating, setCreating] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [authMissing, setAuthMissing] = useState(false);
   
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -77,37 +78,38 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   };
 
   const fetchBoards = useCallback(async () => {
-    console.log('Fetching user boards for save modal');
-    setLoading(true);
-    setSessionReady(false);
-    setAuthMissing(false);
+    console.log('SaveToTripsModal - fetchBoards called');
+    setLoadingBoards(true);
     
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session?.user?.id) {
-        console.warn('No session or user ID found for fetching boards:', sessionError);
-        setBoards([]);
-        setAuthMissing(true);
-        setSessionReady(false);
-        setLoading(false);
+      // Check if auth is still loading
+      if (loadingAuth) {
+        console.log('SaveToTripsModal - Auth still loading, waiting...');
         return;
       }
 
-      setSessionReady(true);
-      console.log('Session loaded successfully for user:', session.user.id);
+      // Check if user is authenticated
+      if (!session || !user) {
+        console.warn('SaveToTripsModal - No session or user, cannot fetch boards');
+        setBoards([]);
+        setLoadingBoards(false);
+        return;
+      }
+
+      console.log('SaveToTripsModal - Fetching boards for user:', user.id);
 
       const { data, error } = await supabase
         .from('boards')
         .select('id, title, cover_url, created_at')
-        .eq('user_id', session.user.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching boards:', error);
+        console.error('SaveToTripsModal - Error fetching boards:', error);
+        showToast('Failed to load trips', 'error');
         setBoards([]);
       } else {
-        console.log('Boards fetched for modal:', data?.length || 0);
+        console.log('SaveToTripsModal - Boards fetched:', data?.length || 0);
         setBoards(data || []);
         
         // Fetch counts for each board
@@ -133,30 +135,29 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
           const lastUsedBoardId = await AsyncStorage.getItem(LAST_USED_BOARD_KEY);
           if (lastUsedBoardId && data?.some(b => b.id === lastUsedBoardId)) {
             setSelectedBoardId(lastUsedBoardId);
-            console.log('Restored last used board:', lastUsedBoardId);
+            console.log('SaveToTripsModal - Restored last used board:', lastUsedBoardId);
           } else if (data && data.length > 0) {
             setSelectedBoardId(data[0].id);
           }
         } catch (storageError) {
-          console.error('Error loading last used board:', storageError);
+          console.error('SaveToTripsModal - Error loading last used board:', storageError);
           if (data && data.length > 0) {
             setSelectedBoardId(data[0].id);
           }
         }
       }
     } catch (error) {
-      console.error('Error in fetchBoards:', error);
+      console.error('SaveToTripsModal - Error in fetchBoards:', error);
+      showToast('Failed to load trips', 'error');
       setBoards([]);
-      setSessionReady(false);
-      setAuthMissing(true);
     } finally {
-      setLoading(false);
+      setLoadingBoards(false);
     }
-  }, []);
+  }, [loadingAuth, session, user]);
 
   useEffect(() => {
     if (isVisible) {
-      console.log('Opening Save to Trips modal for post:', post.id);
+      console.log('SaveToTripsModal - Modal opened for post:', post.id);
       bottomSheetRef.current?.expand();
       fetchBoards();
       
@@ -178,36 +179,43 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       return;
     }
 
-    console.log('Creating new board:', trimmedTitle);
+    // Check auth before creating
+    if (loadingAuth) {
+      showToast('Loading authentication...', 'info');
+      return;
+    }
+
+    if (!session || !user) {
+      showToast('Please sign in to create a trip', 'error');
+      router.push('/auth');
+      return;
+    }
+
+    console.log('SaveToTripsModal - Creating new board:', trimmedTitle);
     setCreating(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        showToast('You must be logged in to create a trip', 'error');
-        return;
-      }
-
       const { data, error } = await supabase
         .from('boards')
         .insert({
-          user_id: session.user.id,
+          user_id: user.id,
           title: trimmedTitle,
         })
         .select()
         .single();
 
       if (error) {
-        console.error('Error creating board:', error);
+        console.error('SaveToTripsModal - Error creating board:', error);
         showToast('Could not create trip. Please try again.', 'error');
       } else {
-        console.log('Board created successfully:', data.id);
+        console.log('SaveToTripsModal - Board created successfully:', data.id);
         setSelectedBoardId(data.id);
         setShowCreateNew(false);
         setNewBoardTitle('');
         await fetchBoards();
+        showToast('Trip created!', 'success');
       }
     } catch (error) {
-      console.error('Error in handleCreateNewBoard:', error);
+      console.error('SaveToTripsModal - Error in handleCreateNewBoard:', error);
       showToast('Could not create trip. Please try again.', 'error');
     } finally {
       setCreating(false);
@@ -215,8 +223,8 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   };
 
   const handleSave = async () => {
-    if (!selectedBoardId) {
-      showToast('Please select a trip', 'error');
+    if (!selectedBoardId || !post || isSaving) {
+      console.log('SaveToTripsModal - handleSave blocked:', { selectedBoardId, post: !!post, isSaving });
       return;
     }
 
@@ -226,35 +234,38 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
       return;
     }
 
-    console.log('Saving post to board:', selectedBoardId);
-    setSaving(true);
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (!session?.access_token) {
-        console.warn('No session token in handleSave', { error: sessionError });
-        
-        console.log('Attempting to refresh session...');
-        await supabase.auth.refreshSession();
-        
-        const { data: { session: refreshedSession } } = await supabase.auth.getSession();
-        
-        if (!refreshedSession?.access_token) {
-          console.error('Session refresh failed - no token available');
-          showToast('Authentication token not found. Please sign in again.', 'error');
-          setSaving(false);
-          return;
-        }
-        
-        console.log('Session refreshed successfully');
-      }
+    // Auth guard: Check if auth is still loading
+    if (loadingAuth) {
+      console.log('SaveToTripsModal - Auth still loading, blocking save');
+      showToast('Loading authentication...', 'info');
+      return;
+    }
 
-      let response;
+    // Auth guard: Ensure session is valid before proceeding
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentSession = sessionData?.session;
+    
+    if (!currentSession?.user) {
+      console.warn('SaveToTripsModal - No session or user in handleSave');
+      showToast('Please sign in to save videos', 'error');
+      router.push('/auth');
+      return;
+    }
+
+    console.log('SaveToTripsModal - Saving post to board:', {
+      boardId: selectedBoardId,
+      postId: post.id,
+      userId: currentSession.user.id,
+      saveOption,
+    });
+
+    setIsSaving(true);
+    try {
+      let result;
       
       if (saveOption === 'video_and_place' && post.place_id && post.place_name) {
-        console.log('Saving video with location to board:', post.place_id);
-        
-        response = await saveVideoWithLocation(
+        console.log('SaveToTripsModal - Saving video with location');
+        result = await saveVideoWithLocation(
           selectedBoardId,
           post.id,
           post.place_id,
@@ -263,43 +274,71 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
           post.location_type || ''
         );
       } else {
-        console.log('Saving video only to board');
-        response = await saveVideoOnly(selectedBoardId, post.id);
+        console.log('SaveToTripsModal - Saving video only');
+        result = await saveVideoOnly(selectedBoardId, post.id);
       }
 
-      console.log('Video saved successfully:', response);
+      console.log('SaveToTripsModal - Save result:', result);
 
-      // Save last used board to AsyncStorage
-      try {
-        await AsyncStorage.setItem(LAST_USED_BOARD_KEY, selectedBoardId);
-        console.log('Saved last used board to storage:', selectedBoardId);
-      } catch (storageError) {
-        console.error('Error saving last used board:', storageError);
+      // Check for errors in the result
+      if (result?.error) {
+        if (result.error.code === 409) {
+          showToast('Already saved to this trip!', 'info');
+        } else {
+          console.error('SaveToTripsModal - Save failed:', {
+            sessionExists: !!currentSession,
+            userId: currentSession.user.id,
+            errorCode: result.error.code,
+            errorMessage: result.error.message,
+          });
+          showToast(`Failed to save: ${result.error.message}`, 'error');
+        }
+      } else {
+        // Save last used board to AsyncStorage
+        try {
+          await AsyncStorage.setItem(LAST_USED_BOARD_KEY, selectedBoardId);
+          console.log('SaveToTripsModal - Saved last used board to storage:', selectedBoardId);
+        } catch (storageError) {
+          console.error('SaveToTripsModal - Error saving last used board:', storageError);
+        }
+
+        const selectedBoard = boards.find(b => b.id === selectedBoardId);
+        const boardTitle = selectedBoard?.title || 'trip';
+
+        // Update board cover if it was null and we have a thumbnail
+        if (!selectedBoard?.cover_url && post.thumbnail_url) {
+          console.log('SaveToTripsModal - Updating board cover with post thumbnail');
+          await supabase
+            .from('boards')
+            .update({ cover_url: post.thumbnail_url })
+            .eq('id', selectedBoardId);
+        }
+
+        // Trigger trips refresh if callback exists
+        if (global.tripsRefreshCallback) {
+          global.tripsRefreshCallback();
+        }
+
+        showToast(`Saved to ${boardTitle}!`, 'success');
+        
+        setTimeout(() => {
+          onClose();
+        }, 1000);
       }
-
-      const selectedBoard = boards.find(b => b.id === selectedBoardId);
-      const boardTitle = selectedBoard?.title || 'Trip';
-
-      if (global.tripsRefreshCallback) {
-        global.tripsRefreshCallback();
-      }
-
-      showToast(`Saved to ${boardTitle}`, 'success');
+    } catch (err: any) {
+      console.error('SaveToTripsModal - Error in handleSave:', err);
+      const errorMessage = err?.message || 'Could not save to trip. Please try again.';
       
-      setTimeout(() => {
-        onClose();
-      }, 1000);
-    } catch (error: any) {
-      console.error('Error in handleSave:', error);
-      const errorMessage = error?.message || 'Could not save to trip. Please try again.';
-      
-      if (errorMessage.includes('409') || errorMessage.includes('already saved')) {
+      if (errorMessage.includes('Authentication token not found')) {
+        showToast('Please sign in to save videos', 'error');
+        router.push('/auth');
+      } else if (errorMessage.includes('409') || errorMessage.includes('already saved')) {
         showToast('This video is already in this trip', 'info');
       } else {
         showToast(errorMessage, 'error');
       }
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
@@ -321,7 +360,14 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
   
   const hasPlace = Boolean(post.place_id && post.place_name);
   const showPlaceWarning = saveOption === 'video_and_place' && !hasPlace;
-  const canSave = selectedBoardId && sessionReady && !saving && !showPlaceWarning;
+  
+  // Determine if we can save
+  const isAuthReady = !loadingAuth && !!session && !!user;
+  const canSave = selectedBoardId && isAuthReady && !isSaving && !showPlaceWarning;
+
+  // Show loading state while auth is initializing
+  const showAuthLoading = loadingAuth;
+  const showAuthMissing = !loadingAuth && (!session || !user);
 
   return (
     <>
@@ -358,12 +404,12 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
             </TouchableOpacity>
           </View>
 
-          {loading ? (
+          {showAuthLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={primaryColor} />
-              <Text style={[styles.loadingText, { color: textSecondaryColor }]}>Loading...</Text>
+              <Text style={[styles.loadingText, { color: textSecondaryColor }]}>Loading session...</Text>
             </View>
-          ) : authMissing ? (
+          ) : showAuthMissing ? (
             <View style={styles.emptyContainer}>
               <IconSymbol
                 ios_icon_name="person.crop.circle.badge.exclamationmark"
@@ -374,6 +420,21 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
               <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
                 Please sign in to save videos to trips
               </Text>
+              <TouchableOpacity
+                style={[styles.signInButton, { backgroundColor: primaryColor }]}
+                onPress={() => {
+                  onClose();
+                  router.push('/auth');
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          ) : loadingBoards ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={primaryColor} />
+              <Text style={[styles.loadingText, { color: textSecondaryColor }]}>Loading trips...</Text>
             </View>
           ) : (
             <>
@@ -584,7 +645,7 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
                     disabled={!canSave}
                     activeOpacity={0.8}
                   >
-                    {saving ? (
+                    {isSaving ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.saveButtonText}>Save</Text>
@@ -657,6 +718,17 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  signInButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  signInButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   createNewButton: {
     flexDirection: 'row',
