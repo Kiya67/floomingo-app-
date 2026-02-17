@@ -39,11 +39,7 @@ export default function TripsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchBoards();
-  }, []);
-
-  const fetchBoards = async () => {
+  const fetchBoards = useCallback(async () => {
     console.log('Fetching user boards');
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -96,14 +92,29 @@ export default function TripsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchBoards();
+    
+    // Set up global refresh callback for TRIPS_REFRESH event
+    global.tripsRefreshCallback = () => {
+      console.log('TRIPS_REFRESH event received - refreshing boards');
+      fetchBoards();
+    };
+    
+    return () => {
+      // Clean up callback on unmount
+      global.tripsRefreshCallback = undefined;
+    };
+  }, [fetchBoards]);
 
   const onRefresh = useCallback(async () => {
     console.log('User pulled to refresh boards');
     setRefreshing(true);
     await fetchBoards();
     setRefreshing(false);
-  }, []);
+  }, [fetchBoards]);
 
   const handleBoardPress = (boardId: string) => {
     console.log('User tapped board:', boardId);

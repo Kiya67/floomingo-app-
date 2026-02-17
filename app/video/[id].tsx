@@ -6,6 +6,8 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { SaveToTripsModal } from '@/components/SaveToTripsModal';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 interface Post {
   id: string;
@@ -55,6 +57,7 @@ export default function VideoFullScreenScreen() {
   const [followLoading, setFollowLoading] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
 
   const fetchPost = useCallback(async () => {
     console.log('Loading video post with ID:', id);
@@ -290,8 +293,15 @@ export default function VideoFullScreenScreen() {
   };
 
   const handleSave = () => {
-    console.log('User tapped save button');
-    // TODO: Open save to trips modal
+    console.log('User tapped save button - opening Save to Trips modal');
+    setShowSaveModal(true);
+  };
+
+  const handleSaveModalClose = () => {
+    console.log('Closing Save to Trips modal');
+    setShowSaveModal(false);
+    // Refresh saved status
+    fetchPost();
   };
 
   const handleShare = () => {
@@ -352,7 +362,7 @@ export default function VideoFullScreenScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
       
@@ -506,7 +516,18 @@ export default function VideoFullScreenScreen() {
           </View>
         </>
       )}
-    </View>
+
+      {post && (
+        <SaveToTripsModal
+          isVisible={showSaveModal}
+          onClose={handleSaveModalClose}
+          postId={post.id}
+          placeId={post.place_id}
+          placeName={post.place_name}
+          locationType={post.location_type}
+        />
+      )}
+    </GestureHandlerRootView>
   );
 }
 
