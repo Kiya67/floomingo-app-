@@ -11,6 +11,7 @@ import {
   useColorScheme,
   Modal,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
@@ -62,46 +63,60 @@ export default function SettingsScreen() {
     setDeleting(true);
 
     try {
-      // Call backend API to delete account
       await deleteAccount();
-
       console.log('Account deleted successfully');
       
-      // Sign out and clear local state
       await supabase.auth.signOut();
-      
-      // Navigate to auth screen
       router.replace('/auth');
     } catch (error: any) {
       console.error('Error deleting account:', error);
       setDeleting(false);
       setShowDeleteModal(false);
       
-      // Show error modal
       setTimeout(() => {
         setShowDeleteModal(true);
       }, 100);
     }
   };
 
+  const handleBlockedUsers = () => {
+    console.log('User tapped Blocked Users');
+    router.push('/blocked-users');
+  };
+
+  const handlePrivacyPolicy = () => {
+    console.log('User tapped Privacy Policy');
+    router.push('/privacy-policy');
+  };
+
+  const handleTermsConditions = () => {
+    console.log('User tapped Terms & Conditions');
+    router.push('/terms-conditions');
+  };
+
+  const handleAbout = () => {
+    console.log('User tapped About');
+    router.push('/about');
+  };
+
   const settingsSections = [
-    {
-      title: 'Account',
-      items: [
-        { label: 'Security', iosIcon: 'shield.fill', androidIcon: 'security', onPress: () => console.log('Security tapped') },
-      ],
-    },
     {
       title: 'Content',
       items: [
-        { label: 'Blocked Users', iosIcon: 'hand.raised.fill', androidIcon: 'block', onPress: () => console.log('Blocked Users tapped') },
+        { label: 'Blocked Users', iosIcon: 'hand.raised.fill', androidIcon: 'block', onPress: handleBlockedUsers },
+      ],
+    },
+    {
+      title: 'Legal',
+      items: [
+        { label: 'Privacy Policy', iosIcon: 'hand.raised.fill', androidIcon: 'privacy-tip', onPress: handlePrivacyPolicy },
+        { label: 'Terms & Conditions', iosIcon: 'doc.text.fill', androidIcon: 'description', onPress: handleTermsConditions },
       ],
     },
     {
       title: 'Support',
       items: [
-        { label: 'Help Center', iosIcon: 'questionmark.circle.fill', androidIcon: 'help', onPress: () => console.log('Help Center tapped') },
-        { label: 'About', iosIcon: 'info.circle.fill', androidIcon: 'info', onPress: () => console.log('About tapped') },
+        { label: 'About', iosIcon: 'info.circle.fill', androidIcon: 'info', onPress: handleAbout },
       ],
     },
   ];
@@ -154,38 +169,40 @@ export default function SettingsScreen() {
                   )}
                 </React.Fragment>
               ))}
-              
-              {/* Delete Account Button in Account Section */}
-              {section.title === 'Account' && (
-                <>
-                  <View style={[styles.divider, { backgroundColor: bgColor }]} />
-                  <TouchableOpacity
-                    style={styles.settingItem}
-                    onPress={confirmDeleteAccount}
-                  >
-                    <View style={styles.settingItemLeft}>
-                      <IconSymbol
-                        ios_icon_name="trash.fill"
-                        android_material_icon_name="delete"
-                        size={24}
-                        color="#EF4444"
-                      />
-                      <Text style={[styles.settingItemLabel, { color: '#EF4444' }]}>
-                        Delete Account
-                      </Text>
-                    </View>
-                    <IconSymbol
-                      ios_icon_name="chevron.right"
-                      android_material_icon_name="chevron-right"
-                      size={24}
-                      color="#EF4444"
-                    />
-                  </TouchableOpacity>
-                </>
-              )}
             </View>
           </View>
         ))}
+
+        {/* Delete Account Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: textSecondaryColor }]}>
+            DANGER ZONE
+          </Text>
+          <View style={[styles.sectionCard, { backgroundColor: cardColor }]}>
+            <TouchableOpacity
+              style={styles.settingItem}
+              onPress={confirmDeleteAccount}
+            >
+              <View style={styles.settingItemLeft}>
+                <IconSymbol
+                  ios_icon_name="trash.fill"
+                  android_material_icon_name="delete"
+                  size={24}
+                  color="#EF4444"
+                />
+                <Text style={[styles.settingItemLabel, { color: '#EF4444' }]}>
+                  Delete Account
+                </Text>
+              </View>
+              <IconSymbol
+                ios_icon_name="chevron.right"
+                android_material_icon_name="chevron-right"
+                size={24}
+                color="#EF4444"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {/* Logout Button */}
         <View style={styles.section}>
