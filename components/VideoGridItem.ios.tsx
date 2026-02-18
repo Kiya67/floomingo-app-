@@ -32,7 +32,11 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 export function VideoGridItem({ post, size, shouldPlay = false, onPress, onLongPress, showViewCount = false }: VideoGridItemProps) {
-  const viewCount = post.view_count || 0;
+  // CRITICAL: Guard against undefined post
+  if (!post) return null;
+  
+  // CRITICAL: Safe access to view_count with default
+  const viewCount = post?.view_count ?? 0;
   const viewCountText = viewCount >= 1000 ? `${(viewCount / 1000).toFixed(1)}K` : viewCount.toString();
 
   // Make grid items taller (1.5x aspect ratio instead of 1:1)
