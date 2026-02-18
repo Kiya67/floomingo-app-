@@ -447,3 +447,81 @@ export const incrementPostView = async (postId: string): Promise<{ view_count: n
   console.log('[API] Incrementing view count for post:', postId);
   return authenticatedPost<{ view_count: number | null }>('/api/rpc/increment-view', { postId });
 };
+
+// ============================================
+// FOLLOW API HELPERS
+// ============================================
+
+export interface FollowResponse {
+  success: boolean;
+  follower_count: number;
+}
+
+export interface FollowStatusResponse {
+  isFollowing: boolean;
+}
+
+export interface FollowerUser {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+}
+
+/**
+ * Follow a user
+ */
+export const followUser = async (userId: string): Promise<FollowResponse> => {
+  console.log('[API] Following user:', userId);
+  return authenticatedPost<FollowResponse>(`/api/follow/${userId}`, {});
+};
+
+/**
+ * Unfollow a user
+ */
+export const unfollowUser = async (userId: string): Promise<FollowResponse> => {
+  console.log('[API] Unfollowing user:', userId);
+  return authenticatedDelete<FollowResponse>(`/api/follow/${userId}`, {});
+};
+
+/**
+ * Check if authenticated user is following a user
+ */
+export const getFollowStatus = async (userId: string): Promise<FollowStatusResponse> => {
+  console.log('[API] Checking follow status for user:', userId);
+  return authenticatedGet<FollowStatusResponse>(`/api/follow/status/${userId}`);
+};
+
+/**
+ * Get list of followers for a user
+ */
+export const getFollowers = async (userId: string): Promise<FollowerUser[]> => {
+  console.log('[API] Fetching followers for user:', userId);
+  return apiGet<FollowerUser[]>(`/api/followers/${userId}`);
+};
+
+/**
+ * Get list of users being followed by a user
+ */
+export const getFollowing = async (userId: string): Promise<FollowerUser[]> => {
+  console.log('[API] Fetching following for user:', userId);
+  return apiGet<FollowerUser[]>(`/api/following/${userId}`);
+};
+
+// ============================================
+// ACCOUNT API HELPERS
+// ============================================
+
+export interface DeleteAccountResponse {
+  success: boolean;
+}
+
+/**
+ * Delete authenticated user account and all associated data
+ * This is a DESTRUCTIVE operation - all data is permanently deleted
+ */
+export const deleteAccount = async (): Promise<DeleteAccountResponse> => {
+  console.log('[API] Deleting account');
+  return authenticatedPost<DeleteAccountResponse>('/api/account/delete', {});
+};

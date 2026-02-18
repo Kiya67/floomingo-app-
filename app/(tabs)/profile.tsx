@@ -355,14 +355,30 @@ export default function ProfileScreen() {
           ) : null}
 
           <View style={styles.statsSection}>
-            <View style={styles.statItem}>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => {
+                console.log('User tapped Followers');
+                if (profile?.id) {
+                  router.push(`/followers/${profile.id}`);
+                }
+              }}
+            >
               <Text style={[styles.statValue, { color: textColor }]}>{followersCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>
-            </View>
-            <View style={styles.statItem}>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => {
+                console.log('User tapped Following');
+                if (profile?.id) {
+                  router.push(`/following/${profile.id}`);
+                }
+              }}
+            >
               <Text style={[styles.statValue, { color: textColor }]}>{followingCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity 

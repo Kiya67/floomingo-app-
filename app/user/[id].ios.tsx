@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
 import { VideoGridItem } from '@/components/VideoGridItem';
+import { getProfileStats, followUser, unfollowUser, getFollowStatus } from '@/utils/api';
 
 interface Profile {
   id: string;
@@ -106,19 +107,32 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchStats = useCallback(async () => {
-    console.log('Fetching profile stats for user:', profileUserId);
+    console.log('Fetching profile stats for user from backend API:', profileUserId);
     try {
-      const { data, error } = await supabase
-        .from('profile_stats')
-        .select('*')
-        .eq('user_id', profileUserId)
-        .single();
+      // Use backend API to fetch stats
+      try {
+        const statsData = await getProfileStats(profileUserId as string);
+        console.log('Stats fetched successfully from backend:', statsData);
+        setStats({
+          follower_count: statsData.follower_count || 0,
+          following_count: statsData.following_count || 0,
+          post_count: statsData.post_count || 0,
+        });
+      } catch (apiError) {
+        console.error('Error fetching stats from backend API:', apiError);
+        // Fallback to Supabase direct query if backend fails
+        const { data, error } = await supabase
+          .from('profile_stats')
+          .select('*')
+          .eq('user_id', profileUserId)
+          .single();
 
-      if (error) {
-        console.error('Error fetching stats:', error);
-      } else if (data) {
-        console.log('Stats fetched successfully:', data);
-        setStats(data);
+        if (error) {
+          console.error('Error fetching stats from Supabase:', error);
+        } else if (data) {
+          console.log('Stats fetched successfully from Supabase fallback:', data);
+          setStats(data);
+        }
       }
     } catch (error) {
       console.error('Error in fetchStats:', error);
@@ -143,19 +157,28 @@ export default function UserProfileScreen() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('follower_id', user.id)
-        .eq('following_id', profileUserId)
-        .limit(1);
+      // Use backend API to check follow status
+      try {
+        const statusData = await getFollowStatus(profileUserId as string);
+        console.log('Follow status from backend:', statusData.isFollowing);
+        setIsFollowing(statusData.isFollowing);
+      } catch (apiError) {
+        console.error('Error checking follow status from backend API:', apiError);
+        // Fallback to Supabase direct query if backend fails
+        const { data, error } = await supabase
+          .from('follows')
+          .select('*')
+          .eq('follower_id', user.id)
+          .eq('following_id', profileUserId)
+          .limit(1);
 
-      if (error) {
-        console.error('Error checking follow status:', error);
-      } else {
-        const following = data && data.length > 0;
-        console.log('Follow status:', following);
-        setIsFollowing(following);
+        if (error) {
+          console.error('Error checking follow status from Supabase:', error);
+        } else {
+          const following = data && data.length > 0;
+          console.log('Follow status from Supabase fallback:', following);
+          setIsFollowing(following);
+        }
       }
     } catch (error) {
       console.error('Error in checkFollowStatus:', error);
@@ -203,31 +226,22 @@ export default function UserProfileScreen() {
 
       if (isFollowing) {
         console.log('Unfollowing user:', profileUserId);
-        const { error } = await supabase
-          .from('follows')
-          .delete()
-          .eq('follower_id', currentUserId)
-          .eq('following_id', profileUserId);
-
-        if (error) throw error;
-
+        // Use backend API to unfollow
+        const response = await unfollowUser(profileUserId as string);
+        
         setIsFollowing(false);
-        setStats(prev => ({ ...prev, follower_count: Math.max(0, prev.follower_count - 1) }));
-        console.log('Successfully unfollowed user');
+        // Update follower count from backend response
+        setStats(prev => ({ ...prev, follower_count: response.follower_count }));
+        console.log('Successfully unfollowed user, new follower count:', response.follower_count);
       } else {
         console.log('Following user:', profileUserId);
-        const { error } = await supabase
-          .from('follows')
-          .insert({
-            follower_id: currentUserId,
-            following_id: profileUserId,
-          });
-
-        if (error) throw error;
-
+        // Use backend API to follow
+        const response = await followUser(profileUserId as string);
+        
         setIsFollowing(true);
-        setStats(prev => ({ ...prev, follower_count: prev.follower_count + 1 }));
-        console.log('Successfully followed user');
+        // Update follower count from backend response
+        setStats(prev => ({ ...prev, follower_count: response.follower_count }));
+        console.log('Successfully followed user, new follower count:', response.follower_count);
       }
     } catch (error: any) {
       console.error('Error toggling follow:', error);

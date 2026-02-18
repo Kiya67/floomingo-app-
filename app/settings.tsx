@@ -9,24 +9,26 @@ import {
   ScrollView,
   TouchableOpacity,
   useColorScheme,
-  Alert,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
 import { supabase } from '@/lib/supabase';
+import { deleteAccount } from '@/utils/api';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const cardColor = isDark ? colors.cardDark : colors.card;
-  const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
   const handleLogout = async () => {
     console.log('User confirmed logout');
@@ -36,20 +38,50 @@ export default function SettingsScreen() {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Error signing out:', error);
-        Alert.alert('Error', 'Failed to sign out. Please try again.');
       } else {
         console.log('User signed out successfully');
         router.replace('/auth');
       }
     } catch (error) {
       console.error('Error in handleLogout:', error);
-      Alert.alert('Error', 'An unexpected error occurred.');
     }
   };
 
   const confirmLogout = () => {
     console.log('User tapped Logout button');
     setShowLogoutModal(true);
+  };
+
+  const confirmDeleteAccount = () => {
+    console.log('User tapped Delete Account button');
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteAccount = async () => {
+    console.log('User confirmed account deletion');
+    setDeleting(true);
+
+    try {
+      // Call backend API to delete account
+      await deleteAccount();
+
+      console.log('Account deleted successfully');
+      
+      // Sign out and clear local state
+      await supabase.auth.signOut();
+      
+      // Navigate to auth screen
+      router.replace('/auth');
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      setDeleting(false);
+      setShowDeleteModal(false);
+      
+      // Show error modal
+      setTimeout(() => {
+        setShowDeleteModal(true);
+      }, 100);
+    }
   };
 
   const settingsSections = [
@@ -120,6 +152,33 @@ export default function SettingsScreen() {
                   )}
                 </React.Fragment>
               ))}
+              
+              {/* Delete Account Button in Account Section */}
+              {section.title === 'Account' && (
+                <>
+                  <View style={[styles.divider, { backgroundColor: bgColor }]} />
+                  <TouchableOpacity
+                    style={styles.settingItem}
+                    onPress={confirmDeleteAccount}
+                  >
+                    <View style={styles.settingItemLeft}>
+                      <IconSymbol
+                        android_material_icon_name="delete"
+                        size={24}
+                        color="#EF4444"
+                      />
+                      <Text style={[styles.settingItemLabel, { color: '#EF4444' }]}>
+                        Delete Account
+                      </Text>
+                    </View>
+                    <IconSymbol
+                      android_material_icon_name="chevron-right"
+                      size={24}
+                      color="#EF4444"
+                    />
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </View>
         ))}
@@ -171,6 +230,49 @@ export default function SettingsScreen() {
                 onPress={handleLogout}
               >
                 <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Account Confirmation Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !deleting && setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
+            <IconSymbol
+              android_material_icon_name="warning"
+              size={48}
+              color="#EF4444"
+              style={styles.warningIcon}
+            />
+            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Account</Text>
+            <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
+              This is permanent and cannot be undone. All your posts, boards, and data will be permanently deleted.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { backgroundColor: bgColor }]}
+                onPress={() => setShowDeleteModal(false)}
+                disabled={deleting}
+              >
+                <Text style={[styles.modalButtonText, { color: textColor }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonDelete]}
+                onPress={handleDeleteAccount}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>Delete</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -251,32 +353,44 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     borderRadius: 16,
     padding: 24,
+    alignItems: 'center',
+  },
+  warningIcon: {
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 12,
+    textAlign: 'center',
   },
   modalMessage: {
     fontSize: 16,
     lineHeight: 22,
     marginBottom: 24,
+    textAlign: 'center',
   },
   modalButtons: {
     flexDirection: 'row',
     gap: 12,
+    width: '100%',
   },
   modalButton: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   modalButtonCancel: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   modalButtonConfirm: {
+    backgroundColor: '#EF4444',
+  },
+  modalButtonDelete: {
     backgroundColor: '#EF4444',
   },
   modalButtonText: {

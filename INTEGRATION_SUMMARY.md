@@ -14,10 +14,12 @@ The following backend features have been successfully integrated into the fronte
 4. **Profile Grid with View Counts** - Show view counts only on own profile
 5. **Profile Stats Integration** - Backend API for follower/following/post counts
 6. **Block/Report Feature** - Block users and hide their content from feeds
+7. **Follow/Unfollow System** - Follow users and view followers/following lists
+8. **Account Deletion** - Delete account and all associated data
 
 ### 📊 Summary
-- **14 files modified** (including 2 new UI components)
-- **6 new API endpoints integrated**
+- **20 files modified** (including 2 new UI components)
+- **12 new API endpoints integrated**
 - **3 critical bugs fixed**
 - **100% web-compatible** (no Alert.alert usage)
 - **Full authentication support** (email/password + Google + Apple OAuth)
@@ -289,6 +291,20 @@ If you see "AddScreen unmounted" followed by "AddScreen mounted" when selecting 
   - `GET /api/blocks/check/:user_id` - Check block status
   - `GET /api/blocks` - Get blocked users list
 
+### 7. Follow/Unfollow System
+- **Location**: User profile (`app/user/[id].tsx`), Followers list (`app/followers/[id].tsx`), Following list (`app/following/[id].tsx`)
+- **API Endpoints Integrated**:
+  - `POST /api/follow/:userId` - Follow a user
+  - `DELETE /api/follow/:userId` - Unfollow a user
+  - `GET /api/follow/status/:userId` - Check if authenticated user is following a user
+  - `GET /api/followers/:userId` - Get list of followers for a user
+  - `GET /api/following/:userId` - Get list of users being followed by a user
+
+### 8. Account Deletion
+- **Location**: Settings screen (`app/settings.tsx`)
+- **API Endpoints Integrated**:
+  - `POST /api/account/delete` - Delete authenticated user account and all associated data
+
 ### 4. Boards/Trips System
 - **Location**: SaveToTripsModal (`components/SaveToTripsModal.tsx`), Trips tab, Board detail
 - **API Endpoints Integrated**:
@@ -307,17 +323,20 @@ If you see "AddScreen unmounted" followed by "AddScreen mounted" when selecting 
 - **Home Feed** (`app/(tabs)/(home)/index.tsx`): Automatically filters out posts from blocked users
 - **Video Feed** (`app/video/[id].tsx`): Excludes blocked users from related videos
 
-### 7. UI Components Created
+### 9. UI Components Created
 - **Custom Modal** (`components/ui/Modal.tsx`): Web-compatible confirmation dialogs
 - **Toast Notifications** (`components/ui/Toast.tsx`): Non-blocking success/error messages
 
-### 8. User Experience Improvements
+### 10. User Experience Improvements
 - ✅ Three-dot menu (⋮) on user profiles with Block/Report options
 - ✅ Three-dot menu (⋯) on video full-screen view
 - ✅ Automatic unfollow when blocking a user
 - ✅ Immediate UI feedback with toast notifications
 - ✅ Blocked users' content hidden from feeds
 - ✅ Navigate back after blocking to remove content from view
+- ✅ Follow/Unfollow button on user profiles
+- ✅ Followers and Following counts clickable to view lists
+- ✅ Account deletion with confirmation modal
 
 ## 🔧 Technical Details
 
@@ -365,6 +384,19 @@ const response = await authenticatedApiCall('/api/blocks', {
 12. `app/(tabs)/(home)/index.tsx` - Added feed filtering for blocked users
 13. `components/ui/Modal.tsx` - Created (new file)
 14. `components/ui/Toast.tsx` - Created (new file)
+
+### Follow/Unfollow System
+15. `utils/api.ts` - Added follow/unfollow API helpers
+16. `app/user/[id].tsx` - Integrated backend API for follow/unfollow
+17. `app/user/[id].ios.tsx` - Integrated backend API for follow/unfollow (iOS)
+18. `app/followers/[id].tsx` - Integrated backend API for followers list
+19. `app/followers/[id].ios.tsx` - Integrated backend API for followers list (iOS)
+20. `app/following/[id].tsx` - Integrated backend API for following list
+21. `app/following/[id].ios.tsx` - Integrated backend API for following list (iOS)
+
+### Account Deletion
+22. `app/settings.tsx` - Integrated backend API for account deletion
+23. `app/settings.ios.tsx` - Integrated backend API for account deletion (iOS)
 
 ## 🧪 Testing Checklist
 
@@ -745,6 +777,62 @@ If you encounter any issues:
 4. Ensure backend URL is correct in `app.json` extra.backendUrl
 5. Check network tab for API requests and responses
 
+### Test Scenario 6: Follow/Unfollow System
+```
+1. Sign in as User A
+
+2. Navigate to User B's profile
+
+3. Tap "Follow" button
+   ✅ Button changes to "Following"
+   ✅ Follower count increments by 1
+
+4. Tap "Following" button to unfollow
+   ✅ Button changes back to "Follow"
+   ✅ Follower count decrements by 1
+
+5. Navigate to your Profile tab
+
+6. Tap on "Followers" count
+   ✅ Opens Followers list screen
+   ✅ Shows list of users following you
+
+7. Tap on "Following" count
+   ✅ Opens Following list screen
+   ✅ Shows list of users you're following
+
+8. Tap on a user in the list
+   ✅ Navigates to that user's profile
+```
+
+### Test Scenario 7: Account Deletion
+```
+1. Sign in as User A
+
+2. Navigate to Settings
+
+3. Scroll to "Account" section
+
+4. Tap "Delete Account" (red button)
+   ✅ Confirmation modal appears
+   ✅ Warning message: "This is permanent and cannot be undone"
+
+5. Tap "Cancel"
+   ✅ Modal closes
+   ✅ Account NOT deleted
+
+6. Tap "Delete Account" again
+
+7. Tap "Delete" in confirmation modal
+   ✅ Loading indicator appears
+   ✅ Account deleted successfully
+   ✅ Signed out automatically
+   ✅ Navigated to auth screen
+
+8. Try to sign in with deleted account
+   ✅ Should fail (account no longer exists)
+```
+
 ## 🎉 Success Indicators
 
 You'll know the integration is working when:
@@ -754,5 +842,46 @@ You'll know the integration is working when:
 - ✅ Save to trips works without authentication errors
 - ✅ Block feature hides content from blocked users
 - ✅ Profile stats update automatically
+- ✅ Follow/unfollow button works on user profiles
+- ✅ Followers and Following lists load correctly
+- ✅ Account deletion works with confirmation
 - ✅ No console errors related to API calls
 - ✅ All toast notifications appear correctly
+
+## 🔑 Demo User Credentials
+
+For testing purposes, you can use these demo accounts:
+
+**User 1:**
+- Email: `demo1@wanderlust.app`
+- Password: `Demo123!`
+
+**User 2:**
+- Email: `demo2@wanderlust.app`
+- Password: `Demo123!`
+
+**Note:** If these accounts don't exist, you can create them using the Sign Up flow in the app.
+
+## 🎯 Key Features Summary
+
+### Follow System
+- ✅ Follow/unfollow users from their profile
+- ✅ View followers list (who follows you)
+- ✅ View following list (who you follow)
+- ✅ Follower/following counts update in real-time
+- ✅ Cannot follow yourself
+- ✅ Automatic unfollow when blocking a user
+
+### Account Management
+- ✅ Delete account from Settings
+- ✅ Confirmation modal with warning
+- ✅ All user data deleted (posts, boards, follows, etc.)
+- ✅ Automatic sign out after deletion
+- ✅ Navigate to auth screen after deletion
+
+### Profile Stats
+- ✅ Post count (number of videos posted)
+- ✅ Follower count (users following you)
+- ✅ Following count (users you follow)
+- ✅ Stats update automatically via database triggers
+- ✅ Stats fetched from backend API with Supabase fallback
