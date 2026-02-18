@@ -11,11 +11,13 @@ interface Post {
   id: string;
   user_id: string;
   video_url: string;
+  thumbnail_url: string;
   caption: string;
   place_id: string | null;
   place_name: string | null;
   location_type: string | null;
   created_at: string;
+  view_count?: number;
   profiles?: {
     display_name: string;
     avatar_url: string | null;
@@ -100,7 +102,8 @@ export default function LocationDetailsScreen() {
       if (error) {
         console.error('Error fetching location posts:', error);
       } else {
-        console.log('Location posts fetched:', data?.length || 0);
+        console.log('Location posts fetched:', data?.length || 0, 'posts');
+        console.log('Sample post data:', data?.[0]);
         setPosts(data || []);
       }
     } catch (error) {
@@ -133,7 +136,6 @@ export default function LocationDetailsScreen() {
   const handleDirections = async () => {
     console.log('User tapped Directions button');
     
-    // Check if google_place_id exists
     if (!id || typeof id !== 'string') {
       console.error('Missing Google Place ID');
       Alert.alert('Directions unavailable', 'Missing location ID');
@@ -156,6 +158,11 @@ export default function LocationDetailsScreen() {
       console.error('Error opening directions:', error);
       Alert.alert('Error opening directions', 'Please try again');
     }
+  };
+
+  const handleVideoPress = (post: Post) => {
+    console.log('User tapped video:', post.id);
+    router.push(`/video/${post.id}`);
   };
 
   const locationName = locationDetails?.name || 'Location';
@@ -254,7 +261,6 @@ export default function LocationDetailsScreen() {
             </View>
           </View>
 
-          {/* Directions Button */}
           <TouchableOpacity
             style={[styles.directionsButton, { backgroundColor: primaryColor }]}
             onPress={handleDirections}
@@ -302,10 +308,10 @@ export default function LocationDetailsScreen() {
               {posts.map((post) => (
                 <VideoGridItem
                   key={post.id}
-                  postId={post.id}
-                  videoUrl={post.video_url}
+                  post={post}
                   size={gridItemSize}
-                  cardColor={cardColor}
+                  onPress={() => handleVideoPress(post)}
+                  showViewCount={true}
                 />
               ))}
             </View>
