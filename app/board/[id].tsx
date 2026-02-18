@@ -101,6 +101,7 @@ export default function BoardDetailScreen() {
       setEditTitle(boardData.title);
 
       // Fetch videos saved to this board by the current user
+      // CRITICAL: Use .contains() for uuid[] array query
       const { data: postsData, error: postsError } = await supabase
         .from('board_posts')
         .select(`
@@ -118,7 +119,7 @@ export default function BoardDetailScreen() {
           )
         `)
         .eq('board_id', boardId)
-        .eq('user_id', user.id)
+        .contains('saved_by', [user.id]) // ✅ CORRECT: Use .contains() for uuid[] array
         .order('created_at', { ascending: false });
 
       if (postsError) {

@@ -66,6 +66,7 @@ export default function TripsScreen() {
       }
 
       // Fetch counts for each board
+      // CRITICAL: Use .contains() for uuid[] array query
       const boardsWithCounts = await Promise.all(
         (boardsData || []).map(async (board) => {
           // Count videos saved by this user
@@ -73,7 +74,7 @@ export default function TripsScreen() {
             .from('board_posts')
             .select('*', { count: 'exact', head: true })
             .eq('board_id', board.id)
-            .eq('user_id', user.id);
+            .contains('saved_by', [user.id]); // ✅ CORRECT: Use .contains() for uuid[] array
 
           // Get cover image
           let coverImageUrl = board.cover_url || '';
@@ -82,7 +83,7 @@ export default function TripsScreen() {
               .from('board_posts')
               .select('post_id, posts(thumbnail_url)')
               .eq('board_id', board.id)
-              .eq('user_id', user.id)
+              .contains('saved_by', [user.id]) // ✅ CORRECT: Use .contains() for uuid[] array
               .limit(1)
               .single();
 

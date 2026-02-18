@@ -287,6 +287,10 @@ export const createBoard = async (title: string): Promise<Board> => {
 /**
  * Save video to a board (VIDEO-ONLY, no places)
  * Uses Supabase client directly with active session
+ * 
+ * CRITICAL: board_posts.saved_by is uuid[] array
+ * - Inserts must use arrays: saved_by = [userId]
+ * - Queries must use .contains('saved_by', [userId])
  */
 export const saveVideoOnly = async (
   boardId: string,
@@ -305,30 +309,69 @@ export const saveVideoOnly = async (
 
     console.log('[API] Active session found, user:', session.user.id);
 
-    // Insert into board_posts using Supabase client (which has the session)
-    const { data, error } = await supabase
+    // Check if already saved by this user
+    // CRITICAL: Use .contains() for uuid[] array query
+    const { data: existingData } = await supabase
       .from('board_posts')
-      .insert({
-        board_id: boardId,
-        post_id: postId,
-        user_id: session.user.id,
-      })
-      .select()
-      .single();
+      .select('id')
+      .eq('board_id', boardId)
+      .eq('post_id', postId)
+      .contains('saved_by', [session.user.id]) // ✅ CORRECT: Use .contains() for uuid[] array
+      .limit(1);
 
-    if (error) {
-      console.error('[API] Supabase insert error:', error);
-      
-      // Check for duplicate constraint violation
-      if (error.code === '23505') {
-        return { error: { code: 409, message: 'Video already saved to this board' } };
-      }
-      
-      throw error;
+    if (existingData && existingData.length > 0) {
+      console.log('[API] Video already saved to this board by this user');
+      return { error: { code: 409, message: 'Video already saved to this board' } };
     }
 
-    console.log('[API] Video saved successfully:', data);
-    return { success: true };
+    // Check if board_post exists for this board+post combo
+    const { data: boardPostData } = await supabase
+      .from('board_posts')
+      .select('id, saved_by')
+      .eq('board_id', boardId)
+      .eq('post_id', postId)
+      .limit(1)
+      .single();
+
+    if (boardPostData) {
+      // Board post exists, append user to saved_by array
+      console.log('[API] Board post exists, appending user to saved_by array');
+      const currentSavedBy = boardPostData.saved_by || [];
+      const updatedSavedBy = [...currentSavedBy, session.user.id];
+
+      const { error: updateError } = await supabase
+        .from('board_posts')
+        .update({ saved_by: updatedSavedBy }) // ✅ CORRECT: Update with array
+        .eq('id', boardPostData.id);
+
+      if (updateError) {
+        console.error('[API] Supabase update error:', updateError);
+        throw updateError;
+      }
+
+      console.log('[API] User added to saved_by array successfully');
+      return { success: true };
+    } else {
+      // Board post doesn't exist, create new with saved_by array
+      console.log('[API] Creating new board_post with saved_by array');
+      const { data, error } = await supabase
+        .from('board_posts')
+        .insert({
+          board_id: boardId,
+          post_id: postId,
+          saved_by: [session.user.id], // ✅ CORRECT: Insert as array
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[API] Supabase insert error:', error);
+        throw error;
+      }
+
+      console.log('[API] Video saved successfully:', data);
+      return { success: true };
+    }
   } catch (error: any) {
     console.error('[API] Error saving video:', error);
     return { error: { code: 500, message: error.message || 'Failed to save video' } };

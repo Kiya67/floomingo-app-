@@ -111,13 +111,14 @@ export function SaveToTripsModal({ isVisible, onClose, post }: SaveToTripsModalP
         setBoards(data || []);
         
         // Fetch video counts for each board
+        // CRITICAL: Use .contains() for uuid[] array query
         const counts = new Map<string, number>();
         for (const board of data || []) {
           const { count } = await supabase
             .from('board_posts')
             .select('*', { count: 'exact', head: true })
             .eq('board_id', board.id)
-            .eq('saved_by', user.id);
+            .contains('saved_by', [user.id]); // ✅ CORRECT: Use .contains() for uuid[] array
           
           counts.set(board.id, count || 0);
         }
