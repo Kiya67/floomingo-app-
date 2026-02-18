@@ -1500,12 +1500,12 @@ describe('Profile Feature', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it('should return 400 when updating profile with invalid bio URL', async () => {
+  it('should return 400 when updating profile with invalid cover URL', async () => {
     const response = await app.fastify.inject({
       method: 'PUT',
       url: '/api/profile',
       payload: {
-        bio_url: 'not-a-url',
+        cover_url: 'not-a-url',
       },
       cookies: { 'auth_token': authToken },
     });
@@ -1545,5 +1545,92 @@ describe('Profile Feature', () => {
     expect(response.statusCode).toBe(200);
     const data = JSON.parse(response.payload);
     expect(data.success).toBe(true);
+  });
+
+  it('should return 409 when updating profile with duplicate username', async () => {
+    // Create another user to take a username
+    const signUpResponse3 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'profile-user3@example.com',
+        password: 'password123',
+        name: 'Profile User 3',
+      },
+    });
+
+    expect(signUpResponse3.statusCode).toBe(200);
+
+    // Sign in as user 3
+    const signInResponse3 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'profile-user3@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse3.statusCode).toBe(200);
+    const token3 = signInResponse3.cookies[0]?.value || '';
+
+    // Try to set a username that's already taken by user 1
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        username: 'newusername', // This was set by user 1 earlier
+      },
+      cookies: { 'auth_token': token3 },
+    });
+
+    expect(response.statusCode).toBe(409);
+    const data = JSON.parse(response.payload);
+    expect(data.error).toBeDefined();
+  });
+
+  it('should update profile with valid email', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        email: 'newemail@example.com',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.email).toBe('newemail@example.com');
+  });
+
+  it('should return 400 when updating profile with invalid email', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        email: 'invalid-email',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should update profile with valid URLs', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        avatar_url: 'https://example.com/avatar.jpg',
+        cover_url: 'https://example.com/cover.jpg',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.avatar_url).toBe('https://example.com/avatar.jpg');
+    expect(data.cover_url).toBe('https://example.com/cover.jpg');
   });
 });
