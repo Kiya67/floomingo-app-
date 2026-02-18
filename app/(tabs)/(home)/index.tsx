@@ -238,6 +238,12 @@ export default function HomeScreen() {
     setFilterPlaceId(placeId);
     setFilterPlaceName(placeName);
     setFilterKeywords(keywords);
+    
+    // Generate new seed when filters change to get fresh random order
+    const newSeed = uuidv4();
+    setFeedSeed(newSeed);
+    console.log('Filters changed - new seed generated:', newSeed);
+    
     setFilterModalVisible(false);
   };
 
@@ -246,6 +252,12 @@ export default function HomeScreen() {
     setFilterPlaceId(null);
     setFilterPlaceName(null);
     setFilterKeywords(null);
+    
+    // Generate new seed when clearing filters
+    const newSeed = uuidv4();
+    setFeedSeed(newSeed);
+    console.log('Filters cleared - new seed generated:', newSeed);
+    
     setFilterModalVisible(false);
   };
 
