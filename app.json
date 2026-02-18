@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Wanderlust",
-    "slug": "Wanderlust",
+    "name": "Floomingo",
+    "slug": "Floomingo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/Untitled (Logo).png",
@@ -37,7 +37,7 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "Wanderlust",
+    "scheme": "Floomingo",
     "experiments": {
       "typedRoutes": true
     },
