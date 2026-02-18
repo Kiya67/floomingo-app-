@@ -19,8 +19,9 @@ export function registerProfileRoutes(app: App) {
             id: { type: 'string' },
             username: { type: ['string', 'null'] },
             display_name: { type: ['string', 'null'] },
+            email: { type: ['string', 'null'] },
             avatar_url: { type: ['string', 'null'] },
-            bio_url: { type: ['string', 'null'] },
+            cover_url: { type: ['string', 'null'] },
             bio: { type: ['string', 'null'] },
             created_at: { type: 'string', format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' },
@@ -45,7 +46,7 @@ export function registerProfileRoutes(app: App) {
   }, async (
     request: FastifyRequest,
     reply: FastifyReply
-  ): Promise<{ id: string; username: string | null; display_name: string | null; avatar_url: string | null; bio_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
+  ): Promise<{ id: string; username: string | null; display_name: string | null; email: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
@@ -57,8 +58,9 @@ export function registerProfileRoutes(app: App) {
         id: schema.profiles.id,
         username: schema.profiles.username,
         display_name: schema.profiles.displayName,
+        email: schema.profiles.email,
         avatar_url: schema.profiles.avatarUrl,
-        bio_url: schema.profiles.bioUrl,
+        cover_url: schema.profiles.coverUrl,
         bio: schema.profiles.bio,
         created_at: schema.profiles.createdAt,
         updated_at: schema.profiles.updatedAt,
@@ -99,8 +101,9 @@ export function registerProfileRoutes(app: App) {
             id: { type: 'string' },
             username: { type: ['string', 'null'] },
             display_name: { type: ['string', 'null'] },
+            email: { type: ['string', 'null'] },
             avatar_url: { type: ['string', 'null'] },
-            bio_url: { type: ['string', 'null'] },
+            cover_url: { type: ['string', 'null'] },
             bio: { type: ['string', 'null'] },
             created_at: { type: 'string', format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' },
@@ -118,7 +121,7 @@ export function registerProfileRoutes(app: App) {
   }, async (
     request: FastifyRequest<{ Params: { userId: string } }>,
     reply: FastifyReply
-  ): Promise<{ id: string; username: string | null; display_name: string | null; avatar_url: string | null; bio_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
+  ): Promise<{ id: string; username: string | null; display_name: string | null; email: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
     const { userId } = request.params;
 
     app.logger.info({ userId }, 'Fetching user profile');
@@ -128,8 +131,9 @@ export function registerProfileRoutes(app: App) {
         id: schema.profiles.id,
         username: schema.profiles.username,
         display_name: schema.profiles.displayName,
+        email: schema.profiles.email,
         avatar_url: schema.profiles.avatarUrl,
-        bio_url: schema.profiles.bioUrl,
+        cover_url: schema.profiles.coverUrl,
         bio: schema.profiles.bio,
         created_at: schema.profiles.createdAt,
         updated_at: schema.profiles.updatedAt,
@@ -160,8 +164,9 @@ export function registerProfileRoutes(app: App) {
         properties: {
           username: { type: 'string', minLength: 3, maxLength: 20, pattern: '^[a-zA-Z0-9_]+$' },
           display_name: { type: 'string', maxLength: 255 },
+          email: { type: 'string', format: 'email' },
           avatar_url: { type: 'string', format: 'uri' },
-          bio_url: { type: 'string', format: 'uri' },
+          cover_url: { type: 'string', format: 'uri' },
           bio: { type: 'string', maxLength: 500 },
         },
       },
@@ -173,8 +178,9 @@ export function registerProfileRoutes(app: App) {
             id: { type: 'string' },
             username: { type: ['string', 'null'] },
             display_name: { type: ['string', 'null'] },
+            email: { type: ['string', 'null'] },
             avatar_url: { type: ['string', 'null'] },
-            bio_url: { type: ['string', 'null'] },
+            cover_url: { type: ['string', 'null'] },
             bio: { type: ['string', 'null'] },
             created_at: { type: 'string', format: 'date-time' },
             updated_at: { type: 'string', format: 'date-time' },
@@ -208,18 +214,19 @@ export function registerProfileRoutes(app: App) {
       Body: {
         username?: string;
         display_name?: string;
+        email?: string;
         avatar_url?: string;
-        bio_url?: string;
+        cover_url?: string;
         bio?: string;
       };
     }>,
     reply: FastifyReply
-  ): Promise<{ id: string; username: string | null; display_name: string | null; avatar_url: string | null; bio_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
+  ): Promise<{ id: string; username: string | null; display_name: string | null; email: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null; created_at: Date; updated_at: Date } | void> => {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
     const userId = session.user.id;
-    const { username, display_name, avatar_url, bio_url, bio } = request.body;
+    const { username, display_name, email, avatar_url, cover_url, bio } = request.body;
 
     app.logger.info({ userId, username }, 'Updating user profile');
 
@@ -236,37 +243,34 @@ export function registerProfileRoutes(app: App) {
         }
       }
 
-      // Update or insert profile
+      // Update profile
       const [updated] = await app.db
-        .insert(schema.profiles)
-        .values({
-          id: userId,
+        .update(schema.profiles)
+        .set({
           username: username || null,
           displayName: display_name || null,
+          email: email || null,
           avatarUrl: avatar_url || null,
-          bioUrl: bio_url || null,
+          coverUrl: cover_url || null,
           bio: bio || null,
+          updatedAt: new Date(),
         })
-        .onConflictDoUpdate({
-          target: schema.profiles.id,
-          set: {
-            username: username || null,
-            displayName: display_name || null,
-            avatarUrl: avatar_url || null,
-            bioUrl: bio_url || null,
-            bio: bio || null,
-            updatedAt: new Date(),
-          },
-        })
+        .where(eq(schema.profiles.id, userId))
         .returning();
+
+      if (!updated) {
+        app.logger.warn({ userId }, 'Profile not found for update');
+        return reply.status(404).send({ error: 'Profile not found' });
+      }
 
       app.logger.info({ userId }, 'Profile updated successfully');
       return {
         id: updated.id,
         username: updated.username,
         display_name: updated.displayName,
+        email: updated.email,
         avatar_url: updated.avatarUrl,
-        bio_url: updated.bioUrl,
+        cover_url: updated.coverUrl,
         bio: updated.bio,
         created_at: updated.createdAt,
         updated_at: updated.updatedAt,
@@ -317,8 +321,9 @@ export function registerProfileRoutes(app: App) {
           id: userId,
           username: null,
           displayName: null,
+          email: null,
           avatarUrl: null,
-          bioUrl: null,
+          coverUrl: null,
           bio: null,
         })
         .onConflictDoNothing();

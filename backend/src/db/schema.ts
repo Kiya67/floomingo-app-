@@ -5,9 +5,10 @@ export const profiles = pgTable('profiles', {
   id: text('id').primaryKey(),
   username: text('username').unique(),
   displayName: text('display_name'),
-  avatarUrl: text('avatar_url'),
-  bioUrl: text('bio_url'),
+  email: text('email'),
   bio: text('bio'),
+  avatarUrl: text('avatar_url'),
+  coverUrl: text('cover_url'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
