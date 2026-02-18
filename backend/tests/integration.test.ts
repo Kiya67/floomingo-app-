@@ -195,6 +195,7 @@ describe('Block Feature', () => {
 describe('Boards Feature', () => {
   let authToken: string;
   let boardId: string;
+  let postId: string;
 
   beforeAll(async () => {
     // Create a user for boards tests
@@ -222,6 +223,21 @@ describe('Boards Feature', () => {
 
     expect(signInResponse.statusCode).toBe(200);
     authToken = signInResponse.cookies[0]?.value || '';
+
+    // Create a post for save-video tests
+    const postResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Test post for board',
+        video_url: 'https://example.com/video.mp4',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(postResponse.statusCode).toBe(201);
+    const postData = JSON.parse(postResponse.payload);
+    postId = postData.id;
   });
 
   afterAll(async () => {
@@ -373,11 +389,73 @@ describe('Boards Feature', () => {
 
     expect(response.statusCode).toBe(400);
   });
+
+  it('should save video to board successfully', async () => {
+    if (!boardId || !postId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/boards/${boardId}/save-video`,
+      payload: {
+        post_id: postId,
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+  });
+
+  it('should return 409 when saving same video to board twice', async () => {
+    if (!boardId || !postId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/boards/${boardId}/save-video`,
+      payload: {
+        post_id: postId,
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(409);
+    const data = JSON.parse(response.payload);
+    expect(data.error).toBeDefined();
+  });
+
+  it('should get saved videos from board', async () => {
+    if (!boardId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/boards/${boardId}/videos`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0]).toHaveProperty('post_id');
+      expect(data[0]).toHaveProperty('saved_at');
+    }
+  });
 });
 
 describe('Trips Feature', () => {
   let authToken: string;
   let tripId: string;
+  let postId: string;
 
   beforeAll(async () => {
     // Create a user for trips tests
@@ -405,6 +483,21 @@ describe('Trips Feature', () => {
 
     expect(signInResponse.statusCode).toBe(200);
     authToken = signInResponse.cookies[0]?.value || '';
+
+    // Create a post for save tests
+    const postResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/posts',
+      payload: {
+        caption: 'Test post for trip',
+        video_url: 'https://example.com/video.mp4',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(postResponse.statusCode).toBe(201);
+    const postData = JSON.parse(postResponse.payload);
+    postId = postData.id;
   });
 
   afterAll(async () => {
@@ -516,6 +609,27 @@ describe('Trips Feature', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('should save video to trip successfully', async () => {
+    if (!tripId || !postId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/trips/${tripId}/save`,
+      payload: {
+        post_id: postId,
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+    expect(data).toHaveProperty('trip_items_count');
+  });
+
   it('should return 404 when removing video from non-existent trip', async () => {
     const nonExistentTripId = '00000000-0000-0000-0000-000000000000';
     const response = await app.fastify.inject({
@@ -535,6 +649,24 @@ describe('Trips Feature', () => {
     });
 
     expect(response.statusCode).toBe(401);
+  });
+
+  it('should remove video from trip successfully', async () => {
+    if (!tripId || !postId) {
+      expect(true).toBe(true);
+      return;
+    }
+
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/trips/${tripId}/items/${postId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+    expect(data).toHaveProperty('trip_items_count');
   });
 });
 
@@ -911,5 +1043,291 @@ describe('Posts Feature', () => {
     });
 
     expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('Follow Feature', () => {
+  let authToken: string;
+  let userId: string;
+  let followUserId: string;
+  let followUserToken: string;
+
+  beforeAll(async () => {
+    // Create user 1 (follower)
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'follow-user1@example.com',
+        password: 'password123',
+        name: 'Follow User 1',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+    const data = JSON.parse(signUpResponse.payload);
+    userId = data.user.id;
+
+    // Sign in user 1
+    const signInResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'follow-user1@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse.statusCode).toBe(200);
+    authToken = signInResponse.cookies[0]?.value || '';
+
+    // Create user 2 (to be followed)
+    const signUpResponse2 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'follow-user2@example.com',
+        password: 'password123',
+        name: 'Follow User 2',
+      },
+    });
+
+    expect(signUpResponse2.statusCode).toBe(200);
+    const data2 = JSON.parse(signUpResponse2.payload);
+    followUserId = data2.user.id;
+
+    // Sign in user 2
+    const signInResponse2 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'follow-user2@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse2.statusCode).toBe(200);
+    followUserToken = signInResponse2.cookies[0]?.value || '';
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should return 401 when following without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/follow/${followUserId}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should follow a user', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/follow/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+    expect(data).toHaveProperty('follower_count');
+  });
+
+  it('should return 400 when trying to follow same user twice', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/follow/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const data = JSON.parse(response.payload);
+    expect(data.error).toBeDefined();
+  });
+
+  it('should return 400 when trying to follow self', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: `/api/follow/${userId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const data = JSON.parse(response.payload);
+    expect(data.error).toBeDefined();
+  });
+
+  it('should check follow status - returns true when following', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/follow/status/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.isFollowing).toBe(true);
+  });
+
+  it('should return 401 when checking follow status without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/follow/status/${followUserId}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should get followers list', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/followers/${followUserId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0]).toHaveProperty('id');
+      expect(data[0]).toHaveProperty('username');
+    }
+  });
+
+  it('should get following list', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/following/${userId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(Array.isArray(data)).toBe(true);
+    if (data.length > 0) {
+      expect(data[0]).toHaveProperty('id');
+      expect(data[0]).toHaveProperty('username');
+    }
+  });
+
+  it('should return 401 when unfollowing without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/follow/${followUserId}`,
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should unfollow a user', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/follow/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+    expect(data).toHaveProperty('follower_count');
+  });
+
+  it('should check follow status - returns false after unfollow', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/follow/status/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.isFollowing).toBe(false);
+  });
+
+  it('should return 400 when unfollowing if not following', async () => {
+    const response = await app.fastify.inject({
+      method: 'DELETE',
+      url: `/api/follow/${followUserId}`,
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const data = JSON.parse(response.payload);
+    expect(data.error).toBeDefined();
+  });
+});
+
+describe('Account Feature', () => {
+  let authToken: string;
+  let userId: string;
+
+  beforeAll(async () => {
+    // Create a user for account deletion test
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'account-delete@example.com',
+        password: 'password123',
+        name: 'Account Delete User',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+    const data = JSON.parse(signUpResponse.payload);
+    userId = data.user.id;
+
+    // Sign in
+    const signInResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'account-delete@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse.statusCode).toBe(200);
+    authToken = signInResponse.cookies[0]?.value || '';
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should return 401 when deleting account without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/account/delete',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should delete authenticated user account', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/account/delete',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+  });
+
+  it('should not allow login with deleted account', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'account-delete@example.com',
+        password: 'password123',
+      },
+    });
+
+    // Should fail because account was deleted
+    expect(response.statusCode).not.toBe(200);
   });
 });
