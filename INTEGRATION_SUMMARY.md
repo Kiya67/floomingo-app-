@@ -5,7 +5,46 @@
 
 The following backend features have been successfully integrated into the frontend application:
 
-### 🔥 Critical Fixes
+### 🔥 CRITICAL: Supabase JWT Authentication Fix
+
+**ISSUE RESOLVED:** Backend was returning **401 Unauthorized** errors for all authenticated requests, even when valid Supabase access tokens were being sent.
+
+**ROOT CAUSE:**
+- Backend was not properly configured to validate Supabase JWT tokens
+- Missing or incorrect `SUPABASE_JWT_SECRET` environment variable
+- Endpoints were not extracting user ID from JWT token (`token.sub`)
+
+**FIX APPLIED:**
+✅ Backend now properly validates Supabase JWT tokens:
+- `SUPABASE_JWT_SECRET` environment variable configured from Supabase Dashboard
+- All protected endpoints validate Supabase access tokens
+- User ID extracted from JWT token (`token.sub` field)
+- Profile stats rows auto-created via database triggers (fixes 404 errors)
+
+**FRONTEND STATUS:**
+✅ Frontend was already correctly configured:
+- Uses `SupabaseAuthContext` to manage sessions
+- `utils/api.ts` fetches Supabase access tokens via `getSupabaseAccessToken()`
+- All authenticated API calls include `Authorization: Bearer <token>` headers
+- Session persistence implemented (no redirect loops)
+- Profile creation via `ensureProfileRow()` on app launch and login
+
+**AFFECTED ENDPOINTS (NOW FIXED):**
+- ✅ `GET /api/follow/status/:userId` - Check follow status
+- ✅ `POST /api/follow/:userId` - Follow user
+- ✅ `DELETE /api/follow/:userId` - Unfollow user
+- ✅ `GET /api/blocks` - Get blocked users
+- ✅ `GET /api/blocks/check/:userId` - Check block status
+- ✅ `POST /api/blocks` - Block user
+- ✅ `DELETE /api/blocks/:blockedId` - Unblock user
+- ✅ `GET /api/profile/stats/:userId` - Get profile stats (404 error also fixed)
+- ✅ All other protected endpoints
+
+**TESTING:** See `TESTING_GUIDE.md` for comprehensive authentication testing instructions.
+
+---
+
+### 🔥 Other Critical Fixes
 1. **SaveToTripsModal Authentication Fix** - Fixed "Authentication token not found" error
 2. **Add Tab Form Reset Fix** - Prevent form reset when selecting location
 3. **Profile Creation Fix** - Allow nullable username until user sets it in Edit Profile

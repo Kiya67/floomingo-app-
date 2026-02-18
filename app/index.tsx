@@ -4,11 +4,13 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSupabaseAuth } from '@/contexts/SupabaseAuthContext';
 
 export default function Index() {
-  const { session, loading } = useSupabaseAuth();
+  const { session, loadingAuth, isSessionReady } = useSupabaseAuth();
 
-  console.log('Index - session:', !!session, 'loading:', loading);
+  console.log('Index - session:', !!session, 'loadingAuth:', loadingAuth, 'isSessionReady:', isSessionReady);
 
-  if (loading) {
+  // Wait for session to be fully loaded before redirecting
+  if (loadingAuth || !isSessionReady) {
+    console.log('Index - Waiting for session to load...');
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#FF6B9D" />

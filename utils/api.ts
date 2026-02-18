@@ -26,14 +26,28 @@ export const isBackendConfigured = (): boolean => {
  */
 export const getSupabaseAccessToken = async (): Promise<string | null> => {
   try {
+    console.log('[API] Fetching Supabase session for access token');
     const { data: { session }, error } = await supabase.auth.getSession();
     
-    if (error || !session) {
-      console.error('[API] No active Supabase session:', error);
+    if (error) {
+      console.error('[API] Error getting Supabase session:', error);
+      return null;
+    }
+    
+    if (!session) {
+      console.warn('[API] No active Supabase session found');
+      return null;
+    }
+    
+    if (!session.access_token) {
+      console.error('[API] Session exists but no access_token found');
       return null;
     }
     
     console.log('[API] Retrieved Supabase access token from session');
+    console.log('[API] Token expires at:', new Date(session.expires_at! * 1000).toISOString());
+    console.log('[API] User ID from session:', session.user?.id);
+    
     return session.access_token;
   } catch (error) {
     console.error('[API] Error retrieving Supabase access token:', error);
@@ -55,11 +69,14 @@ export const apiCall = async <T = any>(
   options?: RequestInit
 ): Promise<T> => {
   if (!isBackendConfigured()) {
-    throw new Error("Backend URL not configured. Please rebuild the app.");
+    const error = "Backend URL not configured. Please rebuild the app.";
+    console.error("[API]", error);
+    throw new Error(error);
   }
 
   const url = `${BACKEND_URL}${endpoint}`;
-  console.log("[API] Calling:", url, options?.method || "GET");
+  const method = options?.method || "GET";
+  console.log(`[API] ${method} ${url}`);
 
   try {
     const fetchOptions: RequestInit = {
@@ -70,8 +87,6 @@ export const apiCall = async <T = any>(
       },
     };
 
-    console.log("[API] Fetch options:", fetchOptions);
-
     // CRITICAL: Always get fresh Supabase access token
     const token = await getSupabaseAccessToken();
     if (token) {
@@ -79,24 +94,38 @@ export const apiCall = async <T = any>(
         ...fetchOptions.headers,
         Authorization: `Bearer ${token}`,
       };
-      console.log('[API] Added Supabase access token to Authorization header');
+      console.log('[API] ✓ Authorization header added with Supabase access token');
     } else {
-      console.warn('[API] No Supabase access token available');
+      console.warn('[API] ⚠️ No Supabase access token available - request may fail if endpoint requires auth');
     }
+
+    console.log("[API] Request headers:", JSON.stringify(fetchOptions.headers, null, 2));
 
     const response = await fetch(url, fetchOptions);
 
+    console.log(`[API] Response status: ${response.status} ${response.statusText}`);
+
     if (!response.ok) {
       const text = await response.text();
-      console.error("[API] Error response:", response.status, text);
+      console.error(`[API] ❌ Error response (${response.status}):`, text);
+      
+      if (response.status === 401) {
+        console.error('[API] 401 Unauthorized - Possible causes:');
+        console.error('  1. Supabase session expired or invalid');
+        console.error('  2. Backend not configured to validate Supabase JWT tokens');
+        console.error('  3. Missing or incorrect SUPABASE_JWT_SECRET on backend');
+      } else if (response.status === 404) {
+        console.error('[API] 404 Not Found - Resource does not exist or endpoint not configured');
+      }
+      
       throw new Error(`API error: ${response.status} - ${text}`);
     }
 
     const data = await response.json();
-    console.log("[API] Success:", data);
+    console.log("[API] ✓ Success:", data);
     return data;
   } catch (error) {
-    console.error("[API] Request failed:", error);
+    console.error("[API] ❌ Request failed:", error);
     throw error;
   }
 };

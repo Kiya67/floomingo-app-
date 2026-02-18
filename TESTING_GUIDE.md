@@ -4,6 +4,7 @@
 ## 🎯 Overview
 
 This guide will help you test the newly integrated backend features:
+- **🔐 CRITICAL: Supabase JWT Authentication Fix** (Backend now properly validates Supabase access tokens)
 - SaveToTripsModal authentication fix
 - Profile stats integration
 - Block/Report feature
@@ -13,6 +14,221 @@ This guide will help you test the newly integrated backend features:
 1. Backend API is running at: `https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev`
 2. Frontend app is running: `npm run dev`
 3. You have at least 2 test accounts (to test blocking between users)
+
+## 🔐 CRITICAL: Authentication Fix Verification
+
+### Backend Changes Applied
+The backend was fixed to properly validate Supabase JWT tokens:
+- ✅ `SUPABASE_JWT_SECRET` environment variable configured
+- ✅ All protected endpoints now validate Supabase access tokens
+- ✅ User ID extracted from JWT token (`token.sub`)
+- ✅ Profile stats rows auto-created via database triggers
+
+### Test User Credentials
+For testing, create a user with these credentials:
+```
+Email: test@example.com
+Password: password123
+Display Name: Test User
+```
+
+### Scenario 0: Authentication Flow (MUST TEST FIRST)
+
+#### Test 0a: Sign Up with Supabase
+**Steps:**
+1. Open the app
+2. Tap "Don't have an account? Sign Up"
+3. Enter email: `test@example.com`
+4. Enter password: `password123`
+5. Enter name: `Test User`
+6. Tap "Sign Up"
+
+**Expected Results:**
+- ✅ User is created in Supabase `auth.users` table
+- ✅ Profile row is auto-created in `profiles` table
+- ✅ Profile stats row is auto-created via database trigger
+- ✅ User is redirected to home screen
+- ✅ Session persists on app reload
+- ✅ **NO 401 ERRORS** in console logs
+
+**Console Logs to Check:**
+```
+Sign up successful, user: test@example.com
+Profile row created with display name
+SupabaseAuthProvider - Auth state changed: SIGNED_IN
+[API] Retrieved Supabase access token from session
+[API] ✓ Authorization header added with Supabase access token
+```
+
+#### Test 0b: Sign In with Supabase
+**Steps:**
+1. If already signed in, sign out first
+2. Enter email: `test@example.com`
+3. Enter password: `password123`
+4. Tap "Sign In"
+
+**Expected Results:**
+- ✅ User is authenticated
+- ✅ Supabase session is established
+- ✅ User is redirected to home screen
+- ✅ Session persists on app reload
+- ✅ **NO 401 ERRORS** in console logs
+
+**Console Logs to Check:**
+```
+Sign in successful, user: test@example.com
+SupabaseAuthProvider - Auth state changed: SIGNED_IN
+[API] Retrieved Supabase access token from session
+[API] Token expires at: [timestamp]
+[API] User ID from session: [user_id]
+[API] ✓ Authorization header added with Supabase access token
+```
+
+#### Test 0c: Session Persistence (Critical for Web)
+**Steps:**
+1. Sign in to the app
+2. Navigate to Profile tab
+3. **Reload the page (Web) or restart the app (Mobile)**
+
+**Expected Results:**
+- ✅ User remains signed in
+- ✅ No redirect to auth screen
+- ✅ Profile data loads correctly
+- ✅ **NO 401 ERRORS** in console logs
+
+**Console Logs to Check:**
+```
+Index - User authenticated, redirecting to home tabs
+SupabaseAuthProvider - Initial session loaded: true
+[API] Retrieved Supabase access token from session
+```
+
+#### Test 0d: Protected Endpoints (401 Error Fix)
+
+**Test these endpoints to verify 401 errors are FIXED:**
+
+##### A. Profile Stats (GET /api/profile/stats/:userId)
+**Steps:**
+1. Sign in
+2. Navigate to any user profile
+3. Check that follower/following counts display
+
+**Expected Results:**
+- ✅ Stats load **WITHOUT 401 ERRORS**
+- ✅ Console shows: `[API] ✓ Success: { user_id, post_count, follower_count, following_count }`
+
+**Console Logs to Check:**
+```
+[API] GET https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/profile/stats/[user_id]
+[API] ✓ Authorization header added with Supabase access token
+[API] Response status: 200 OK
+[API] ✓ Success: { user_id: "...", post_count: 0, follower_count: 0, following_count: 0 }
+```
+
+##### B. Follow Status (GET /api/follow/status/:userId)
+**Steps:**
+1. Sign in
+2. Navigate to another user's profile
+3. Check if "Follow" or "Following" button displays
+
+**Expected Results:**
+- ✅ Follow status loads **WITHOUT 401 ERRORS**
+- ✅ Console shows: `[API] ✓ Success: { isFollowing: true/false }`
+
+**Console Logs to Check:**
+```
+[API] GET https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/follow/status/[user_id]
+[API] ✓ Authorization header added with Supabase access token
+[API] Response status: 200 OK
+[API] ✓ Success: { isFollowing: false }
+```
+
+##### C. Follow User (POST /api/follow/:userId)
+**Steps:**
+1. Sign in
+2. Navigate to another user's profile
+3. Tap "Follow" button
+
+**Expected Results:**
+- ✅ Follow action succeeds **WITHOUT 401 ERRORS**
+- ✅ Button changes to "Following"
+- ✅ Follower count increments
+- ✅ Console shows: `[API] ✓ Success: { success: true, follower_count: X }`
+
+**Console Logs to Check:**
+```
+[API] POST https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/follow/[user_id]
+[API] ✓ Authorization header added with Supabase access token
+[API] Response status: 200 OK
+[API] ✓ Success: { success: true, follower_count: 1 }
+```
+
+##### D. Block User (POST /api/blocks)
+**Steps:**
+1. Sign in
+2. Navigate to another user's profile
+3. Tap "..." menu
+4. Tap "Block User"
+
+**Expected Results:**
+- ✅ Block action succeeds **WITHOUT 401 ERRORS**
+- ✅ User is blocked
+- ✅ Console shows: `[API] ✓ Success: { success: true }`
+
+**Console Logs to Check:**
+```
+[API] POST https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/blocks
+[API] ✓ Authorization header added with Supabase access token
+[API] Response status: 200 OK
+[API] ✓ Success: { success: true }
+```
+
+##### E. Get Blocked Users (GET /api/blocks)
+**Steps:**
+1. Sign in
+2. Navigate to Settings > Blocked Users
+
+**Expected Results:**
+- ✅ Blocked users list loads **WITHOUT 401 ERRORS**
+- ✅ Console shows: `[API] ✓ Success: [array of blocked users]`
+
+**Console Logs to Check:**
+```
+[API] GET https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/blocks
+[API] ✓ Authorization header added with Supabase access token
+[API] Response status: 200 OK
+[API] ✓ Success: [{ blockerId: "...", blockedId: "...", createdAt: "..." }]
+```
+
+#### Test 0e: 404 Error Fix (Profile Stats)
+
+**Background:** The backend was returning 404 "User not found" for profile stats because the `profile_stats` table didn't have rows for new users. This is now fixed via database triggers.
+
+**Steps:**
+1. Create a new user account (sign up)
+2. Navigate to Profile tab
+3. Check that stats display (Posts: 0, Followers: 0, Following: 0)
+
+**Expected Results:**
+- ✅ Stats load **WITHOUT 404 ERRORS**
+- ✅ Profile stats row was auto-created via database trigger
+- ✅ Console shows: `[API] ✓ Success: { user_id, post_count: 0, follower_count: 0, following_count: 0 }`
+
+**Console Logs to Check:**
+```
+[API] GET https://jn958xzmbtrp3dkq4pzf9x4gqbxb8sh3.app.specular.dev/api/profile/stats/[user_id]
+[API] Response status: 200 OK
+[API] ✓ Success: { user_id: "...", post_count: 0, follower_count: 0, following_count: 0 }
+```
+
+**If 404 Error Occurs:**
+This means the database trigger didn't fire. Manually create the profile stats row:
+```sql
+INSERT INTO profile_stats (user_id, post_count, follower_count, following_count)
+VALUES ('[user_id]', 0, 0, 0);
+```
+
+---
 
 ## 🧪 Test Scenarios
 
