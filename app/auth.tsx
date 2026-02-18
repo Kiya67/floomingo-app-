@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/ui/Modal";
+import { ensureProfileRow } from "@/utils/supabaseHelpers";
 
 type Mode = "signin" | "signup";
 
@@ -124,21 +125,18 @@ export default function AuthScreen() {
 
       console.log('Sign up successful, user:', data.user?.email);
 
-      // Create profile in profiles table
+      // CRITICAL: Ensure profile row exists with optional display name
+      // Username is nullable and can be set later in Edit Profile
       if (data.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: data.user.id,
-            email: data.user.email,
-            display_name: name || email.split('@')[0],
-          });
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
+        try {
+          await ensureProfileRow(name || email.split('@')[0]);
+          console.log('Profile row created with display name');
+        } catch (profileError) {
+          console.error('Error creating profile row:', profileError);
+          // Don't block signup if profile creation fails - it will be retried in _layout.tsx
         }
       }
-
+      
       // Wait a moment for session to be established
       await new Promise(resolve => setTimeout(resolve, 300));
       

@@ -4,18 +4,33 @@ import { supabase } from '@/lib/supabase';
 /**
  * Ensure user profile row exists in profiles table
  * Call this on app start and after login
- * CRITICAL: Sets username to null initially - user can set it later
+ * CRITICAL: Only upserts the ID - username can be null until user sets it in Edit Profile
+ * 
+ * @param displayName - Optional display name to set during signup
  */
-export async function ensureProfileRow() {
+export async function ensureProfileRow(displayName?: string) {
   console.log('[Supabase] Ensuring profile row exists');
   const { data: u } = await supabase.auth.getUser();
   const user = u.user;
   if (!user) throw new Error('Not signed in');
   
-  // Create profile if missing, with username explicitly set to null
+  // Create profile if missing - only set the ID and optional display_name
+  // Username defaults to null and can be set later in Edit Profile
+  const profileData: any = { id: user.id };
+  
+  // Set display_name if provided (e.g., during signup)
+  if (displayName) {
+    profileData.display_name = displayName;
+  }
+  
+  // Set email from user metadata if available
+  if (user.email) {
+    profileData.email = user.email;
+  }
+  
   const { error } = await supabase
     .from('profiles')
-    .upsert({ id: user.id, username: null }, { onConflict: 'id' });
+    .upsert(profileData, { onConflict: 'id' });
   
   if (error) {
     console.error('[Supabase] Error ensuring profile row:', error);

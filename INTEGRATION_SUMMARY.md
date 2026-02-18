@@ -8,6 +8,7 @@ The following backend features have been successfully integrated into the fronte
 ### 🔥 Critical Fixes
 1. **SaveToTripsModal Authentication Fix** - Fixed "Authentication token not found" error
 2. **Add Tab Form Reset Fix** - Prevent form reset when selecting location
+3. **Profile Creation Fix** - Allow nullable username until user sets it in Edit Profile
 
 ### 🎯 New Features
 3. **View Count Increment Logic** - Track video views with session-based deduplication
@@ -18,9 +19,9 @@ The following backend features have been successfully integrated into the fronte
 8. **Account Deletion** - Delete account and all associated data
 
 ### 📊 Summary
-- **20 files modified** (including 2 new UI components)
+- **22 files modified** (including 2 new UI components)
 - **12 new API endpoints integrated**
-- **3 critical bugs fixed**
+- **4 critical bugs fixed**
 - **100% web-compatible** (no Alert.alert usage)
 - **Full authentication support** (email/password + Google + Apple OAuth)
 
@@ -283,6 +284,85 @@ useEffect(() => {
 
 If you see "AddScreen unmounted" followed by "AddScreen mounted" when selecting a location, the screen is remounting (bad). With the fix, you should only see the mount log once.
 
+### 3. Profile Creation Fix
+
+**Problem:**
+- Database schema required `username` to be NOT NULL
+- `ensureProfileRow` was only upserting `{id}`, causing crashes when username was missing
+- Users were forced to set username during signup
+- Manual profile creation in auth.tsx could conflict with `ensureProfileRow`
+
+**Solution Implemented:**
+- ✅ Backend database schema changed: `ALTER TABLE profiles ALTER COLUMN username DROP NOT NULL`
+- ✅ Updated `ensureProfileRow` to accept optional `displayName` parameter
+- ✅ Updated `ensureProfileRow` to set `email` from user metadata
+- ✅ Updated signup flow to call `ensureProfileRow` with display name
+- ✅ Removed manual profile creation code that could cause conflicts
+- ✅ Username is now nullable and can be set later in Edit Profile
+
+**Files Modified:**
+- `utils/supabaseHelpers.ts` - Updated `ensureProfileRow` function
+- `app/auth.tsx` - Updated signup flow to use `ensureProfileRow`
+
+**Key Code Changes:**
+```typescript
+// Updated ensureProfileRow to accept optional display name
+export async function ensureProfileRow(displayName?: string) {
+  const { data: u } = await supabase.auth.getUser();
+  const user = u.user;
+  if (!user) throw new Error('Not signed in');
+  
+  const profileData: any = { id: user.id };
+  
+  // Set display_name if provided (e.g., during signup)
+  if (displayName) {
+    profileData.display_name = displayName;
+  }
+  
+  // Set email from user metadata if available
+  if (user.email) {
+    profileData.email = user.email;
+  }
+  
+  const { error } = await supabase
+    .from('profiles')
+    .upsert(profileData, { onConflict: 'id' });
+  
+  if (error) throw error;
+  return user.id;
+}
+
+// Updated signup flow in auth.tsx
+if (data.user) {
+  try {
+    await ensureProfileRow(name || email.split('@')[0]);
+    console.log('Profile row created with display name');
+  } catch (profileError) {
+    console.error('Error creating profile row:', profileError);
+    // Don't block signup if profile creation fails - it will be retried in _layout.tsx
+  }
+}
+```
+
+**Database Schema:**
+```sql
+-- Backend migration
+ALTER TABLE profiles ALTER COLUMN username DROP NOT NULL;
+
+-- Profiles table structure
+CREATE TABLE profiles (
+  id uuid PRIMARY KEY,
+  username text UNIQUE,  -- Now nullable
+  display_name text,
+  email text,
+  bio text,
+  avatar_url text,
+  cover_url text,
+  created_at timestamp DEFAULT now(),
+  updated_at timestamp DEFAULT now()
+);
+```
+
 ### 6. Block/Unblock Functionality
 - **Location**: Video full-screen view (`app/video/[id].tsx`) and User profile (`app/user/[id].tsx`)
 - **API Endpoints Integrated**:
@@ -379,24 +459,28 @@ const response = await authenticatedApiCall('/api/blocks', {
 9. `app/(tabs)/add.tsx` - Fixed state management, added mount/unmount logging
 10. `app/search-location.tsx` - Changed navigation to use `router.back()` with `setParams()`
 
+### Profile Creation Fix
+11. `utils/supabaseHelpers.ts` - Updated `ensureProfileRow` to accept optional display name and email
+12. `app/auth.tsx` - Updated signup flow to call `ensureProfileRow` with display name
+
 ### Block/Report Feature
-11. `app/_layout.tsx` - Added AuthProvider wrapper
-12. `app/(tabs)/(home)/index.tsx` - Added feed filtering for blocked users
-13. `components/ui/Modal.tsx` - Created (new file)
-14. `components/ui/Toast.tsx` - Created (new file)
+13. `app/_layout.tsx` - Added AuthProvider wrapper
+14. `app/(tabs)/(home)/index.tsx` - Added feed filtering for blocked users
+15. `components/ui/Modal.tsx` - Created (new file)
+16. `components/ui/Toast.tsx` - Created (new file)
 
 ### Follow/Unfollow System
-15. `utils/api.ts` - Added follow/unfollow API helpers
-16. `app/user/[id].tsx` - Integrated backend API for follow/unfollow
-17. `app/user/[id].ios.tsx` - Integrated backend API for follow/unfollow (iOS)
-18. `app/followers/[id].tsx` - Integrated backend API for followers list
-19. `app/followers/[id].ios.tsx` - Integrated backend API for followers list (iOS)
-20. `app/following/[id].tsx` - Integrated backend API for following list
-21. `app/following/[id].ios.tsx` - Integrated backend API for following list (iOS)
+17. `utils/api.ts` - Added follow/unfollow API helpers
+18. `app/user/[id].tsx` - Integrated backend API for follow/unfollow
+19. `app/user/[id].ios.tsx` - Integrated backend API for follow/unfollow (iOS)
+20. `app/followers/[id].tsx` - Integrated backend API for followers list
+21. `app/followers/[id].ios.tsx` - Integrated backend API for followers list (iOS)
+22. `app/following/[id].tsx` - Integrated backend API for following list
+23. `app/following/[id].ios.tsx` - Integrated backend API for following list (iOS)
 
 ### Account Deletion
-22. `app/settings.tsx` - Integrated backend API for account deletion
-23. `app/settings.ios.tsx` - Integrated backend API for account deletion (iOS)
+24. `app/settings.tsx` - Integrated backend API for account deletion
+25. `app/settings.ios.tsx` - Integrated backend API for account deletion (iOS)
 
 ## 🧪 Testing Checklist
 
@@ -432,6 +516,18 @@ const response = await authenticatedApiCall('/api/blocks', {
 - [ ] Verify video and caption are still present after returning
 - [ ] Console should NOT show "AddScreen unmounted" when selecting location
 - [ ] Post successfully with video + caption + location
+
+### Profile Creation Fix
+- [ ] Sign up with a new account (email + password)
+- [ ] Verify signup succeeds without crashes
+- [ ] Navigate to Profile tab
+- [ ] Verify profile loads without errors
+- [ ] Username should be empty/null (not required)
+- [ ] Display name should be set from signup form
+- [ ] Navigate to Edit Profile
+- [ ] Set a username
+- [ ] Save profile
+- [ ] Verify username is saved and displayed
 
 ### Block Functionality
 - [ ] Block a user from video full-screen view
