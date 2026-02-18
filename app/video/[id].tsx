@@ -205,7 +205,7 @@ export default function VideoFullScreenScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
   

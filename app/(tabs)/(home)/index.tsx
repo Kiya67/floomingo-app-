@@ -8,6 +8,7 @@ import { VideoGridItem } from "@/components/VideoGridItem";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
 import { authenticatedApiCall } from "@/utils/api";
+import { v4 as uuidv4 } from 'uuid';
 
 interface Post {
   id: string;
@@ -51,9 +52,27 @@ export default function HomeScreen() {
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
   const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
   const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
+  
+  // Seed-based random ordering state
+  const [feedSeed, setFeedSeed] = useState<string>(() => {
+    // Default seed: daily random based on date + userId (if available)
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    return `${today}-initial`;
+  });
 
   // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
+
+  // Stable hash function for seeded random ordering
+  const stableHash = useCallback((str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+  }, []);
 
   const fetchUnreadNotifications = useCallback(async () => {
     try {
@@ -75,7 +94,7 @@ export default function HomeScreen() {
   }, []);
 
   const fetchPosts = useCallback(async () => {
-    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
+    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords, feedSeed });
     try {
       // Fetch blocked users list from API
       let blockedUserIds: string[] = [];
@@ -122,8 +141,8 @@ export default function HomeScreen() {
         query = query.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
       }
 
-      // Apply keyword filter (client-side for now)
-      const { data, error } = await query.order('created_at', { ascending: false });
+      // Fetch all matching posts (no ORDER BY for random)
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching posts:', error);
@@ -150,8 +169,16 @@ export default function HomeScreen() {
           });
         }
 
-        console.log('Posts fetched successfully:', filteredData.length);
-        setPosts(filteredData);
+        // Apply seed-based random ordering (stable per session)
+        console.log('Applying seed-based random ordering with seed:', feedSeed);
+        const sortedData = filteredData.sort((a, b) => {
+          const hashA = stableHash(a.id + feedSeed);
+          const hashB = stableHash(b.id + feedSeed);
+          return hashA - hashB;
+        });
+
+        console.log('Posts fetched and randomized successfully:', sortedData.length);
+        setPosts(sortedData);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
@@ -159,7 +186,7 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [filterPlaceId, filterKeywords]);
+  }, [filterPlaceId, filterKeywords, feedSeed, stableHash]);
 
   // Listen for filter params from location search
   useEffect(() => {
@@ -177,8 +204,15 @@ export default function HomeScreen() {
   }, [fetchPosts, fetchUnreadNotifications]);
 
   const onRefresh = async () => {
-    console.log('User pulled to refresh posts');
+    console.log('User pulled to refresh posts - generating new random seed');
     setRefreshing(true);
+    
+    // Generate new random seed for fresh random order
+    const { data: { user } } = await supabase.auth.getUser();
+    const newSeed = user ? `${uuidv4()}-${user.id}` : uuidv4();
+    setFeedSeed(newSeed);
+    console.log('New feed seed generated:', newSeed);
+    
     await fetchPosts();
     await fetchUnreadNotifications();
     setRefreshing(false);
@@ -233,44 +267,48 @@ export default function HomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <View style={[styles.headerBar, { backgroundColor: bgColor }]}>
-        <TouchableOpacity 
-          style={styles.iconButton}
-          onPress={handleNotificationsPress}
-          activeOpacity={0.7}
-        >
-          <View>
-            <IconSymbol 
-              android_material_icon_name="favorite" 
-              size={28} 
-              color={primaryColor}
-            />
-            {unreadNotificationsCount > 0 && (
-              <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
-                <Text style={styles.badgeText}>
-                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-                </Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.iconButton}
-          onPress={handleFilterPress}
-          activeOpacity={0.7}
-        >
-          <View>
-            <IconSymbol 
-              android_material_icon_name="filter-list" 
-              size={28} 
-              color={textColor}
-            />
-            {activeFiltersCount > 0 && (
-              <View style={[styles.badge, { backgroundColor: primaryColor }]}>
-                <Text style={styles.badgeText}>{activeFiltersCount}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={handleNotificationsPress}
+            activeOpacity={0.7}
+          >
+            <View>
+              <IconSymbol 
+                android_material_icon_name="favorite" 
+                size={28} 
+                color={primaryColor}
+              />
+              {unreadNotificationsCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
+                  <Text style={styles.badgeText}>
+                    {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={handleFilterPress}
+            activeOpacity={0.7}
+          >
+            <View>
+              <IconSymbol 
+                android_material_icon_name="filter-list" 
+                size={28} 
+                color={textColor}
+              />
+              {activeFiltersCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: primaryColor }]}>
+                  <Text style={styles.badgeText}>{activeFiltersCount}</Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView 
@@ -338,6 +376,14 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   iconButton: {
     width: 44,

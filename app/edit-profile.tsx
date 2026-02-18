@@ -228,7 +228,13 @@ export default function EditProfileScreen() {
 
       if (error) {
         console.error('Update error:', error);
-        Alert.alert('Error', error.message);
+        
+        // Check for unique constraint violation (username already taken)
+        if (error.code === '23505' || error.message.includes('duplicate key') || error.message.includes('unique constraint')) {
+          Alert.alert('Username Taken', 'This username is already taken. Please choose another username.');
+        } else {
+          Alert.alert('Error', error.message);
+        }
       } else {
         console.log('Profile updated successfully');
         Alert.alert('Success', 'Profile updated successfully');
