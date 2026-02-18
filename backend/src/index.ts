@@ -7,6 +7,7 @@ import { registerTripRoutes } from './routes/trips.js';
 import { registerProfileStatsRoutes } from './routes/profile-stats.js';
 import { registerPostRoutes } from './routes/posts.js';
 import { registerFollowRoutes } from './routes/follows.js';
+import { registerProfileRoutes } from './routes/profiles.js';
 
 const schema = { ...appSchema, ...authSchema };
 
@@ -27,6 +28,7 @@ registerTripRoutes(app);
 registerProfileStatsRoutes(app);
 registerPostRoutes(app);
 registerFollowRoutes(app);
+registerProfileRoutes(app);
 
 await app.run();
 app.logger.info('Application running');
