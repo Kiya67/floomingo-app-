@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase";
 import { VideoGridItem } from "@/components/VideoGridItem";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
-import { v4 as uuidv4 } from 'uuid';
 
 interface Post {
   id: string;
@@ -51,26 +50,9 @@ export default function HomeScreen() {
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
   const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
   const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
-  
-  // Seed-based random ordering state
-  const [feedSeed, setFeedSeed] = useState<string>(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return `${today}-initial`;
-  });
 
   // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
-
-  // Stable hash function for seeded random ordering
-  const stableHash = useCallback((str: string): number => {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash);
-  }, []);
 
   const fetchUnreadNotifications = useCallback(async () => {
     try {
@@ -92,7 +74,7 @@ export default function HomeScreen() {
   }, []);
 
   const fetchPosts = useCallback(async () => {
-    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords, feedSeed });
+    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
     try {
       let query = supabase
         .from('posts')
@@ -102,7 +84,8 @@ export default function HomeScreen() {
             display_name,
             avatar_url
           )
-        `);
+        `)
+        .order('created_at', { ascending: false });
 
       // Apply location filter
       if (filterPlaceId) {
@@ -137,16 +120,8 @@ export default function HomeScreen() {
             });
           }
 
-          // Apply seed-based random ordering (stable per session)
-          console.log('Applying seed-based random ordering with seed:', feedSeed);
-          const sortedData = filteredData.sort((a, b) => {
-            const hashA = stableHash((a?.id ?? '') + feedSeed);
-            const hashB = stableHash((b?.id ?? '') + feedSeed);
-            return hashA - hashB;
-          });
-
-          console.log('Posts fetched and randomized successfully:', sortedData.length);
-          setPosts(sortedData);
+          console.log('Posts fetched successfully:', filteredData.length);
+          setPosts(filteredData);
         } catch (filterError) {
           console.error('Error applying video filter:', filterError);
           setPosts(filteredData);
@@ -158,7 +133,7 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [filterPlaceId, filterKeywords, feedSeed, stableHash]);
+  }, [filterPlaceId, filterKeywords]);
 
   // Listen for filter params from location search
   useEffect(() => {
@@ -174,17 +149,13 @@ export default function HomeScreen() {
     console.log('Filter dependencies changed, fetching posts...');
     fetchPosts();
     fetchUnreadNotifications();
-  }, [filterPlaceId, filterKeywords, feedSeed]);
+  }, [filterPlaceId, filterKeywords]);
 
   const onRefresh = async () => {
-    console.log('User pulled to refresh posts - generating new random seed');
+    console.log('User pulled to refresh posts');
     setRefreshing(true);
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    const newSeed = user ? `${uuidv4()}-${user.id}` : uuidv4();
-    setFeedSeed(newSeed);
-    console.log('New feed seed generated:', newSeed);
-    
+    await fetchPosts();
+    await fetchUnreadNotifications();
     setRefreshing(false);
   };
 
@@ -210,12 +181,6 @@ export default function HomeScreen() {
       setFilterPlaceId(placeId);
       setFilterPlaceName(placeName);
       setFilterKeywords(keywords);
-      
-      // Generate new seed when filters change to get fresh random order
-      const newSeed = uuidv4();
-      setFeedSeed(newSeed);
-      console.log('Filters changed - new seed generated:', newSeed);
-      
       setFilterModalVisible(false);
     } catch (error) {
       console.error('Error applying filters:', error);
@@ -230,12 +195,6 @@ export default function HomeScreen() {
       setFilterPlaceId(null);
       setFilterPlaceName(null);
       setFilterKeywords(null);
-      
-      // Generate new seed when clearing filters
-      const newSeed = uuidv4();
-      setFeedSeed(newSeed);
-      console.log('Filters cleared - new seed generated:', newSeed);
-      
       setFilterModalVisible(false);
     } catch (error) {
       console.error('Error clearing filters:', error);
