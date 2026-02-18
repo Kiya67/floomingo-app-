@@ -19,27 +19,31 @@ export const isBackendConfigured = (): boolean => {
 };
 
 /**
- * Get bearer token from platform-specific storage
- * Web: localStorage
- * Native: SecureStore
- *
- * @returns Bearer token or null if not found
+ * Get Supabase access token from active session
+ * CRITICAL: All backend API calls MUST use this token
+ * 
+ * @returns Supabase access_token or null if no session
  */
-export const getBearerToken = async (): Promise<string | null> => {
+export const getSupabaseAccessToken = async (): Promise<string | null> => {
   try {
-    if (Platform.OS === "web") {
-      return localStorage.getItem(BEARER_TOKEN_KEY);
-    } else {
-      return await SecureStore.getItemAsync(BEARER_TOKEN_KEY);
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error || !session) {
+      console.error('[API] No active Supabase session:', error);
+      return null;
     }
+    
+    console.log('[API] Retrieved Supabase access token from session');
+    return session.access_token;
   } catch (error) {
-    console.error("[API] Error retrieving bearer token:", error);
+    console.error('[API] Error retrieving Supabase access token:', error);
     return null;
   }
 };
 
 /**
- * Generic API call helper with error handling
+ * Generic API call helper with Supabase auth token
+ * CRITICAL: Uses Supabase access_token for authentication
  *
  * @param endpoint - API endpoint path (e.g., '/users', '/auth/login')
  * @param options - Fetch options (method, headers, body, etc.)
@@ -68,13 +72,16 @@ export const apiCall = async <T = any>(
 
     console.log("[API] Fetch options:", fetchOptions);
 
-    // Always send the token if we have it (needed for cross-domain/iframe support)
-    const token = await getBearerToken();
+    // CRITICAL: Always get fresh Supabase access token
+    const token = await getSupabaseAccessToken();
     if (token) {
       fetchOptions.headers = {
         ...fetchOptions.headers,
         Authorization: `Bearer ${token}`,
       };
+      console.log('[API] Added Supabase access token to Authorization header');
+    } else {
+      console.warn('[API] No Supabase access token available');
     }
 
     const response = await fetch(url, fetchOptions);
@@ -153,7 +160,7 @@ export const apiDelete = async <T = any>(endpoint: string, data: any = {}): Prom
 
 /**
  * Authenticated API call helper
- * Automatically retrieves bearer token from storage and adds to Authorization header
+ * CRITICAL: Requires Supabase access token, redirects to login if missing
  *
  * @param endpoint - API endpoint path
  * @param options - Fetch options (method, headers, body, etc.)
@@ -164,9 +171,10 @@ export const authenticatedApiCall = async <T = any>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> => {
-  const token = await getBearerToken();
+  const token = await getSupabaseAccessToken();
 
   if (!token) {
+    console.error('[API] Authentication token not found. User must sign in.');
     throw new Error("Authentication token not found. Please sign in.");
   }
 
@@ -399,6 +407,7 @@ export interface RecalculateStatsResponse {
 
 /**
  * Get profile stats for a user
+ * CRITICAL: Uses Supabase access token for auth
  */
 export const getProfileStats = async (userId: string): Promise<ProfileStats> => {
   console.log('[API] Fetching profile stats for user:', userId);
@@ -433,6 +442,7 @@ export interface PostWithViewCount {
 /**
  * Get posts for a user profile
  * Includes view_count only if viewing own profile
+ * CRITICAL: Uses Supabase access token for auth
  */
 export const getUserPosts = async (userId: string): Promise<PostWithViewCount[]> => {
   console.log('[API] Fetching posts for user:', userId);
@@ -442,6 +452,7 @@ export const getUserPosts = async (userId: string): Promise<PostWithViewCount[]>
 /**
  * Increment view count for a post
  * Only increments if user is authenticated and not the post owner
+ * CRITICAL: Requires Supabase access token
  */
 export const incrementPostView = async (postId: string): Promise<{ view_count: number | null }> => {
   console.log('[API] Incrementing view count for post:', postId);
@@ -471,6 +482,7 @@ export interface FollowerUser {
 
 /**
  * Follow a user
+ * CRITICAL: Requires Supabase access token, uses auth.uid() on backend
  */
 export const followUser = async (userId: string): Promise<FollowResponse> => {
   console.log('[API] Following user:', userId);
@@ -479,6 +491,7 @@ export const followUser = async (userId: string): Promise<FollowResponse> => {
 
 /**
  * Unfollow a user
+ * CRITICAL: Requires Supabase access token, uses auth.uid() on backend
  */
 export const unfollowUser = async (userId: string): Promise<FollowResponse> => {
   console.log('[API] Unfollowing user:', userId);
@@ -487,6 +500,7 @@ export const unfollowUser = async (userId: string): Promise<FollowResponse> => {
 
 /**
  * Check if authenticated user is following a user
+ * CRITICAL: Requires Supabase access token, uses auth.uid() on backend
  */
 export const getFollowStatus = async (userId: string): Promise<FollowStatusResponse> => {
   console.log('[API] Checking follow status for user:', userId);
@@ -495,6 +509,7 @@ export const getFollowStatus = async (userId: string): Promise<FollowStatusRespo
 
 /**
  * Get list of followers for a user
+ * CRITICAL: Uses Supabase access token for auth
  */
 export const getFollowers = async (userId: string): Promise<FollowerUser[]> => {
   console.log('[API] Fetching followers for user:', userId);
@@ -503,6 +518,7 @@ export const getFollowers = async (userId: string): Promise<FollowerUser[]> => {
 
 /**
  * Get list of users being followed by a user
+ * CRITICAL: Uses Supabase access token for auth
  */
 export const getFollowing = async (userId: string): Promise<FollowerUser[]> => {
   console.log('[API] Fetching following for user:', userId);
@@ -520,6 +536,7 @@ export interface DeleteAccountResponse {
 /**
  * Delete authenticated user account and all associated data
  * This is a DESTRUCTIVE operation - all data is permanently deleted
+ * CRITICAL: Requires Supabase access token
  */
 export const deleteAccount = async (): Promise<DeleteAccountResponse> => {
   console.log('[API] Deleting account');

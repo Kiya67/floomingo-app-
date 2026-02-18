@@ -76,7 +76,7 @@ export default function EditProfileScreen() {
 
       if (error) {
         console.error('Error fetching profile:', error);
-      } else {
+      } else if (data) {
         console.log('Profile fetched:', data);
         setProfile(data);
         setDisplayName(data.display_name || '');
@@ -206,6 +206,31 @@ export default function EditProfileScreen() {
         return;
       }
 
+      // CRITICAL: Check username availability before saving (exclude current user)
+      if (username && username.trim()) {
+        console.log('Checking username availability:', username);
+        const { data: existingUsers, error: checkError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', username.trim())
+          .neq('id', user.id) // Exclude current user
+          .limit(1);
+
+        if (checkError) {
+          console.error('Error checking username:', checkError);
+          Alert.alert('Error', 'Failed to check username availability');
+          setSaving(false);
+          return;
+        }
+
+        if (existingUsers && existingUsers.length > 0) {
+          console.log('Username already taken:', username);
+          Alert.alert('Username Taken', 'This username is already taken. Please choose another username.');
+          setSaving(false);
+          return;
+        }
+      }
+
       console.log('Updating profile:', {
         display_name: displayName,
         username: username || null,
@@ -249,6 +274,7 @@ export default function EditProfileScreen() {
   };
 
   const getInitials = (name: string) => {
+    if (!name) return 'U';
     const nameParts = name.split(' ');
     const firstInitial = nameParts[0]?.charAt(0) || '';
     const lastInitial = nameParts[1]?.charAt(0) || '';
