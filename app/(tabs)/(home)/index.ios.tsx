@@ -41,7 +41,6 @@ export default function HomeScreen() {
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
-  // 🚨 FIX: Ensure videos state defaults to [] (never null/undefined)
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,8 +54,7 @@ export default function HomeScreen() {
   
   // Seed-based random ordering state
   const [feedSeed, setFeedSeed] = useState<string>(() => {
-    // Default seed: daily random based on date + userId (if available)
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const today = new Date().toISOString().slice(0, 10);
     return `${today}-initial`;
   });
 
@@ -69,7 +67,7 @@ export default function HomeScreen() {
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
+      hash = hash & hash;
     }
     return Math.abs(hash);
   }, []);
@@ -112,17 +110,14 @@ export default function HomeScreen() {
         query = query.eq('place_id', filterPlaceId);
       }
 
-      // Fetch all matching posts (no ORDER BY for random)
       const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching posts:', error);
         setPosts([]);
       } else {
-        // 🚨 FIX: Ensure data is always an array
         let filteredData = Array.isArray(data) ? data : [];
 
-        // 🚨 FIX: Wrap filter logic with null-safe guards and try/catch
         try {
           // Apply keyword filter client-side
           if (filterKeywords && filterKeywords.trim()) {
@@ -134,12 +129,10 @@ export default function HomeScreen() {
             console.log('Applying keyword filters:', keywords);
 
             filteredData = filteredData.filter(post => {
-              // 🚨 FIX: Null-safe access with optional chaining and nullish coalescing
               const caption = (post?.caption ?? '').toLowerCase();
               const placeName = (post?.place_name ?? '').toLowerCase();
               const searchText = `${caption} ${placeName}`;
 
-              // All keywords must be present
               return keywords.every(keyword => searchText.includes(keyword));
             });
           }
@@ -147,7 +140,6 @@ export default function HomeScreen() {
           // Apply seed-based random ordering (stable per session)
           console.log('Applying seed-based random ordering with seed:', feedSeed);
           const sortedData = filteredData.sort((a, b) => {
-            // 🚨 FIX: Null-safe access to post IDs
             const hashA = stableHash((a?.id ?? '') + feedSeed);
             const hashB = stableHash((b?.id ?? '') + feedSeed);
             return hashA - hashB;
@@ -156,15 +148,12 @@ export default function HomeScreen() {
           console.log('Posts fetched and randomized successfully:', sortedData.length);
           setPosts(sortedData);
         } catch (filterError) {
-          // 🚨 FIX: Catch filter errors and log them
           console.error('Error applying video filter:', filterError);
-          // Return unfiltered data on error to prevent crash
           setPosts(filteredData);
         }
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
-      // 🚨 FIX: Always set posts to empty array on error
       setPosts([]);
     } finally {
       setLoading(false);
@@ -182,22 +171,20 @@ export default function HomeScreen() {
   }, [params.filterPlaceId, params.filterPlaceName]);
 
   useEffect(() => {
+    console.log('Filter dependencies changed, fetching posts...');
     fetchPosts();
     fetchUnreadNotifications();
-  }, [fetchPosts, fetchUnreadNotifications]);
+  }, [filterPlaceId, filterKeywords, feedSeed]);
 
   const onRefresh = async () => {
     console.log('User pulled to refresh posts - generating new random seed');
     setRefreshing(true);
     
-    // Generate new random seed for fresh random order
     const { data: { user } } = await supabase.auth.getUser();
     const newSeed = user ? `${uuidv4()}-${user.id}` : uuidv4();
     setFeedSeed(newSeed);
     console.log('New feed seed generated:', newSeed);
     
-    await fetchPosts();
-    await fetchUnreadNotifications();
     setRefreshing(false);
   };
 
@@ -219,7 +206,6 @@ export default function HomeScreen() {
   const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
     console.log('Applying filters:', { placeId, placeName, keywords });
     
-    // 🚨 FIX: Wrap filter handler with try/catch
     try {
       setFilterPlaceId(placeId);
       setFilterPlaceName(placeName);
@@ -240,7 +226,6 @@ export default function HomeScreen() {
   const handleClearFilters = () => {
     console.log('Clearing all filters');
     
-    // 🚨 FIX: Wrap clear handler with try/catch
     try {
       setFilterPlaceId(null);
       setFilterPlaceName(null);
@@ -334,7 +319,6 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* 🚨 FIX: Check if posts is array and has length before rendering */}
         {!Array.isArray(posts) || posts.length === 0 ? (
           <View style={styles.emptyContainer}>
             <IconSymbol 
@@ -349,7 +333,6 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.gridContainer}>
-            {/* 🚨 FIX: Use stable keyExtractor with post.id */}
             {posts.map((post, index) => (
               post && post.id ? (
                 <VideoGridItem
