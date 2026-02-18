@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
+  // 🚨 FIX: Ensure videos state defaults to [] (never null/undefined)
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -148,40 +149,52 @@ export default function HomeScreen() {
         console.error('Error fetching posts:', error);
         setPosts([]);
       } else {
-        let filteredData = data || [];
+        // 🚨 FIX: Ensure data is always an array
+        let filteredData = Array.isArray(data) ? data : [];
 
-        // Apply keyword filter client-side
-        if (filterKeywords && filterKeywords.trim()) {
-          const keywords = filterKeywords
-            .toLowerCase()
-            .split(/[\s,]+/)
-            .filter(k => k.length > 0);
-          
-          console.log('Applying keyword filters:', keywords);
+        // 🚨 FIX: Wrap filter logic with null-safe guards and try/catch
+        try {
+          // Apply keyword filter client-side
+          if (filterKeywords && filterKeywords.trim()) {
+            const keywords = filterKeywords
+              .toLowerCase()
+              .split(/[\s,]+/)
+              .filter(k => k.length > 0);
+            
+            console.log('Applying keyword filters:', keywords);
 
-          filteredData = filteredData.filter(post => {
-            const caption = (post.caption || '').toLowerCase();
-            const placeName = (post.place_name || '').toLowerCase();
-            const searchText = `${caption} ${placeName}`;
+            filteredData = filteredData.filter(post => {
+              // 🚨 FIX: Null-safe access with optional chaining and nullish coalescing
+              const caption = (post?.caption ?? '').toLowerCase();
+              const placeName = (post?.place_name ?? '').toLowerCase();
+              const searchText = `${caption} ${placeName}`;
 
-            // All keywords must be present
-            return keywords.every(keyword => searchText.includes(keyword));
+              // All keywords must be present
+              return keywords.every(keyword => searchText.includes(keyword));
+            });
+          }
+
+          // Apply seed-based random ordering (stable per session)
+          console.log('Applying seed-based random ordering with seed:', feedSeed);
+          const sortedData = filteredData.sort((a, b) => {
+            // 🚨 FIX: Null-safe access to post IDs
+            const hashA = stableHash((a?.id ?? '') + feedSeed);
+            const hashB = stableHash((b?.id ?? '') + feedSeed);
+            return hashA - hashB;
           });
+
+          console.log('Posts fetched and randomized successfully:', sortedData.length);
+          setPosts(sortedData);
+        } catch (filterError) {
+          // 🚨 FIX: Catch filter errors and log them
+          console.error('Error applying video filter:', filterError);
+          // Return unfiltered data on error to prevent crash
+          setPosts(filteredData);
         }
-
-        // Apply seed-based random ordering (stable per session)
-        console.log('Applying seed-based random ordering with seed:', feedSeed);
-        const sortedData = filteredData.sort((a, b) => {
-          const hashA = stableHash(a.id + feedSeed);
-          const hashB = stableHash(b.id + feedSeed);
-          return hashA - hashB;
-        });
-
-        console.log('Posts fetched and randomized successfully:', sortedData.length);
-        setPosts(sortedData);
       }
     } catch (error) {
       console.error('Error in fetchPosts:', error);
+      // 🚨 FIX: Always set posts to empty array on error
       setPosts([]);
     } finally {
       setLoading(false);
@@ -235,30 +248,44 @@ export default function HomeScreen() {
 
   const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
     console.log('Applying filters:', { placeId, placeName, keywords });
-    setFilterPlaceId(placeId);
-    setFilterPlaceName(placeName);
-    setFilterKeywords(keywords);
     
-    // Generate new seed when filters change to get fresh random order
-    const newSeed = uuidv4();
-    setFeedSeed(newSeed);
-    console.log('Filters changed - new seed generated:', newSeed);
-    
-    setFilterModalVisible(false);
+    // 🚨 FIX: Wrap filter handler with try/catch
+    try {
+      setFilterPlaceId(placeId);
+      setFilterPlaceName(placeName);
+      setFilterKeywords(keywords);
+      
+      // Generate new seed when filters change to get fresh random order
+      const newSeed = uuidv4();
+      setFeedSeed(newSeed);
+      console.log('Filters changed - new seed generated:', newSeed);
+      
+      setFilterModalVisible(false);
+    } catch (error) {
+      console.error('Error applying filters:', error);
+      setFilterModalVisible(false);
+    }
   };
 
   const handleClearFilters = () => {
     console.log('Clearing all filters');
-    setFilterPlaceId(null);
-    setFilterPlaceName(null);
-    setFilterKeywords(null);
     
-    // Generate new seed when clearing filters
-    const newSeed = uuidv4();
-    setFeedSeed(newSeed);
-    console.log('Filters cleared - new seed generated:', newSeed);
-    
-    setFilterModalVisible(false);
+    // 🚨 FIX: Wrap clear handler with try/catch
+    try {
+      setFilterPlaceId(null);
+      setFilterPlaceName(null);
+      setFilterKeywords(null);
+      
+      // Generate new seed when clearing filters
+      const newSeed = uuidv4();
+      setFeedSeed(newSeed);
+      console.log('Filters cleared - new seed generated:', newSeed);
+      
+      setFilterModalVisible(false);
+    } catch (error) {
+      console.error('Error clearing filters:', error);
+      setFilterModalVisible(false);
+    }
   };
 
   const emptyText = activeFiltersCount > 0 
@@ -335,7 +362,8 @@ export default function HomeScreen() {
           />
         }
       >
-        {posts.length === 0 ? (
+        {/* 🚨 FIX: Check if posts is array and has length before rendering */}
+        {!Array.isArray(posts) || posts.length === 0 ? (
           <View style={styles.emptyContainer}>
             <IconSymbol 
               android_material_icon_name="videocam" 
@@ -348,15 +376,18 @@ export default function HomeScreen() {
           </View>
         ) : (
           <View style={styles.gridContainer}>
+            {/* 🚨 FIX: Use stable keyExtractor with post.id */}
             {posts.map((post, index) => (
-              <VideoGridItem
-                key={post.id}
-                post={post}
-                size={gridItemSize}
-                onPress={() => handleGridItemPress(post)}
-                shouldPlay={index < MAX_PLAYING_VIDEOS}
-                showFollowButton={false}
-              />
+              post && post.id ? (
+                <VideoGridItem
+                  key={post.id}
+                  post={post}
+                  size={gridItemSize}
+                  onPress={() => handleGridItemPress(post)}
+                  shouldPlay={index < MAX_PLAYING_VIDEOS}
+                  showFollowButton={false}
+                />
+              ) : null
             ))}
           </View>
         )}
