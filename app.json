@@ -1,15 +1,14 @@
-
 {
   "expo": {
-    "name": "Floomingo",
-    "slug": "floomingo",
+    "name": "Wanderlust",
+    "slug": "Wanderlust",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/IMG_1996.jpeg",
+    "icon": "./assets/images/Untitled (Logo).png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/IMG_1996.jpeg",
+      "image": "./assets/images/Untitled (Logo).png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -23,7 +22,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/IMG_1996.jpeg",
+        "foregroundImage": "./assets/images/Untitled (Logo).png",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
@@ -38,7 +37,7 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "floomingo",
+    "scheme": "Wanderlust",
     "experiments": {
       "typedRoutes": true
     },
