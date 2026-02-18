@@ -273,7 +273,6 @@ export default function UserProfileScreen() {
 
   const followerCountText = stats.follower_count.toString();
   const followingCountText = stats.following_count.toString();
-  const postCountText = stats.post_count.toString();
 
   const isOwnProfile = currentUserId === profileUserId;
 
@@ -354,10 +353,6 @@ export default function UserProfileScreen() {
           ) : null}
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>{postCountText}</Text>
-              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
-            </View>
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: textColor }]}>{followerCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>

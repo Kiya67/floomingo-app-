@@ -369,7 +369,6 @@ export default function UserProfileScreen() {
 
   const followerCountText = stats.follower_count.toString();
   const followingCountText = stats.following_count.toString();
-  const postCountText = stats.post_count.toString();
 
   const isOwnProfile = currentUserId === profileUserId;
   const blockButtonText = isBlocked ? 'Unblock User' : 'Block User';
@@ -464,10 +463,6 @@ export default function UserProfileScreen() {
           ) : null}
 
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: textColor }]}>{postCountText}</Text>
-              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
-            </View>
             <TouchableOpacity 
               style={styles.statItem}
               onPress={() => router.push(`/followers/${profileUserId}`)}
