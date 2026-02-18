@@ -4,11 +4,11 @@
     "slug": "Wanderlust",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon-quw.png",
+    "icon": "./assets/images/IMG_1996.jpeg",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/app-icon-quw.png",
+      "image": "./assets/images/IMG_1996.jpeg",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -21,7 +21,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/app-icon-quw.png",
+        "foregroundImage": "./assets/images/IMG_1996.jpeg",
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
