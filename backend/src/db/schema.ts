@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer, bigint } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer, bigint, index, check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const blocks = pgTable('blocks', {
   blockerId: text('blocker_id').notNull(),
@@ -76,3 +77,14 @@ export const postStats = pgTable('post_stats', {
   postId: uuid('post_id').primaryKey(),
   viewCount: bigint('view_count', { mode: 'number' }).default(0).notNull(),
 });
+
+export const follows = pgTable('follows', {
+  followerId: text('follower_id').notNull(),
+  followingId: text('following_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.followerId, table.followingId] }),
+  check('no_self_follow', sql`${table.followerId} != ${table.followingId}`),
+  index('follows_follower_idx').on(table.followerId),
+  index('follows_following_idx').on(table.followingId),
+]);
