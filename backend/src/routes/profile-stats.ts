@@ -60,8 +60,28 @@ export function registerProfileStatsRoutes(app: App) {
         .limit(1);
 
       if (stats.length === 0) {
-        app.logger.warn({ userId }, 'Profile stats not found');
-        return reply.status(404).send({ error: 'User not found' });
+        app.logger.info({ userId }, 'Profile stats not found, creating default stats');
+        // Auto-create default stats if they don't exist
+        await app.db.insert(schema.profileStats).values({
+          userId,
+          postCount: 0,
+          followerCount: 0,
+          followingCount: 0,
+        }).onConflictDoNothing();
+
+        // Fetch the newly created or existing stats
+        const [newStats] = await app.db.select({
+          user_id: schema.profileStats.userId,
+          post_count: schema.profileStats.postCount,
+          follower_count: schema.profileStats.followerCount,
+          following_count: schema.profileStats.followingCount,
+          updated_at: schema.profileStats.updatedAt,
+        }).from(schema.profileStats)
+          .where(eq(schema.profileStats.userId, userId))
+          .limit(1);
+
+        app.logger.info({ userId }, 'Default profile stats created');
+        return newStats;
       }
 
       app.logger.info({ userId }, 'Profile stats retrieved successfully');

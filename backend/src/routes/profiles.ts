@@ -281,10 +281,10 @@ export function registerProfileRoutes(app: App) {
     }
   });
 
-  // POST /api/profile/ensure - Ensure profile row exists for user
+  // POST /api/profile/ensure - Ensure profile and stats rows exist for user
   app.fastify.post('/api/profile/ensure', {
     schema: {
-      description: 'Ensure profile row exists for authenticated user',
+      description: 'Ensure profile and stats rows exist for authenticated user (call after signup)',
       tags: ['profile'],
       response: {
         200: {
@@ -312,9 +312,10 @@ export function registerProfileRoutes(app: App) {
 
     const userId = session.user.id;
 
-    app.logger.info({ userId }, 'Ensuring profile row exists');
+    app.logger.info({ userId }, 'Ensuring profile and stats rows exist');
 
     try {
+      // Ensure profile row exists
       await app.db
         .insert(schema.profiles)
         .values({
@@ -328,10 +329,21 @@ export function registerProfileRoutes(app: App) {
         })
         .onConflictDoNothing();
 
-      app.logger.info({ userId }, 'Profile row ensured');
+      // Ensure profile stats row exists
+      await app.db
+        .insert(schema.profileStats)
+        .values({
+          userId,
+          postCount: 0,
+          followerCount: 0,
+          followingCount: 0,
+        })
+        .onConflictDoNothing();
+
+      app.logger.info({ userId }, 'Profile and stats rows ensured');
       return { success: true };
     } catch (error) {
-      app.logger.error({ err: error, userId }, 'Failed to ensure profile row');
+      app.logger.error({ err: error, userId }, 'Failed to ensure profile rows');
       throw error;
     }
   });

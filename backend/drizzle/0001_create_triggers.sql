@@ -164,3 +164,20 @@ CREATE TRIGGER post_created_init_stats
 AFTER INSERT ON posts
 FOR EACH ROW
 EXECUTE FUNCTION init_post_stats();
+
+-- Function and Trigger: Initialize profile_stats when a profile is created
+CREATE OR REPLACE FUNCTION init_profile_stats()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO profile_stats (user_id, post_count, follower_count, following_count, updated_at)
+  VALUES (NEW.id, 0, 0, 0, NOW())
+  ON CONFLICT (user_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS profile_created_init_stats ON profiles;
+CREATE TRIGGER profile_created_init_stats
+AFTER INSERT ON profiles
+FOR EACH ROW
+EXECUTE FUNCTION init_profile_stats();
