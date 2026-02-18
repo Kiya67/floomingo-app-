@@ -1331,3 +1331,219 @@ describe('Account Feature', () => {
     expect(response.statusCode).not.toBe(200);
   });
 });
+
+describe('Profile Feature', () => {
+  let authToken: string;
+  let userId: string;
+  let otherUserId: string;
+
+  beforeAll(async () => {
+    // Create user 1 for profile tests
+    const signUpResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'profile-user1@example.com',
+        password: 'password123',
+        name: 'Profile User 1',
+      },
+    });
+
+    expect(signUpResponse.statusCode).toBe(200);
+    const data = JSON.parse(signUpResponse.payload);
+    userId = data.user.id;
+
+    // Sign in user 1
+    const signInResponse = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-in/email',
+      payload: {
+        email: 'profile-user1@example.com',
+        password: 'password123',
+      },
+    });
+
+    expect(signInResponse.statusCode).toBe(200);
+    authToken = signInResponse.cookies[0]?.value || '';
+
+    // Create user 2 for profile retrieval
+    const signUpResponse2 = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/auth/sign-up/email',
+      payload: {
+        email: 'profile-user2@example.com',
+        password: 'password123',
+        name: 'Profile User 2',
+      },
+    });
+
+    expect(signUpResponse2.statusCode).toBe(200);
+    const data2 = JSON.parse(signUpResponse2.payload);
+    otherUserId = data2.user.id;
+  });
+
+  afterAll(async () => {
+    // Cleanup if needed
+  });
+
+  it('should return 401 when getting own profile without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/profile',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should get authenticated user profile', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/profile',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('created_at');
+    expect(data).toHaveProperty('updated_at');
+  });
+
+  it('should return 404 when getting non-existent user profile', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: '/api/profile/00000000-0000-0000-0000-000000000000',
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('should get user profile by ID', async () => {
+    const response = await app.fastify.inject({
+      method: 'GET',
+      url: `/api/profile/${otherUserId}`,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.id).toBe(otherUserId);
+    expect(data).toHaveProperty('created_at');
+  });
+
+  it('should return 401 when updating profile without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        display_name: 'Updated Name',
+      },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should update authenticated user profile', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        display_name: 'Updated Display Name',
+        username: 'newusername',
+        bio: 'My bio',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.display_name).toBe('Updated Display Name');
+    expect(data.username).toBe('newusername');
+    expect(data.bio).toBe('My bio');
+  });
+
+  it('should return 400 when updating profile with invalid username format', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        username: 'in', // too short
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 400 when updating profile with invalid username characters', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        username: 'invalid-username', // contains hyphen
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 400 when updating profile with invalid avatar URL', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        avatar_url: 'not-a-url',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 400 when updating profile with invalid bio URL', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        bio_url: 'not-a-url',
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 400 when updating profile with bio exceeding max length', async () => {
+    const response = await app.fastify.inject({
+      method: 'PUT',
+      url: '/api/profile',
+      payload: {
+        bio: 'a'.repeat(501), // exceeds 500 char limit
+      },
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('should return 401 when ensuring profile without authentication', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/profile/ensure',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('should ensure profile exists for authenticated user', async () => {
+    const response = await app.fastify.inject({
+      method: 'POST',
+      url: '/api/profile/ensure',
+      cookies: { 'auth_token': authToken },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = JSON.parse(response.payload);
+    expect(data.success).toBe(true);
+  });
+});

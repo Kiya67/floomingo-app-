@@ -1,6 +1,17 @@
 import { pgTable, text, timestamp, primaryKey, uuid, uniqueIndex, integer, bigint, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
+export const profiles = pgTable('profiles', {
+  id: text('id').primaryKey(),
+  username: text('username').unique(),
+  displayName: text('display_name'),
+  avatarUrl: text('avatar_url'),
+  bioUrl: text('bio_url'),
+  bio: text('bio'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const blocks = pgTable('blocks', {
   blockerId: text('blocker_id').notNull(),
   blockedId: text('blocked_id').notNull(),
