@@ -7,7 +7,7 @@ import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
-import { getProfileStats, getUserPosts } from "@/utils/api";
+import { getFollowCounts } from "@/utils/supabaseHelpers";
 
 interface Profile {
   id: string;
@@ -29,7 +29,7 @@ interface Post {
   place_name: string | null;
   location_type: string | null;
   created_at: string;
-  view_count: number;
+  view_count?: number;
 }
 
 interface ProfileStats {
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
   };
 
   const fetchUserPosts = async () => {
-    console.log('Fetching user posts with view counts from backend API');
+    console.log('Fetching user posts');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -111,26 +111,17 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Use backend API to fetch posts with view counts
-      try {
-        const postsData = await getUserPosts(user.id);
-        console.log('User posts fetched successfully from backend API:', postsData.length);
-        setPosts(postsData);
-      } catch (apiError) {
-        console.error('Error fetching posts from backend API:', apiError);
-        // Fallback to Supabase direct query without view counts
-        const { data, error } = await supabase
-          .from('posts')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error fetching posts from Supabase:', error);
-        } else {
-          console.log('User posts fetched successfully from Supabase fallback:', data?.length || 0);
-          setPosts(data || []);
-        }
+      if (error) {
+        console.error('Error fetching posts:', error);
+      } else {
+        console.log('User posts fetched successfully:', data?.length || 0);
+        setPosts(data || []);
       }
     } catch (error) {
       console.error('Error in fetchUserPosts:', error);
@@ -140,7 +131,7 @@ export default function ProfileScreen() {
   };
 
   const fetchStats = async () => {
-    console.log('Fetching profile stats from backend API');
+    console.log('Fetching profile stats using Supabase client');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -149,31 +140,26 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Use backend API to fetch stats
-      try {
-        const statsData = await getProfileStats(user.id);
-        console.log('Profile stats fetched successfully from backend:', statsData);
-        setStats({
-          follower_count: statsData.follower_count || 0,
-          following_count: statsData.following_count || 0,
-          post_count: statsData.post_count || 0,
-        });
-      } catch (apiError) {
-        console.error('Error fetching stats from backend API:', apiError);
-        // Fallback to Supabase direct query if backend fails
-        const { data, error } = await supabase
-          .from('profile_stats')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
+      // Use Supabase client to fetch follow counts
+      const followCounts = await getFollowCounts(user.id);
+      
+      // Get post count
+      const { count: postCount } = await supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
 
-        if (error) {
-          console.error('Error fetching stats from Supabase:', error);
-        } else {
-          console.log('Profile stats fetched successfully from Supabase fallback:', data);
-          setStats(data || { follower_count: 0, following_count: 0, post_count: 0 });
-        }
-      }
+      setStats({
+        follower_count: followCounts.followers,
+        following_count: followCounts.following,
+        post_count: postCount ?? 0,
+      });
+      
+      console.log('Profile stats fetched successfully:', {
+        followers: followCounts.followers,
+        following: followCounts.following,
+        posts: postCount ?? 0,
+      });
     } catch (error) {
       console.error('Error in fetchStats:', error);
     }
@@ -417,20 +403,24 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {posts.map((post, index) => (
-                <VideoGridItem
-                  key={post.id}
-                  post={post}
-                  size={gridItemSize}
-                  shouldPlay={false}
-                  onPress={() => {
-                    console.log('User tapped video:', post.id);
-                    router.push(`/video/${post.id}`);
-                  }}
-                  onLongPress={() => handleLongPress(post)}
-                  showViewCount={false}
-                />
-              ))}
+              {posts.map((post, index) => {
+                // CRITICAL: Safe render with guard
+                if (!post) return null;
+                return (
+                  <VideoGridItem
+                    key={post.id}
+                    post={post}
+                    size={gridItemSize}
+                    shouldPlay={false}
+                    onPress={() => {
+                      console.log('User tapped video:', post.id);
+                      router.push(`/video/${post.id}`);
+                    }}
+                    onLongPress={() => handleLongPress(post)}
+                    showViewCount={false}
+                  />
+                );
+              })}
             </View>
           )}
         </View>

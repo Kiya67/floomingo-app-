@@ -18,6 +18,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useColorScheme, Alert } from "react-native";
 import { useNetworkState } from "expo-network";
 import { supabase } from "@/lib/supabase";
+import { ensureProfileRow } from "@/utils/supabaseHelpers";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -40,13 +41,34 @@ export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       console.log('RootLayout - Initial session check:', !!session);
+      
+      // CRITICAL: Ensure profile row exists on app launch
+      if (session) {
+        try {
+          await ensureProfileRow();
+          console.log('RootLayout - Profile row ensured on app launch');
+        } catch (error) {
+          console.error('RootLayout - Error ensuring profile row:', error);
+        }
+      }
+      
       setIsReady(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       console.log('RootLayout - Auth state changed:', _event, !!session);
+      
+      // CRITICAL: Ensure profile row exists after login
+      if (_event === 'SIGNED_IN' && session) {
+        try {
+          await ensureProfileRow();
+          console.log('RootLayout - Profile row ensured after login');
+        } catch (error) {
+          console.error('RootLayout - Error ensuring profile row after login:', error);
+        }
+      }
     });
 
     return () => {

@@ -15,14 +15,13 @@ import {
 } from 'react-native';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { apiGet } from '@/utils/api';
+import { getFollowers } from '@/utils/supabaseHelpers';
 
 interface FollowerUser {
   id: string;
   username: string | null;
   display_name: string;
   avatar_url: string | null;
-  created_at: string;
 }
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
@@ -52,9 +51,9 @@ export default function FollowersListScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchFollowers = useCallback(async () => {
-    console.log('Fetching followers for user:', id);
+    console.log('Fetching followers for user using Supabase client:', id);
     try {
-      const data = await apiGet<FollowerUser[]>(`/api/followers/${id}`);
+      const data = await getFollowers(id);
       console.log('Followers fetched:', data.length);
       setFollowers(data);
     } catch (error) {

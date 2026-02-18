@@ -8,7 +8,8 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { VideoGridItem } from '@/components/VideoGridItem';
 import { Modal } from '@/components/ui/Modal';
 import { Toast } from '@/components/ui/Toast';
-import { authenticatedApiCall, getProfileStats, followUser, unfollowUser, getFollowStatus } from '@/utils/api';
+import { getIsFollowing, getFollowCounts, followUser as supabaseFollowUser, unfollowUser as supabaseUnfollowUser } from '@/utils/supabaseHelpers';
+import { authenticatedApiCall } from '@/utils/api';
 
 interface Profile {
   id: string;
@@ -140,33 +141,28 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchStats = useCallback(async () => {
-    console.log('Fetching profile stats for user from backend API:', profileUserId);
+    console.log('Fetching profile stats using Supabase client:', profileUserId);
     try {
-      // Use backend API to fetch stats
-      try {
-        const statsData = await getProfileStats(profileUserId as string);
-        console.log('Stats fetched successfully from backend:', statsData);
-        setStats({
-          follower_count: statsData.follower_count || 0,
-          following_count: statsData.following_count || 0,
-          post_count: statsData.post_count || 0,
-        });
-      } catch (apiError) {
-        console.error('Error fetching stats from backend API:', apiError);
-        // Fallback to Supabase direct query if backend fails
-        const { data, error } = await supabase
-          .from('profile_stats')
-          .select('*')
-          .eq('user_id', profileUserId)
-          .single();
+      // Use Supabase client to fetch follow counts
+      const followCounts = await getFollowCounts(profileUserId as string);
+      
+      // Get post count
+      const { count: postCount } = await supabase
+        .from('posts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profileUserId);
 
-        if (error) {
-          console.error('Error fetching stats from Supabase:', error);
-        } else if (data) {
-          console.log('Stats fetched successfully from Supabase fallback:', data);
-          setStats(data);
-        }
-      }
+      setStats({
+        follower_count: followCounts.followers,
+        following_count: followCounts.following,
+        post_count: postCount ?? 0,
+      });
+      
+      console.log('Stats fetched successfully:', {
+        followers: followCounts.followers,
+        following: followCounts.following,
+        posts: postCount ?? 0,
+      });
     } catch (error) {
       console.error('Error in fetchStats:', error);
     }
@@ -193,29 +189,10 @@ export default function UserProfileScreen() {
       // Check block status
       await checkBlockStatus(profileUserId as string, user.id);
 
-      // Use backend API to check follow status
-      try {
-        const statusData = await getFollowStatus(profileUserId as string);
-        console.log('Follow status from backend:', statusData.isFollowing);
-        setIsFollowing(statusData.isFollowing);
-      } catch (apiError) {
-        console.error('Error checking follow status from backend API:', apiError);
-        // Fallback to Supabase direct query if backend fails
-        const { data, error } = await supabase
-          .from('follows')
-          .select('*')
-          .eq('follower_id', user.id)
-          .eq('following_id', profileUserId)
-          .limit(1);
-
-        if (error) {
-          console.error('Error checking follow status from Supabase:', error);
-        } else {
-          const following = data && data.length > 0;
-          console.log('Follow status from Supabase fallback:', following);
-          setIsFollowing(following);
-        }
-      }
+      // Use Supabase client to check follow status
+      const following = await getIsFollowing(user.id, profileUserId as string);
+      console.log('Follow status from Supabase:', following);
+      setIsFollowing(following);
     } catch (error) {
       console.error('Error in checkFollowStatus:', error);
     }
@@ -262,22 +239,22 @@ export default function UserProfileScreen() {
 
       if (isFollowing) {
         console.log('Unfollowing user:', profileUserId);
-        // Use backend API to unfollow
-        const response = await unfollowUser(profileUserId as string);
+        // Use Supabase client to unfollow
+        await supabaseUnfollowUser(currentUserId, profileUserId as string);
         
         setIsFollowing(false);
-        // Update follower count from backend response
-        setStats(prev => ({ ...prev, follower_count: response.follower_count }));
-        console.log('Successfully unfollowed user, new follower count:', response.follower_count);
+        // Refresh stats to get updated follower count
+        await fetchStats();
+        console.log('Successfully unfollowed user');
       } else {
         console.log('Following user:', profileUserId);
-        // Use backend API to follow
-        const response = await followUser(profileUserId as string);
+        // Use Supabase client to follow
+        await supabaseFollowUser(currentUserId, profileUserId as string);
         
         setIsFollowing(true);
-        // Update follower count from backend response
-        setStats(prev => ({ ...prev, follower_count: response.follower_count }));
-        console.log('Successfully followed user, new follower count:', response.follower_count);
+        // Refresh stats to get updated follower count
+        await fetchStats();
+        console.log('Successfully followed user');
       }
     } catch (error: any) {
       console.error('Error toggling follow:', error);
@@ -491,14 +468,20 @@ export default function UserProfileScreen() {
               <Text style={[styles.statValue, { color: textColor }]}>{postCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Posts</Text>
             </View>
-            <View style={styles.statItem}>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => router.push(`/followers/${profileUserId}`)}
+            >
               <Text style={[styles.statValue, { color: textColor }]}>{followerCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Followers</Text>
-            </View>
-            <View style={styles.statItem}>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => router.push(`/following/${profileUserId}`)}
+            >
               <Text style={[styles.statValue, { color: textColor }]}>{followingCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
-            </View>
+            </TouchableOpacity>
           </View>
 
           {!isOwnProfile && (
@@ -544,15 +527,19 @@ export default function UserProfileScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {posts.map((post, index) => (
-                <VideoGridItem
-                  key={post.id}
-                  post={post}
-                  size={gridItemSize}
-                  onPress={() => router.push(`/video/${post.id}`)}
-                  shouldPlay={false}
-                />
-              ))}
+              {posts.map((post, index) => {
+                // CRITICAL: Safe render with guard
+                if (!post) return null;
+                return (
+                  <VideoGridItem
+                    key={post.id}
+                    post={post}
+                    size={gridItemSize}
+                    onPress={() => router.push(`/video/${post.id}`)}
+                    shouldPlay={false}
+                  />
+                );
+              })}
             </View>
           )}
         </View>

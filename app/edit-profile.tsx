@@ -206,15 +206,17 @@ export default function EditProfileScreen() {
         return;
       }
 
-      // CRITICAL: Check username availability before saving (exclude current user)
-      if (username && username.trim()) {
-        console.log('Checking username availability:', username);
+      // CRITICAL: Normalize username to lowercase and check availability
+      const normalizedUsername = username.trim().toLowerCase();
+      
+      if (normalizedUsername) {
+        console.log('Checking username availability:', normalizedUsername);
         const { data: existingUsers, error: checkError } = await supabase
           .from('profiles')
           .select('id')
-          .eq('username', username.trim())
+          .eq('username', normalizedUsername)
           .neq('id', user.id) // Exclude current user
-          .limit(1);
+          .maybeSingle();
 
         if (checkError) {
           console.error('Error checking username:', checkError);
@@ -223,8 +225,8 @@ export default function EditProfileScreen() {
           return;
         }
 
-        if (existingUsers && existingUsers.length > 0) {
-          console.log('Username already taken:', username);
+        if (existingUsers) {
+          console.log('Username already taken:', normalizedUsername);
           Alert.alert('Username Taken', 'This username is already taken. Please choose another username.');
           setSaving(false);
           return;
@@ -233,7 +235,7 @@ export default function EditProfileScreen() {
 
       console.log('Updating profile:', {
         display_name: displayName,
-        username: username || null,
+        username: normalizedUsername || null,
         bio: bio || null,
         avatar_url: avatarUrl,
         cover_url: coverUrl,
@@ -243,7 +245,7 @@ export default function EditProfileScreen() {
         .from('profiles')
         .update({
           display_name: displayName,
-          username: username || null,
+          username: normalizedUsername || null,
           bio: bio || null,
           avatar_url: avatarUrl,
           cover_url: coverUrl,
@@ -397,6 +399,9 @@ export default function EditProfileScreen() {
               onChangeText={setUsername}
               autoCapitalize="none"
             />
+            <Text style={[styles.helperText, { color: textSecondaryColor }]}>
+              Username will be converted to lowercase
+            </Text>
           </View>
 
           <View style={styles.inputContainer}>
@@ -523,6 +528,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
+  },
+  helperText: {
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
   textArea: {
     height: 100,
