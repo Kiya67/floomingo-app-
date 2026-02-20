@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/ui/Modal";
 import { ensureProfileRow } from "@/utils/supabaseHelpers";
+import { markSignupComplete } from "@/components/OnboardingTooltip";
 
 type Mode = "signin" | "signup";
 
@@ -136,6 +137,10 @@ export default function AuthScreen() {
           // Don't block signup if profile creation fails - it will be retried in _layout.tsx
         }
       }
+
+      // Mark signup as complete for onboarding tooltip
+      await markSignupComplete();
+      console.log('Signup marked as complete for onboarding');
       
       // Wait a moment for session to be established
       await new Promise(resolve => setTimeout(resolve, 300));

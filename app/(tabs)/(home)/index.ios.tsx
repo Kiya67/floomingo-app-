@@ -5,8 +5,9 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { colors } from "@/styles/commonStyles";
 import { supabase } from "@/lib/supabase";
 import { VideoGridItem } from "@/components/VideoGridItem";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
+import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
 
 interface Post {
   id: string;
@@ -45,6 +46,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [showOnboardingTooltip, setShowOnboardingTooltip] = useState(false);
 
   // Filter state
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
@@ -53,6 +55,24 @@ export default function HomeScreen() {
 
   // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
+
+  // Check if we should show onboarding tooltip when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const checkOnboarding = async () => {
+        const shouldShow = await shouldShowOnboardingTooltip();
+        console.log('HomeScreen - Should show onboarding tooltip:', shouldShow);
+        if (shouldShow) {
+          // Delay slightly to ensure UI is ready
+          setTimeout(() => {
+            setShowOnboardingTooltip(true);
+          }, 500);
+        }
+      };
+      
+      checkOnboarding();
+    }, [])
+  );
 
   const fetchUnreadNotifications = useCallback(async () => {
     try {
@@ -202,6 +222,11 @@ export default function HomeScreen() {
     }
   };
 
+  const handleDismissOnboarding = () => {
+    console.log('HomeScreen - Dismissing onboarding tooltip');
+    setShowOnboardingTooltip(false);
+  };
+
   const emptyText = activeFiltersCount > 0 
     ? 'No videos found. Try clearing filters.' 
     : 'No videos yet. Be the first to post!';
@@ -316,6 +341,11 @@ export default function HomeScreen() {
         initialPlaceId={filterPlaceId}
         initialPlaceName={filterPlaceName}
         initialKeywords={filterKeywords}
+      />
+
+      <OnboardingTooltip
+        visible={showOnboardingTooltip}
+        onDismiss={handleDismissOnboarding}
       />
     </View>
   );
