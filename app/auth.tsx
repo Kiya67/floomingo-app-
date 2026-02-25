@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/ui/Modal";
 import { ensureProfileRow } from "@/utils/supabaseHelpers";
 import { markSignupComplete } from "@/components/OnboardingTooltip";
+import { IconSymbol } from "@/components/IconSymbol";
 
 type Mode = "signin" | "signup";
 
@@ -32,6 +33,7 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [errorModalVisible, setErrorModalVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const checkUser = useCallback(async () => {
     try {
@@ -194,15 +196,28 @@ export default function AuthScreen() {
               autoCorrect={false}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="rgba(255, 255, 255, 0.7)"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Password"
+                placeholderTextColor="rgba(255, 255, 255, 0.7)"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
+              >
+                <IconSymbol
+                  ios_icon_name={showPassword ? "eye.slash.fill" : "eye.fill"}
+                  android_material_icon_name={showPassword ? "visibility-off" : "visibility"}
+                  size={24}
+                  color="rgba(255, 255, 255, 0.9)"
+                />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={[styles.primaryButton, loading && styles.buttonDisabled]}
@@ -282,6 +297,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     color: "#fff",
+  },
+  passwordContainer: {
+    position: "relative",
+    marginBottom: 16,
+  },
+  passwordInput: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingRight: 50,
+    fontSize: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    color: "#fff",
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 12,
+    top: 13,
+    padding: 4,
   },
   primaryButton: {
     height: 50,
