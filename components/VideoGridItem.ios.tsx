@@ -81,7 +81,7 @@ export function VideoGridItem({ post, size, shouldPlay = false, onPress, onLongP
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 8,
+    borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: '#000',
     position: 'relative',
