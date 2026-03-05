@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, ActivityIndicator, Dimensions, StatusBar, Image, ImageSourcePropType, FlatList, Share, TextInput, Modal, Alert, ScrollView } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { supabase } from '@/lib/supabase';
@@ -9,6 +9,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { SaveToTripsModal } from '@/components/SaveToTripsModal';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { authenticatedGet, authenticatedPost, authenticatedDelete, apiGet } from '@/utils/api';
 
 interface Post {
   id: string;
@@ -23,6 +24,15 @@ interface Post {
     display_name: string;
     avatar_url: string | null;
   };
+}
+
+interface PostLocation {
+  id: string;
+  post_id: string;
+  place_id: string;
+  place_name: string;
+  location_type: string;
+  display_order: number;
 }
 
 interface PostStats {
@@ -207,12 +217,15 @@ export default function VideoFullScreenScreen() {
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
   
   const [postInteractions, setPostInteractions] = useState<Map<string, {
     isLiked: boolean;
     isSaved: boolean;
     stats: PostStats;
   }>>(new Map());
+  
+  const [postLocations, setPostLocations] = useState<Map<string, PostLocation[]>>(new Map());
   
   const [likeLoading, setLikeLoading] = useState(false);
   
@@ -226,6 +239,38 @@ export default function VideoFullScreenScreen() {
   
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
+
+  const loadPostLocations = useCallback(async (postId: string) => {
+    console.log('[API] Loading locations for post:', postId);
+    
+    try {
+      const data = await apiGet<PostLocation[]>(`/api/posts/${postId}/locations`);
+      
+      if (data && data.length > 0) {
+        console.log('[API] Loaded', data.length, 'locations for post:', postId);
+        setPostLocations(prev => {
+          const newMap = new Map(prev);
+          newMap.set(postId, data);
+          return newMap;
+        });
+      } else {
+        console.log('[API] No locations found for post:', postId);
+        setPostLocations(prev => {
+          const newMap = new Map(prev);
+          newMap.set(postId, []);
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.error('[API] Error in loadPostLocations:', error);
+      // Set empty array on error to avoid stale data
+      setPostLocations(prev => {
+        const newMap = new Map(prev);
+        newMap.set(postId, []);
+        return newMap;
+      });
+    }
+  }, []);
 
   const loadPostInteractions = useCallback(async (postId: string, userId: string) => {
     console.log('Loading interactions for post:', postId);
@@ -266,6 +311,9 @@ export default function VideoFullScreenScreen() {
         newMap.set(postId, { isLiked, isSaved, stats });
         return newMap;
       });
+      
+      // Also load locations for this post
+      await loadPostLocations(postId);
     } catch (error) {
       console.error('Error loading post interactions:', error);
       setPostInteractions(prev => {
@@ -278,24 +326,59 @@ export default function VideoFullScreenScreen() {
         return newMap;
       });
     }
-  }, []);
+  }, [loadPostLocations]);
+
+  const incrementViewCount = useCallback(async (postId: string, postOwnerId: string) => {
+    // Don't increment if already viewed in this session
+    if (viewedPostIds.has(postId)) {
+      console.log('[View Count] Post already viewed in this session:', postId);
+      return;
+    }
+
+    // Don't increment if viewer is the post owner
+    if (currentUserId === postOwnerId) {
+      console.log('[View Count] Skipping view increment - viewer is post owner');
+      return;
+    }
+
+    // Don't increment if not authenticated
+    if (!currentUserId) {
+      console.log('[View Count] Skipping view increment - not authenticated');
+      return;
+    }
+
+    console.log('[View Count] Incrementing view count for post:', postId);
+
+    try {
+      const data = await authenticatedPost<{ view_count: number | null }>('/api/rpc/increment-view', { postId });
+      console.log('[View Count] View count incremented successfully:', data.view_count);
+
+      // Mark as viewed in this session
+      setViewedPostIds(prev => new Set(prev).add(postId));
+
+      // Update local post data with new view count if returned
+      if (data.view_count !== null && data.view_count !== undefined) {
+        setPosts(prevPosts =>
+          prevPosts.map(p =>
+            p.id === postId
+              ? { ...p, view_count: data.view_count }
+              : p
+          )
+        );
+      }
+    } catch (error) {
+      console.error('[View Count] Error incrementing view count:', error);
+    }
+  }, [currentUserId, viewedPostIds]);
 
   const checkBlockStatus = useCallback(async (targetUserId: string, currentUserId: string) => {
-    console.log('Checking block status for user:', targetUserId);
+    console.log('[API] Checking block status for user:', targetUserId);
     try {
-      const { data, error } = await supabase
-        .from('blocks')
-        .select('*')
-        .or(`and(blocker_id.eq.${currentUserId},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${currentUserId})`)
-        .limit(1);
-      
-      if (error) throw error;
-      
-      const blocked = data && data.length > 0;
-      setIsBlocked(blocked);
-      console.log('Block status:', blocked);
+      const data = await authenticatedGet<{ isBlocked: boolean }>(`/api/blocks/check/${targetUserId}`);
+      setIsBlocked(data.isBlocked || false);
+      console.log('[API] Block status:', data.isBlocked);
     } catch (error) {
-      console.error('Error checking block status:', error);
+      console.error('[API] Error checking block status:', error);
       setIsBlocked(false);
     }
   }, []);
@@ -330,7 +413,20 @@ export default function VideoFullScreenScreen() {
         await checkBlockStatus(initialPost.user_id, user.id);
       }
 
-      const { data: morePosts, error: moreError } = await supabase
+      let blockedUserIds: string[] = [];
+      if (user) {
+        try {
+          const blocksData = await authenticatedGet<Array<{ blockerId: string; blockedId: string }>>('/api/blocks');
+          console.log('[API] Blocked users fetched:', blocksData.length);
+          blockedUserIds = blocksData.map((block) =>
+            block.blockerId === user.id ? block.blockedId : block.blockerId
+          );
+        } catch (error) {
+          console.error('[API] Error fetching blocked users:', error);
+        }
+      }
+
+      let morePostsQuery = supabase
         .from('posts')
         .select(`
           *,
@@ -342,6 +438,12 @@ export default function VideoFullScreenScreen() {
         .neq('id', id)
         .order('created_at', { ascending: false })
         .limit(10);
+
+      if (blockedUserIds.length > 0) {
+        morePostsQuery = morePostsQuery.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
+      }
+
+      const { data: morePosts, error: moreError } = await morePostsQuery;
 
       const allPosts = [initialPost, ...(morePosts || [])];
       
@@ -376,6 +478,9 @@ export default function VideoFullScreenScreen() {
       if (currentPost && currentUserId) {
         loadPostInteractions(currentPost.id, currentUserId);
         checkBlockStatus(currentPost.user_id, currentUserId);
+
+        // Increment view count when video becomes visible
+        incrementViewCount(currentPost.id, currentPost.user_id);
         
         if (currentPost.user_id !== currentUserId) {
           supabase
@@ -392,7 +497,7 @@ export default function VideoFullScreenScreen() {
         }
       }
     }
-  }, [posts, currentUserId, loadPostInteractions, checkBlockStatus]);
+  }, [posts, currentUserId, loadPostInteractions, checkBlockStatus, incrementViewCount]);
 
   const viewabilityConfig = {
     itemVisiblePercentThreshold: 50,
@@ -792,28 +897,19 @@ export default function VideoFullScreenScreen() {
 
     try {
       if (isBlocked) {
-        console.log('Unblocking user:', currentPost.user_id);
-        const { error } = await supabase
-          .from('blocks')
-          .delete()
-          .eq('blocker_id', currentUserId)
-          .eq('blocked_id', currentPost.user_id);
-
-        if (error) throw error;
+        console.log('[API] Unblocking user:', currentPost.user_id);
+        const data = await authenticatedDelete<{ success: boolean }>(`/api/blocks/${currentPost.user_id}`);
+        console.log('[API] Unblock response:', data);
 
         setIsBlocked(false);
         Alert.alert('User unblocked');
-        console.log('User unblocked successfully');
+        console.log('[API] User unblocked successfully');
       } else {
-        console.log('Blocking user:', currentPost.user_id);
-        const { error: blockError } = await supabase
-          .from('blocks')
-          .insert({
-            blocker_id: currentUserId,
-            blocked_id: currentPost.user_id,
-          });
-
-        if (blockError) throw blockError;
+        console.log('[API] Blocking user:', currentPost.user_id);
+        const data = await authenticatedPost<{ success: boolean }>('/api/blocks', {
+          blocked_id: currentPost.user_id,
+        });
+        console.log('[API] Block response:', data);
 
         console.log('Unfollowing blocked user');
         await supabase
@@ -824,12 +920,12 @@ export default function VideoFullScreenScreen() {
         setIsBlocked(true);
         setIsFollowing(false);
         Alert.alert('User blocked');
-        console.log('User blocked successfully');
+        console.log('[API] User blocked successfully');
 
         router.back();
       }
     } catch (error) {
-      console.error('Error blocking/unblocking user:', error);
+      console.error('[API] Error blocking/unblocking user:', error);
       Alert.alert('Error', 'Failed to update block status');
     } finally {
       setBlockLoading(false);
@@ -955,21 +1051,59 @@ export default function VideoFullScreenScreen() {
               {caption ? (
                 <Text style={styles.caption} numberOfLines={3}>{caption}</Text>
               ) : null}
-              {placeName ? (
-                <TouchableOpacity 
-                  style={styles.locationRow}
-                  onPress={() => handleLocationPress(post)}
-                  activeOpacity={0.7}
-                >
-                  <IconSymbol 
-                    ios_icon_name="mappin.circle.fill"
-                    android_material_icon_name="location-on" 
-                    size={16} 
-                    color="#FF69B4"
-                  />
-                  <Text style={styles.placeName}>{placeName}</Text>
-                </TouchableOpacity>
-              ) : null}
+              
+              {/* Display multiple locations in horizontal scroll */}
+              {(() => {
+                const locations = postLocations.get(post.id) || [];
+                if (locations.length > 0) {
+                  return (
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.locationsScroll}
+                      contentContainerStyle={styles.locationsScrollContent}
+                    >
+                      {locations.map((location, index) => (
+                        <TouchableOpacity 
+                          key={location.id}
+                          style={styles.locationChipVideo}
+                          onPress={() => {
+                            console.log('User tapped location chip:', location.place_name);
+                            router.push(`/location/${location.place_id}`);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <IconSymbol 
+                            ios_icon_name="mappin.circle.fill"
+                            android_material_icon_name="location-on" 
+                            size={14} 
+                            color="#FF69B4"
+                          />
+                          <Text style={styles.locationChipVideoText}>{location.place_name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  );
+                } else if (placeName) {
+                  // Fallback to old single location display for backward compatibility
+                  return (
+                    <TouchableOpacity 
+                      style={styles.locationRow}
+                      onPress={() => handleLocationPress(post)}
+                      activeOpacity={0.7}
+                    >
+                      <IconSymbol 
+                        ios_icon_name="mappin.circle.fill"
+                        android_material_icon_name="location-on" 
+                        size={16} 
+                        color="#FF69B4"
+                      />
+                      <Text style={styles.placeName}>{placeName}</Text>
+                    </TouchableOpacity>
+                  );
+                }
+                return null;
+              })()}
               
               <View style={styles.actionButtons}>
                 <TouchableOpacity 
@@ -1466,6 +1600,29 @@ const styles = StyleSheet.create({
   },
   placeName: {
     fontSize: 14,
+    color: '#FF69B4',
+    fontWeight: '600',
+  },
+  locationsScroll: {
+    maxHeight: 40,
+  },
+  locationsScrollContent: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  locationChipVideo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 105, 180, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 105, 180, 0.3)',
+  },
+  locationChipVideoText: {
+    fontSize: 13,
     color: '#FF69B4',
     fontWeight: '600',
   },

@@ -455,6 +455,16 @@ export const recalculateProfileStats = async (userId: string): Promise<Recalcula
 // POSTS API HELPERS
 // ============================================
 
+export interface PostLocation {
+  id: string;
+  post_id: string;
+  place_id: string;
+  place_name: string;
+  location_type: string;
+  display_order: number;
+  created_at: string;
+}
+
 export interface PostWithViewCount {
   id: string;
   user_id: string;
@@ -476,6 +486,35 @@ export interface PostWithViewCount {
 export const getUserPosts = async (userId: string): Promise<PostWithViewCount[]> => {
   console.log('[API] Fetching posts for user:', userId);
   return apiGet<PostWithViewCount[]>(`/api/users/${userId}/posts`);
+};
+
+/**
+ * Get all locations for a post
+ */
+export const getPostLocations = async (postId: string): Promise<PostLocation[]> => {
+  console.log('[API] Fetching locations for post:', postId);
+  return apiGet<PostLocation[]>(`/api/posts/${postId}/locations`);
+};
+
+/**
+ * Add a location to a post
+ * CRITICAL: Requires Supabase access token, user must own the post
+ */
+export const addPostLocation = async (
+  postId: string,
+  location: { place_id: string; place_name: string; location_type: string }
+): Promise<PostLocation> => {
+  console.log('[API] Adding location to post:', postId, location);
+  return authenticatedPost<PostLocation>(`/api/posts/${postId}/locations`, location);
+};
+
+/**
+ * Remove a location from a post
+ * CRITICAL: Requires Supabase access token, user must own the post
+ */
+export const removePostLocation = async (postId: string, locationId: string): Promise<{ success: boolean }> => {
+  console.log('[API] Removing location from post:', postId, 'location:', locationId);
+  return authenticatedDelete<{ success: boolean }>(`/api/posts/${postId}/locations/${locationId}`);
 };
 
 /**

@@ -9,9 +9,15 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/lib/supabase';
-import 'react-native-get-random-values';
-import { v4 as uuidv4 } from 'uuid';
+
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { authenticatedPost } from '@/utils/api';
+
+interface SelectedLocation {
+  place_id: string;
+  main_text: string;
+  location_type: string;
+}
 
 export default function AddScreen() {
   const router = useRouter();
@@ -27,11 +33,7 @@ export default function AddScreen() {
 
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
-  const [selectedPlace, setSelectedPlace] = useState<{
-    place_id: string;
-    main_text: string;
-    location_type: string;
-  } | null>(null);
+  const [selectedLocations, setSelectedLocations] = useState<SelectedLocation[]>([]);
   const [isPosting, setIsPosting] = useState(false);
 
   // Video player for preview
@@ -46,25 +48,40 @@ export default function AddScreen() {
     return () => console.log('AddScreen unmounted');
   }, []);
 
-  // Handle location selection from search screen - ONLY update location, preserve video and caption
+  // Handle location selection from search screen - ADD to array, don't replace
   useEffect(() => {
     if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-      console.log('Location selected from search - updating ONLY location state:', {
+      console.log('Location selected from search - ADDING to locations array:', {
         placeId: params.selectedPlaceId,
         placeName: params.selectedPlaceName,
         locationType: params.selectedLocationType,
-        preservingVideo: videoUri,
-        preservingCaption: caption,
+        currentLocations: selectedLocations.length,
       });
       
-      // Only update location, don't touch video or caption
-      setSelectedPlace({
+      const newLocation: SelectedLocation = {
         place_id: params.selectedPlaceId as string,
         main_text: params.selectedPlaceName as string,
         location_type: params.selectedLocationType as string,
+      };
+      
+      // Check if location already exists (avoid duplicates)
+      const alreadyExists = selectedLocations.some(loc => loc.place_id === newLocation.place_id);
+      
+      if (!alreadyExists) {
+        setSelectedLocations(prev => [...prev, newLocation]);
+        console.log('Location added successfully. Total locations:', selectedLocations.length + 1);
+      } else {
+        console.log('Location already exists in array, skipping duplicate');
+      }
+      
+      // Clear the params after processing to avoid re-adding on re-render
+      router.setParams({
+        selectedPlaceId: undefined,
+        selectedPlaceName: undefined,
+        selectedLocationType: undefined,
       });
     }
-  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
+  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType, router, selectedLocations]);
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
@@ -112,7 +129,7 @@ export default function AddScreen() {
     setIsPosting(true);
     
     try {
-      console.log('Starting post creation process');
+      console.log('Starting post creation process with', selectedLocations.length, 'locations');
       
       // Get authenticated user
       const { data: { user } } = await supabase.auth.getUser();
@@ -126,34 +143,40 @@ export default function AddScreen() {
 
       console.log('Authenticated user ID:', user.id);
 
-      // Step 2: Create IDs + paths for video_public bucket
-      const postId = uuidv4();
+      // Step 2: Create paths for video_public bucket
       const timestamp = Date.now();
       const videoPath = `videos/${user.id}/${timestamp}.mp4`;
       const thumbPath = `thumbs/${user.id}/${timestamp}.jpg`;
       
-      console.log('Generated postId:', postId);
       console.log('Video path for video_public bucket:', videoPath);
       console.log('Thumbnail path for video_public bucket:', thumbPath);
 
-      // Step 3: Upload VIDEO to Supabase Storage (video_public bucket)
-      console.log('Step 3: Uploading video to video_public bucket');
+      // Step 3: Read video file as blob
+      console.log('Step 3: Reading video file from URI:', videoUri);
+      const videoFileInfo = await FileSystem.getInfoAsync(videoUri);
+      console.log('Video file info:', videoFileInfo);
       
-      const videoFormData = new FormData();
+      if (!videoFileInfo.exists) {
+        throw new Error('Video file does not exist');
+      }
+
+      // Read file as base64
+      const videoBase64 = await FileSystem.readAsStringAsync(videoUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
-      const videoFile = {
-        uri: videoUri,
-        type: 'video/mp4',
-        name: `${timestamp}.mp4`,
-      } as any;
-      
-      videoFormData.append('file', videoFile);
-      
-      console.log('Uploading video via FormData to video_public bucket');
+      console.log('Video file read successfully, size:', videoBase64.length, 'bytes (base64)');
+
+      // Convert base64 to blob
+      const videoBlob = await fetch(`data:video/mp4;base64,${videoBase64}`).then(r => r.blob());
+      console.log('Video blob created, size:', videoBlob.size, 'bytes');
+
+      // Step 4: Upload VIDEO to Supabase Storage (video_public bucket)
+      console.log('Step 4: Uploading video to video_public bucket');
       
       const { data: videoUploadData, error: videoUploadError } = await supabase.storage
         .from('video_public')
-        .upload(videoPath, videoFormData, {
+        .upload(videoPath, videoBlob, {
           contentType: 'video/mp4',
           cacheControl: '3600',
           upsert: false,
@@ -166,7 +189,7 @@ export default function AddScreen() {
 
       console.log('Video uploaded successfully to video_public:', videoUploadData);
 
-      // Step 4: Get PUBLIC URL for video (no signed URL needed)
+      // Step 5: Get PUBLIC URL for video (no signed URL needed)
       const { data: videoPublicUrlData } = supabase.storage
         .from('video_public')
         .getPublicUrl(videoPath);
@@ -178,8 +201,8 @@ export default function AddScreen() {
       const videoPublicUrl = videoPublicUrlData.publicUrl;
       console.log('✅ VIDEO UPLOAD SUCCESS - Bucket: video_public, Path:', videoPath, 'Public URL:', videoPublicUrl);
 
-      // Step 5: Generate THUMBNAIL (client side)
-      console.log('Step 5: Generating thumbnail from video');
+      // Step 6: Generate THUMBNAIL (client side)
+      console.log('Step 6: Generating thumbnail from video');
       
       const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
         time: 0, // First frame
@@ -187,24 +210,21 @@ export default function AddScreen() {
       
       console.log('Thumbnail generated:', thumbnailUri);
 
-      // Step 6: Upload THUMBNAIL to Supabase Storage (video_public bucket)
-      console.log('Step 6: Uploading thumbnail to video_public bucket');
+      // Step 7: Read thumbnail file as blob
+      console.log('Step 7: Reading thumbnail file');
+      const thumbnailBase64 = await FileSystem.readAsStringAsync(thumbnailUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       
-      const thumbnailFormData = new FormData();
-      
-      const thumbnailFile = {
-        uri: thumbnailUri,
-        type: 'image/jpeg',
-        name: `${timestamp}.jpg`,
-      } as any;
-      
-      thumbnailFormData.append('file', thumbnailFile);
-      
-      console.log('Uploading thumbnail via FormData to video_public bucket');
+      const thumbnailBlob = await fetch(`data:image/jpeg;base64,${thumbnailBase64}`).then(r => r.blob());
+      console.log('Thumbnail blob created, size:', thumbnailBlob.size, 'bytes');
+
+      // Step 8: Upload THUMBNAIL to Supabase Storage (video_public bucket)
+      console.log('Step 8: Uploading thumbnail to video_public bucket');
       
       const { data: thumbnailUploadData, error: thumbnailUploadError } = await supabase.storage
         .from('video_public')
-        .upload(thumbPath, thumbnailFormData, {
+        .upload(thumbPath, thumbnailBlob, {
           contentType: 'image/jpeg',
           cacheControl: '3600',
           upsert: false,
@@ -225,43 +245,61 @@ export default function AddScreen() {
       const thumbnailPublicUrl = thumbnailPublicUrlData.publicUrl;
       console.log('✅ THUMBNAIL UPLOAD SUCCESS - Bucket: video_public, Path:', thumbPath, 'Public URL:', thumbnailPublicUrl);
 
-      // Step 7: Insert DB row into posts with PUBLIC URL
-      console.log('Step 7: Inserting post into database with public URLs');
+      // Step 9: Create post via backend API with locations array
+      console.log('Step 9: Creating post via backend API with public URLs and', selectedLocations.length, 'locations');
       
-      const { error: insertError } = await supabase
-        .from('posts')
-        .insert({
-          id: postId,
-          user_id: user.id,
-          video_url: videoPublicUrl, // Store full public HTTPS URL
-          thumbnail_url: thumbnailPublicUrl,
-          caption: caption.trim() || null,
-          place_id: selectedPlace?.place_id || null,
-          place_name: selectedPlace?.main_text || null,
-          location_type: selectedPlace?.location_type || null,
-        });
+      // Use first location for backward compatibility in posts table
+      const firstLocation = selectedLocations[0] || null;
+      
+      // Build locations array for the API
+      const locationsPayload = selectedLocations.map((loc) => ({
+        place_id: loc.place_id,
+        place_name: loc.main_text,
+        location_type: loc.location_type,
+      }));
 
-      if (insertError) {
-        console.error('Post insert error:', insertError);
-        throw insertError;
+      const postPayload: any = {
+        caption: caption.trim() || '',
+        video_url: videoPublicUrl,
+        thumbnail_url: thumbnailPublicUrl,
+      };
+
+      // Add primary location fields for backward compatibility
+      if (firstLocation) {
+        postPayload.place_id = firstLocation.place_id;
+        postPayload.place_name = firstLocation.main_text;
+        postPayload.location_type = firstLocation.location_type;
       }
 
-      console.log('✅ Post created successfully in database with public URLs - Video:', videoPublicUrl, 'Thumbnail:', thumbnailPublicUrl);
+      // Add locations array if any locations selected
+      if (locationsPayload.length > 0) {
+        postPayload.locations = locationsPayload;
+      }
 
-      // Step 8: Success UX
+      console.log('[API] POST /api/posts payload:', JSON.stringify(postPayload, null, 2));
+
+      const createdPost = await authenticatedPost('/api/posts', postPayload);
+
+      if (!createdPost || !createdPost.id) {
+        throw new Error('Failed to create post via API');
+      }
+
+      console.log('✅ Post created successfully via backend API, post ID:', createdPost.id);
+
+      // Step 11: Success UX
       Alert.alert('Posted!', 'Your video has been posted successfully');
       
       // Clear fields
       setVideoUri(null);
       setCaption('');
-      setSelectedPlace(null);
+      setSelectedLocations([]);
       
       // Navigate to Home
       console.log('Navigating to Home tab');
       router.replace('/(tabs)/(home)');
       
     } catch (error: any) {
-      // Step 9: Error handling
+      // Step 12: Error handling
       console.error('Error posting video:', error);
       Alert.alert('Error', error.message || 'Failed to post video. Please try again.');
     } finally {
@@ -271,14 +309,19 @@ export default function AddScreen() {
   };
 
   const handleOpenLocationSearch = () => {
-    console.log('User tapped location field, opening search - preserving form state (video + caption)');
+    console.log('User tapped location field, opening search - preserving form state (video + caption + existing locations)');
     // Use router.push (not replace) to preserve the Add screen state in the navigation stack
     router.push('/search-location');
   };
 
+  const handleRemoveLocation = (placeId: string) => {
+    console.log('User tapped remove location:', placeId);
+    setSelectedLocations(prev => prev.filter(loc => loc.place_id !== placeId));
+  };
+
   const captionPlaceholder = 'Share your travel story...';
   const locationPlaceholder = 'Add location (optional)';
-  const selectedPlaceText = selectedPlace?.main_text || locationPlaceholder;
+  const addMoreLocationText = 'Add another location';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
@@ -384,9 +427,44 @@ export default function AddScreen() {
                 size={20} 
                 color={textColor}
               />
-              <Text style={[styles.inputLabel, { color: textColor }]}>Location</Text>
+              <Text style={[styles.inputLabel, { color: textColor }]}>Locations</Text>
               <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
+            
+            {/* Display selected locations */}
+            {selectedLocations.length > 0 && (
+              <View style={styles.selectedLocationsContainer}>
+                {selectedLocations.map((location, index) => (
+                  <View 
+                    key={location.place_id}
+                    style={[styles.locationChip, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}
+                  >
+                    <IconSymbol 
+                      ios_icon_name="mappin.circle.fill"
+                      android_material_icon_name="location-on" 
+                      size={16} 
+                      color={primaryColor}
+                    />
+                    <Text style={[styles.locationChipText, { color: textColor }]} numberOfLines={1}>
+                      {location.main_text}
+                    </Text>
+                    <TouchableOpacity 
+                      onPress={() => handleRemoveLocation(location.place_id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <IconSymbol 
+                        ios_icon_name="xmark.circle.fill"
+                        android_material_icon_name="cancel" 
+                        size={18} 
+                        color={textSecondaryColor}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+            
+            {/* Add location button */}
             <TouchableOpacity
               style={[styles.locationButton, { 
                 backgroundColor: cardColor,
@@ -396,15 +474,15 @@ export default function AddScreen() {
             >
               <Text style={[
                 styles.locationButtonText,
-                { color: selectedPlace ? primaryColor : textSecondaryColor }
+                { color: selectedLocations.length > 0 ? primaryColor : textSecondaryColor }
               ]}>
-                {selectedPlaceText}
+                {selectedLocations.length > 0 ? addMoreLocationText : locationPlaceholder}
               </Text>
               <IconSymbol 
-                ios_icon_name="chevron.right"
-                android_material_icon_name="arrow-forward" 
+                ios_icon_name="plus"
+                android_material_icon_name="add" 
                 size={20} 
-                color={textSecondaryColor}
+                color={selectedLocations.length > 0 ? primaryColor : textSecondaryColor}
               />
             </TouchableOpacity>
           </View>
@@ -550,6 +628,26 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     minHeight: 100,
+  },
+  selectedLocationsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  locationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+    maxWidth: '100%',
+  },
+  locationChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
   },
   locationButton: {
     flexDirection: 'row',
