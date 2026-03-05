@@ -1,6 +1,5 @@
 
 import React, { useEffect, useState } from "react";
-import { useTheme } from "@react-navigation/native";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, Modal } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { VideoGridItem } from "@/components/VideoGridItem";
@@ -52,7 +51,6 @@ function resolveImageSource(source: string | number | any) {
 }
 
 export default function ProfileScreen() {
-  const theme = useTheme();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
