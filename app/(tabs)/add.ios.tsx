@@ -1,16 +1,17 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
 import { colors } from "@/styles/commonStyles";
-import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { supabase } from '@/lib/supabase';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 export default function AddScreen() {
   const router = useRouter();
@@ -33,27 +34,40 @@ export default function AddScreen() {
   } | null>(null);
   const [isPosting, setIsPosting] = useState(false);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      console.log('Add screen focused, checking for location params');
-      if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-        console.log('Location selected from search:', {
-          placeId: params.selectedPlaceId,
-          placeName: params.selectedPlaceName,
-          locationType: params.selectedLocationType,
-        });
-        
-        setSelectedPlace({
-          place_id: params.selectedPlaceId as string,
-          main_text: params.selectedPlaceName as string,
-          location_type: params.selectedLocationType as string,
-        });
-      }
-    }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType])
-  );
+  // Video player for preview
+  const player = useVideoPlayer(videoUri || '', (player) => {
+    player.loop = true;
+    player.muted = true;
+  });
+
+  // Debug: Log when component mounts/unmounts
+  useEffect(() => {
+    console.log('AddScreen (iOS) mounted');
+    return () => console.log('AddScreen (iOS) unmounted');
+  }, []);
+
+  // Handle location selection from search screen - ONLY update location, preserve video and caption
+  useEffect(() => {
+    if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
+      console.log('Location selected from search (iOS) - updating ONLY location state:', {
+        placeId: params.selectedPlaceId,
+        placeName: params.selectedPlaceName,
+        locationType: params.selectedLocationType,
+        preservingVideo: videoUri,
+        preservingCaption: caption,
+      });
+      
+      // Only update location, don't touch video or caption
+      setSelectedPlace({
+        place_id: params.selectedPlaceId as string,
+        main_text: params.selectedPlaceName as string,
+        location_type: params.selectedLocationType as string,
+      });
+    }
+  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
 
   const pickVideo = async () => {
-    console.log('User tapped Pick Video button');
+    console.log('User tapped Pick Video button (iOS)');
     
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -86,7 +100,7 @@ export default function AddScreen() {
   };
 
   const handlePost = async () => {
-    console.log('User tapped Post button');
+    console.log('User tapped Post button (iOS)');
     
     // Step 1: Validate
     if (!videoUri) {
@@ -257,7 +271,8 @@ export default function AddScreen() {
   };
 
   const handleOpenLocationSearch = () => {
-    console.log('User tapped location field, opening search');
+    console.log('User tapped location field, opening search (iOS) - preserving form state (video + caption)');
+    // Use router.push (not replace) to preserve the Add screen state in the navigation stack
     router.push('/search-location');
   };
 
@@ -298,16 +313,24 @@ export default function AddScreen() {
           </View>
         ) : (
           <View style={styles.videoSelectedSection}>
-            <View style={[styles.videoPreview, { backgroundColor: cardColor }]}>
-              <IconSymbol 
-                ios_icon_name="checkmark.circle.fill"
-                android_material_icon_name="check-circle" 
-                size={64} 
-                color={primaryColor}
+            <View style={styles.videoPreviewContainer}>
+              <VideoView
+                player={player}
+                style={styles.videoPreview}
+                contentFit="cover"
+                nativeControls={false}
               />
-              <Text style={[styles.videoSelectedText, { color: textColor }]}>
-                Video ready to post
-              </Text>
+              <View style={styles.videoOverlay}>
+                <View style={[styles.videoBadge, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
+                  <IconSymbol 
+                    ios_icon_name="checkmark.circle.fill"
+                    android_material_icon_name="check-circle" 
+                    size={20} 
+                    color="#4ADE80"
+                  />
+                  <Text style={styles.videoBadgeText}>Video Ready</Text>
+                </View>
+              </View>
             </View>
 
             <TouchableOpacity 
@@ -460,18 +483,33 @@ const styles = StyleSheet.create({
   videoSelectedSection: {
     marginTop: 24,
   },
-  videoPreview: {
-    height: 280,
+  videoPreviewContainer: {
+    height: 400,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
     marginBottom: 16,
-    paddingHorizontal: 16,
   },
-  videoSelectedText: {
-    fontSize: 18,
+  videoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+  },
+  videoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  videoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
-    marginTop: 16,
   },
   changeButton: {
     flexDirection: 'row',
