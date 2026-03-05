@@ -10,7 +10,7 @@ export function registerPostRoutes(app: App) {
   // POST /api/posts - Create a post
   app.fastify.post('/api/posts', {
     schema: {
-      description: 'Create a new post with video, caption, and optional location',
+      description: 'Create a new post with video, caption, and optional locations',
       tags: ['posts'],
       body: {
         type: 'object',
@@ -19,7 +19,22 @@ export function registerPostRoutes(app: App) {
           caption: { type: 'string', description: 'Post caption' },
           video_url: { type: 'string', format: 'uri', description: 'Video URL (S3 or CDN)' },
           thumbnail_url: { type: 'string', format: 'uri', description: 'Thumbnail URL (optional)' },
-          place_id: { type: 'string', description: 'Location place ID (optional)' },
+          place_id: { type: 'string', description: 'Primary location place ID (optional)' },
+          place_name: { type: 'string', description: 'Primary location place name (optional)' },
+          location_type: { type: 'string', description: 'Primary location type (optional)' },
+          locations: {
+            type: 'array',
+            description: 'Array of additional locations (optional)',
+            items: {
+              type: 'object',
+              required: ['place_id', 'place_name', 'location_type'],
+              properties: {
+                place_id: { type: 'string' },
+                place_name: { type: 'string' },
+                location_type: { type: 'string' },
+              },
+            },
+          },
         },
       },
       response: {
@@ -33,6 +48,8 @@ export function registerPostRoutes(app: App) {
             video_url: { type: 'string' },
             thumbnail_url: { type: ['string', 'null'] },
             place_id: { type: ['string', 'null'] },
+            place_name: { type: ['string', 'null'] },
+            location_type: { type: ['string', 'null'] },
             created_at: { type: 'string', format: 'date-time' },
             view_count: { type: 'number' },
           },
@@ -60,15 +77,22 @@ export function registerPostRoutes(app: App) {
         video_url: string;
         thumbnail_url?: string;
         place_id?: string;
+        place_name?: string;
+        location_type?: string;
+        locations?: Array<{
+          place_id: string;
+          place_name: string;
+          location_type: string;
+        }>;
       };
     }>,
     reply: FastifyReply
-  ): Promise<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; created_at: Date; view_count: number } | void> => {
+  ): Promise<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; place_name: string | null; location_type: string | null; created_at: Date; view_count: number } | void> => {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
     const userId = session.user.id;
-    const { caption, video_url, thumbnail_url, place_id } = request.body;
+    const { caption, video_url, thumbnail_url, place_id, place_name, location_type, locations } = request.body;
 
     app.logger.info({ userId, captionLength: caption.length }, 'Creating post');
 
@@ -80,7 +104,22 @@ export function registerPostRoutes(app: App) {
         videoUrl: video_url,
         thumbnailUrl: thumbnail_url || null,
         placeId: place_id || null,
+        placeName: place_name || null,
+        locationType: location_type || null,
       }).returning();
+
+      // Add locations if provided
+      if (locations && locations.length > 0) {
+        await app.db.insert(schema.postLocations).values(
+          locations.map((loc, index) => ({
+            postId: newPost.id,
+            placeId: loc.place_id,
+            placeName: loc.place_name,
+            locationType: loc.location_type,
+            displayOrder: index,
+          }))
+        );
+      }
 
       // Post stats will be initialized automatically by trigger
       app.logger.info({ userId, postId: newPost.id }, 'Post created successfully');
@@ -92,6 +131,8 @@ export function registerPostRoutes(app: App) {
         video_url: newPost.videoUrl,
         thumbnail_url: newPost.thumbnailUrl,
         place_id: newPost.placeId,
+        place_name: newPost.placeName,
+        location_type: newPost.locationType,
         created_at: newPost.createdAt,
         view_count: 0,
       });
@@ -126,6 +167,8 @@ export function registerPostRoutes(app: App) {
               video_url: { type: 'string' },
               thumbnail_url: { type: ['string', 'null'] },
               place_id: { type: ['string', 'null'] },
+              place_name: { type: ['string', 'null'] },
+              location_type: { type: ['string', 'null'] },
               created_at: { type: 'string', format: 'date-time' },
               view_count: { type: ['number', 'null'] },
             },
@@ -143,7 +186,7 @@ export function registerPostRoutes(app: App) {
   }, async (
     request: FastifyRequest<{ Params: { user_id: string } }>,
     reply: FastifyReply
-  ): Promise<Array<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; created_at: Date; view_count: number | null }> | void> => {
+  ): Promise<Array<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; place_name: string | null; location_type: string | null; created_at: Date; view_count: number | null }> | void> => {
     const { user_id: targetUserId } = request.params;
 
     app.logger.info({ targetUserId }, 'Fetching posts for user profile');
@@ -162,6 +205,8 @@ export function registerPostRoutes(app: App) {
           video_url: schema.posts.videoUrl,
           thumbnail_url: schema.posts.thumbnailUrl,
           place_id: schema.posts.placeId,
+          place_name: schema.posts.placeName,
+          location_type: schema.posts.locationType,
           created_at: schema.posts.createdAt,
           view_count: schema.postStats.viewCount,
         }).from(schema.posts)
@@ -180,6 +225,8 @@ export function registerPostRoutes(app: App) {
           video_url: schema.posts.videoUrl,
           thumbnail_url: schema.posts.thumbnailUrl,
           place_id: schema.posts.placeId,
+          place_name: schema.posts.placeName,
+          location_type: schema.posts.locationType,
           created_at: schema.posts.createdAt,
         }).from(schema.posts)
           .where(eq(schema.posts.userId, targetUserId))
@@ -223,6 +270,8 @@ export function registerPostRoutes(app: App) {
             video_url: { type: 'string' },
             thumbnail_url: { type: ['string', 'null'] },
             place_id: { type: ['string', 'null'] },
+            place_name: { type: ['string', 'null'] },
+            location_type: { type: ['string', 'null'] },
             created_at: { type: 'string', format: 'date-time' },
             view_count: { type: 'number' },
           },
@@ -239,7 +288,7 @@ export function registerPostRoutes(app: App) {
   }, async (
     request: FastifyRequest<{ Params: { post_id: string } }>,
     reply: FastifyReply
-  ): Promise<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; created_at: Date; view_count: number } | void> => {
+  ): Promise<{ id: string; user_id: string; caption: string; video_url: string; thumbnail_url: string | null; place_id: string | null; place_name: string | null; location_type: string | null; created_at: Date; view_count: number } | void> => {
     const { post_id: postId } = request.params;
 
     app.logger.info({ postId }, 'Fetching post');
@@ -252,6 +301,8 @@ export function registerPostRoutes(app: App) {
         video_url: schema.posts.videoUrl,
         thumbnail_url: schema.posts.thumbnailUrl,
         place_id: schema.posts.placeId,
+        place_name: schema.posts.placeName,
+        location_type: schema.posts.locationType,
         created_at: schema.posts.createdAt,
         view_count: schema.postStats.viewCount,
       }).from(schema.posts)
@@ -271,6 +322,289 @@ export function registerPostRoutes(app: App) {
       };
     } catch (error) {
       app.logger.error({ err: error, postId }, 'Failed to fetch post');
+      throw error;
+    }
+  });
+
+  // GET /api/posts/:post_id/locations - Get all locations for a post
+  app.fastify.get('/api/posts/:post_id/locations', {
+    schema: {
+      description: 'Get all locations for a post',
+      tags: ['posts'],
+      params: {
+        type: 'object',
+        required: ['post_id'],
+        properties: {
+          post_id: { type: 'string', format: 'uuid', description: 'Post ID' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Locations retrieved successfully',
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              post_id: { type: 'string', format: 'uuid' },
+              place_id: { type: 'string' },
+              place_name: { type: 'string' },
+              location_type: { type: 'string' },
+              display_order: { type: 'number' },
+              created_at: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+        404: {
+          description: 'Post not found',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { post_id: string } }>,
+    reply: FastifyReply
+  ): Promise<Array<{ id: string; post_id: string; place_id: string; place_name: string; location_type: string; display_order: number; created_at: Date }> | void> => {
+    const { post_id: postId } = request.params;
+
+    app.logger.info({ postId }, 'Fetching locations for post');
+
+    try {
+      // Verify post exists
+      const post = await app.db.select().from(schema.posts).where(eq(schema.posts.id, postId)).limit(1);
+      if (post.length === 0) {
+        app.logger.warn({ postId }, 'Post not found');
+        return reply.status(404).send({ error: 'Post not found' });
+      }
+
+      const locations = await app.db.select({
+        id: schema.postLocations.id,
+        post_id: schema.postLocations.postId,
+        place_id: schema.postLocations.placeId,
+        place_name: schema.postLocations.placeName,
+        location_type: schema.postLocations.locationType,
+        display_order: schema.postLocations.displayOrder,
+        created_at: schema.postLocations.createdAt,
+      }).from(schema.postLocations)
+        .where(eq(schema.postLocations.postId, postId))
+        .orderBy(schema.postLocations.displayOrder);
+
+      app.logger.info({ postId, count: locations.length }, 'Locations retrieved successfully');
+      return locations;
+    } catch (error) {
+      app.logger.error({ err: error, postId }, 'Failed to fetch locations');
+      throw error;
+    }
+  });
+
+  // POST /api/posts/:post_id/locations - Add a location to a post
+  app.fastify.post('/api/posts/:post_id/locations', {
+    schema: {
+      description: 'Add a location to a post',
+      tags: ['posts'],
+      params: {
+        type: 'object',
+        required: ['post_id'],
+        properties: {
+          post_id: { type: 'string', format: 'uuid', description: 'Post ID' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['place_id', 'place_name', 'location_type'],
+        properties: {
+          place_id: { type: 'string' },
+          place_name: { type: 'string' },
+          location_type: { type: 'string' },
+        },
+      },
+      response: {
+        201: {
+          description: 'Location added successfully',
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            post_id: { type: 'string', format: 'uuid' },
+            place_id: { type: 'string' },
+            place_name: { type: 'string' },
+            location_type: { type: 'string' },
+            display_order: { type: 'number' },
+            created_at: { type: 'string', format: 'date-time' },
+          },
+        },
+        401: {
+          description: 'Unauthorized',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+        403: {
+          description: 'Forbidden - not post owner',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+        404: {
+          description: 'Post not found',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (
+    request: FastifyRequest<{
+      Params: { post_id: string };
+      Body: { place_id: string; place_name: string; location_type: string };
+    }>,
+    reply: FastifyReply
+  ): Promise<{ id: string; post_id: string; place_id: string; place_name: string; location_type: string; display_order: number; created_at: Date } | void> => {
+    const session = await requireAuth(request, reply);
+    if (!session) return;
+
+    const userId = session.user.id;
+    const { post_id: postId } = request.params;
+    const { place_id: placeId, place_name: placeName, location_type: locationType } = request.body;
+
+    app.logger.info({ userId, postId }, 'Adding location to post');
+
+    try {
+      // Verify user owns the post
+      const post = await app.db.select().from(schema.posts).where(eq(schema.posts.id, postId)).limit(1);
+      if (post.length === 0) {
+        app.logger.warn({ postId }, 'Post not found');
+        return reply.status(404).send({ error: 'Post not found' });
+      }
+
+      if (post[0].userId !== userId) {
+        app.logger.warn({ userId, postId, ownerId: post[0].userId }, 'User not authorized');
+        return reply.status(403).send({ error: 'You can only modify your own posts' });
+      }
+
+      // Get max display order
+      const result = await app.db.select({
+        maxOrder: sql<number>`MAX(${schema.postLocations.displayOrder})`,
+      }).from(schema.postLocations).where(eq(schema.postLocations.postId, postId));
+
+      const nextOrder = (result[0]?.maxOrder || -1) + 1;
+
+      // Insert location
+      const [newLocation] = await app.db.insert(schema.postLocations).values({
+        postId,
+        placeId,
+        placeName,
+        locationType,
+        displayOrder: nextOrder,
+      }).returning();
+
+      app.logger.info({ userId, postId }, 'Location added successfully');
+      return reply.status(201).send({
+        id: newLocation.id,
+        post_id: newLocation.postId,
+        place_id: newLocation.placeId,
+        place_name: newLocation.placeName,
+        location_type: newLocation.locationType,
+        display_order: newLocation.displayOrder,
+        created_at: newLocation.createdAt,
+      });
+    } catch (error) {
+      app.logger.error({ err: error, userId, postId }, 'Failed to add location');
+      throw error;
+    }
+  });
+
+  // DELETE /api/posts/:post_id/locations/:location_id - Remove a location from a post
+  app.fastify.delete('/api/posts/:post_id/locations/:location_id', {
+    schema: {
+      description: 'Remove a location from a post',
+      tags: ['posts'],
+      params: {
+        type: 'object',
+        required: ['post_id', 'location_id'],
+        properties: {
+          post_id: { type: 'string', format: 'uuid', description: 'Post ID' },
+          location_id: { type: 'string', format: 'uuid', description: 'Location ID' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Location removed successfully',
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+          },
+        },
+        401: {
+          description: 'Unauthorized',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+        403: {
+          description: 'Forbidden - not post owner',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+        404: {
+          description: 'Post or location not found',
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { post_id: string; location_id: string } }>,
+    reply: FastifyReply
+  ): Promise<{ success: boolean } | void> => {
+    const session = await requireAuth(request, reply);
+    if (!session) return;
+
+    const userId = session.user.id;
+    const { post_id: postId, location_id: locationId } = request.params;
+
+    app.logger.info({ userId, postId, locationId }, 'Removing location from post');
+
+    try {
+      // Verify user owns the post
+      const post = await app.db.select().from(schema.posts).where(eq(schema.posts.id, postId)).limit(1);
+      if (post.length === 0) {
+        app.logger.warn({ postId }, 'Post not found');
+        return reply.status(404).send({ error: 'Post not found' });
+      }
+
+      if (post[0].userId !== userId) {
+        app.logger.warn({ userId, postId, ownerId: post[0].userId }, 'User not authorized');
+        return reply.status(403).send({ error: 'You can only modify your own posts' });
+      }
+
+      // Verify location exists and belongs to post
+      const location = await app.db.select().from(schema.postLocations)
+        .where(and(eq(schema.postLocations.id, locationId), eq(schema.postLocations.postId, postId)))
+        .limit(1);
+
+      if (location.length === 0) {
+        app.logger.warn({ locationId, postId }, 'Location not found');
+        return reply.status(404).send({ error: 'Location not found' });
+      }
+
+      // Delete location
+      await app.db.delete(schema.postLocations).where(eq(schema.postLocations.id, locationId));
+
+      app.logger.info({ userId, postId, locationId }, 'Location removed successfully');
+      return { success: true };
+    } catch (error) {
+      app.logger.error({ err: error, userId, postId, locationId }, 'Failed to remove location');
       throw error;
     }
   });
@@ -439,7 +773,10 @@ export function registerPostRoutes(app: App) {
         return reply.status(403).send({ error: 'You can only delete your own posts' });
       }
 
-      // Delete post stats first (cascading)
+      // Delete post locations
+      await app.db.delete(schema.postLocations).where(eq(schema.postLocations.postId, postId));
+
+      // Delete post stats
       await app.db.delete(schema.postStats).where(eq(schema.postStats.postId, postId));
 
       // Delete post

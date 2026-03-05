@@ -82,12 +82,24 @@ export const posts = pgTable('posts', {
   videoUrl: text('video_url').notNull(),
   thumbnailUrl: text('thumbnail_url'),
   placeId: text('place_id'),
+  placeName: text('place_name'),
+  locationType: text('location_type'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const postStats = pgTable('post_stats', {
   postId: uuid('post_id').primaryKey(),
   viewCount: bigint('view_count', { mode: 'number' }).default(0).notNull(),
+});
+
+export const postLocations = pgTable('post_locations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  postId: uuid('post_id').notNull(),
+  placeId: text('place_id').notNull(),
+  placeName: text('place_name').notNull(),
+  locationType: text('location_type').notNull(),
+  displayOrder: integer('display_order').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const follows = pgTable('follows', {
