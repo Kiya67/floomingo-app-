@@ -1,195 +1,177 @@
 
 import { supabase } from '@/lib/supabase';
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
- * Ensure user profile row exists in profiles table
- * Call this on app start and after login
- * CRITICAL: Only upserts the ID - username can be null until user sets it in Edit Profile
- * 
- * @param displayName - Optional display name to set during signup
+ * Upload a file to Supabase Storage
+ * @param uri - Local file URI
+ * @param path - Storage path (e.g., 'videos/user-id/timestamp.mp4')
+ * @param bucket - Storage bucket name (e.g., 'video_public')
+ * @param contentType - MIME type (e.g., 'video/mp4', 'image/jpeg')
+ * @returns Object with path and publicUrl
  */
-export async function ensureProfileRow(displayName?: string) {
-  console.log('[Supabase] Ensuring profile row exists');
-  const { data: u } = await supabase.auth.getUser();
-  const user = u.user;
-  if (!user) throw new Error('Not signed in');
-  
-  // Create profile if missing - only set the ID and optional display_name
-  // Username defaults to null and can be set later in Edit Profile
-  const profileData: any = { id: user.id };
-  
-  // Set display_name if provided (e.g., during signup)
-  if (displayName) {
-    profileData.display_name = displayName;
+export async function uploadFileToSupabase(
+  uri: string,
+  path: string,
+  bucket: string,
+  contentType: string
+): Promise<{ path: string; publicUrl: string }> {
+  try {
+    console.log(`[uploadFileToSupabase] Starting upload to ${bucket}/${path}`);
+    console.log(`[uploadFileToSupabase] Source URI: ${uri}`);
+    console.log(`[uploadFileToSupabase] Content-Type: ${contentType}`);
+
+    // Step 1: Verify file exists
+    const fileInfo = await FileSystem.getInfoAsync(uri);
+    if (!fileInfo.exists) {
+      throw new Error(`File does not exist at URI: ${uri}`);
+    }
+    console.log(`[uploadFileToSupabase] File exists, size: ${fileInfo.size} bytes`);
+
+    // Step 2: Read file as base64
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    console.log(`[uploadFileToSupabase] File read as base64, length: ${base64.length}`);
+
+    // Step 3: Convert base64 to ArrayBuffer (more reliable than Blob for large files)
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    console.log(`[uploadFileToSupabase] Converted to ArrayBuffer, size: ${bytes.length} bytes`);
+
+    // Step 4: Upload to Supabase Storage
+    console.log(`[uploadFileToSupabase] Uploading to Supabase...`);
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(path, bytes.buffer, {
+        contentType,
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error(`[uploadFileToSupabase] Upload error:`, error);
+      throw error;
+    }
+
+    console.log(`[uploadFileToSupabase] Upload successful:`, data);
+
+    // Step 5: Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(path);
+
+    if (!publicUrlData?.publicUrl) {
+      throw new Error('Failed to get public URL');
+    }
+
+    console.log(`[uploadFileToSupabase] ✅ SUCCESS - Public URL: ${publicUrlData.publicUrl}`);
+
+    return {
+      path: data.path,
+      publicUrl: publicUrlData.publicUrl,
+    };
+  } catch (error: any) {
+    console.error(`[uploadFileToSupabase] ❌ FAILED:`, error);
+    throw new Error(`Upload failed: ${error.message || 'Unknown error'}`);
   }
-  
-  // Set email from user metadata if available
-  if (user.email) {
-    profileData.email = user.email;
-  }
-  
-  const { error } = await supabase
-    .from('profiles')
-    .upsert(profileData, { onConflict: 'id' });
-  
-  if (error) {
-    console.error('[Supabase] Error ensuring profile row:', error);
-    throw error;
-  }
-  
-  console.log('[Supabase] Profile row ensured for user:', user.id);
-  return user.id;
 }
 
 /**
- * Check if current user is following another user
+ * Get follow status between current user and target user
  */
-export async function getIsFollowing(myId: string, profileUserId: string) {
-  console.log('[Supabase] Checking if following:', profileUserId);
-  const { data, error } = await supabase
-    .from('follows')
-    .select('follower_id')
-    .eq('follower_id', myId)
-    .eq('following_id', profileUserId)
-    .maybeSingle();
+export async function getIsFollowing(targetUserId: string): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
 
-  if (error) {
-    console.error('[Supabase] Error checking follow status:', error);
-    throw error;
+    const { data, error } = await supabase
+      .from('follows')
+      .select('id')
+      .eq('follower_id', user.id)
+      .eq('following_id', targetUserId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error checking follow status:', error);
+      return false;
+    }
+
+    return !!data;
+  } catch (error) {
+    console.error('Error in getIsFollowing:', error);
+    return false;
   }
-  
-  const isFollowing = !!data;
-  console.log('[Supabase] Is following:', isFollowing);
-  return isFollowing;
 }
 
 /**
  * Get follower and following counts for a user
  */
-export async function getFollowCounts(profileUserId: string) {
-  console.log('[Supabase] Fetching follow counts for user:', profileUserId);
-  const [{ count: followers, error: e1 }, { count: following, error: e2 }] = await Promise.all([
-    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profileUserId),
-    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profileUserId),
-  ]);
+export async function getFollowCounts(userId: string): Promise<{ followerCount: number; followingCount: number }> {
+  try {
+    const [followersResult, followingResult] = await Promise.all([
+      supabase
+        .from('follows')
+        .select('id', { count: 'exact', head: true })
+        .eq('following_id', userId),
+      supabase
+        .from('follows')
+        .select('id', { count: 'exact', head: true })
+        .eq('follower_id', userId),
+    ]);
 
-  if (e1) {
-    console.error('[Supabase] Error fetching followers count:', e1);
-    throw e1;
+    return {
+      followerCount: followersResult.count || 0,
+      followingCount: followingResult.count || 0,
+    };
+  } catch (error) {
+    console.error('Error getting follow counts:', error);
+    return { followerCount: 0, followingCount: 0 };
   }
-  if (e2) {
-    console.error('[Supabase] Error fetching following count:', e2);
-    throw e2;
-  }
-
-  const counts = { followers: followers ?? 0, following: following ?? 0 };
-  console.log('[Supabase] Follow counts:', counts);
-  return counts;
 }
 
 /**
  * Follow a user
  */
-export async function followUser(myId: string, profileUserId: string) {
-  console.log('[Supabase] Following user:', profileUserId);
-  const { error } = await supabase.from('follows').insert({
-    follower_id: myId,
-    following_id: profileUserId,
-  });
-  
-  if (error) {
-    console.error('[Supabase] Error following user:', error);
+export async function followUser(targetUserId: string): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase
+      .from('follows')
+      .insert({
+        follower_id: user.id,
+        following_id: targetUserId,
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error following user:', error);
     throw error;
   }
-  
-  console.log('[Supabase] Successfully followed user:', profileUserId);
 }
 
 /**
  * Unfollow a user
  */
-export async function unfollowUser(myId: string, profileUserId: string) {
-  console.log('[Supabase] Unfollowing user:', profileUserId);
-  const { error } = await supabase
-    .from('follows')
-    .delete()
-    .eq('follower_id', myId)
-    .eq('following_id', profileUserId);
-  
-  if (error) {
-    console.error('[Supabase] Error unfollowing user:', error);
+export async function unfollowUser(targetUserId: string): Promise<void> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase
+      .from('follows')
+      .delete()
+      .eq('follower_id', user.id)
+      .eq('following_id', targetUserId);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error unfollowing user:', error);
     throw error;
   }
-  
-  console.log('[Supabase] Successfully unfollowed user:', profileUserId);
-}
-
-/**
- * Get list of followers for a user
- */
-export async function getFollowers(profileUserId: string) {
-  console.log('[Supabase] Fetching followers for user:', profileUserId);
-  const { data, error } = await supabase
-    .from('follows')
-    .select(`
-      follower_id,
-      profiles!follows_follower_id_fkey (
-        id,
-        username,
-        display_name,
-        avatar_url
-      )
-    `)
-    .eq('following_id', profileUserId);
-
-  if (error) {
-    console.error('[Supabase] Error fetching followers:', error);
-    throw error;
-  }
-
-  // Transform data to flat structure
-  const followers = (data || []).map((item: any) => ({
-    id: item.profiles.id,
-    username: item.profiles.username,
-    display_name: item.profiles.display_name,
-    avatar_url: item.profiles.avatar_url,
-  }));
-
-  console.log('[Supabase] Fetched followers:', followers.length);
-  return followers;
-}
-
-/**
- * Get list of users being followed by a user
- */
-export async function getFollowing(profileUserId: string) {
-  console.log('[Supabase] Fetching following for user:', profileUserId);
-  const { data, error } = await supabase
-    .from('follows')
-    .select(`
-      following_id,
-      profiles!follows_following_id_fkey (
-        id,
-        username,
-        display_name,
-        avatar_url
-      )
-    `)
-    .eq('follower_id', profileUserId);
-
-  if (error) {
-    console.error('[Supabase] Error fetching following:', error);
-    throw error;
-  }
-
-  // Transform data to flat structure
-  const following = (data || []).map((item: any) => ({
-    id: item.profiles.id,
-    username: item.profiles.username,
-    display_name: item.profiles.display_name,
-    avatar_url: item.profiles.avatar_url,
-  }));
-
-  console.log('[Supabase] Fetched following:', following.length);
-  return following;
 }

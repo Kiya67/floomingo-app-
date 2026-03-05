@@ -54,37 +54,48 @@ export default function SearchLocationScreen() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const searchLocations = useCallback(async (input: string, searchMode: SearchMode) => {
     if (!input.trim()) {
       setPredictions([]);
+      setError(null);
       return;
     }
 
     setLoading(true);
+    setError(null);
     console.log('Searching locations with input:', input, 'mode:', searchMode);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
+      const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
+      const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error('Supabase configuration missing');
+      }
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'apikey': Constants.expoConfig?.extra?.supabaseAnonKey || '',
+        'apikey': supabaseAnonKey,
       };
 
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
 
-      const body: { input: string; mode: string } = {
-        input: input,
+      const body = {
+        input: input.trim(),
         mode: searchMode,
       };
 
+      console.log('API request to:', `${supabaseUrl}/functions/v1/places_autocomplete`);
       console.log('API request body:', body);
 
       const response = await fetch(
-        'https://ilobeaszwnfbwebemmji.supabase.co/functions/v1/places_autocomplete',
+        `${supabaseUrl}/functions/v1/places_autocomplete`,
         {
           method: 'POST',
           headers,
@@ -92,16 +103,35 @@ export default function SearchLocationScreen() {
         }
       );
 
-      const data = await response.json();
-      console.log('API response:', data);
+      console.log('API response status:', response.status);
 
-      if (data.predictions && data.predictions.length > 0) {
-        setPredictions(data.predictions);
-      } else {
-        setPredictions([]);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`API returned ${response.status}: ${errorText}`);
       }
-    } catch (error) {
+
+      const data = await response.json();
+      console.log('API response data:', data);
+
+      if (data.error) {
+        console.error('API returned error:', data.error);
+        setError(data.error);
+        setPredictions([]);
+      } else if (data.predictions && Array.isArray(data.predictions)) {
+        console.log('Found', data.predictions.length, 'predictions');
+        setPredictions(data.predictions);
+        if (data.predictions.length === 0) {
+          setError('No locations found. Try a different search term.');
+        }
+      } else {
+        console.warn('Unexpected API response format:', data);
+        setPredictions([]);
+        setError('Unexpected response format from location service');
+      }
+    } catch (error: any) {
       console.error('Error searching locations:', error);
+      setError(error.message || 'Failed to search locations. Please try again.');
       setPredictions([]);
     } finally {
       setLoading(false);
@@ -115,6 +145,7 @@ export default function SearchLocationScreen() {
       } else {
         setPredictions([]);
         setLoading(false);
+        setError(null);
       }
     }, 300);
 
@@ -139,7 +170,6 @@ export default function SearchLocationScreen() {
     });
 
     if (returnTo === 'home-filter') {
-      // Return to home filter modal
       router.push({
         pathname: '/(tabs)/(home)',
         params: {
@@ -149,7 +179,6 @@ export default function SearchLocationScreen() {
         },
       });
     } else {
-      // Return to add screen - use router.back() with setParams to avoid remount
       console.log('Using router.back() to preserve Add screen state');
       router.setParams({
         selectedPlaceId: placeId,
@@ -168,7 +197,7 @@ export default function SearchLocationScreen() {
 
   const selectedModeLabel = SEARCH_MODE_OPTIONS.find(opt => opt.value === mode)?.label || 'All (recommended)';
   const searchPlaceholder = 'Search location...';
-  const noResultsText = 'No results found';
+  const noResultsText = error || 'No results found';
   const startTypingText = 'Start typing to search for a location';
 
   return (
@@ -262,6 +291,9 @@ export default function SearchLocationScreen() {
           {loading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={primaryColor} />
+              <Text style={[styles.loadingText, { color: textSecondaryColor }]}>
+                Searching locations...
+              </Text>
             </View>
           )}
 
@@ -281,11 +313,11 @@ export default function SearchLocationScreen() {
           {!loading && searchText.trim() !== '' && predictions.length === 0 && (
             <View style={styles.emptyContainer}>
               <IconSymbol
-                android_material_icon_name="search"
+                android_material_icon_name={error ? "error" : "search"}
                 size={48}
-                color={textSecondaryColor}
+                color={error ? '#EF4444' : textSecondaryColor}
               />
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
+              <Text style={[styles.emptyText, { color: error ? '#EF4444' : textSecondaryColor }]}>
                 {noResultsText}
               </Text>
             </View>
@@ -298,7 +330,7 @@ export default function SearchLocationScreen() {
               
               return (
                 <TouchableOpacity
-                  key={index}
+                  key={`${prediction.place_id}-${index}`}
                   style={[styles.resultItem, { backgroundColor: cardColor }]}
                   onPress={() => handleSelectLocation(prediction)}
                 >
@@ -403,6 +435,10 @@ const styles = StyleSheet.create({
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
   },
   emptyContainer: {
     paddingVertical: 60,
@@ -412,6 +448,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     textAlign: 'center',
+    paddingHorizontal: 32,
   },
   resultItem: {
     flexDirection: 'row',
