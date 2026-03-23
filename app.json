@@ -50,7 +50,7 @@
       "router": {},
       "supabaseUrl": "https://ilobeaszwnfbwebemmji.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlsb2JlYXN6d25mYndlYmVtbWppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExMTk2NzAsImV4cCI6MjA4NjY5NTY3MH0.su5VZdsQZaaIKF3eOs9tH4YcivLQRydmTUIQeMOm8xU",
-      "backendUrl": "https://mzzqcssuxaj85hpbstswsh697pwrgw2s.app.specular.dev",
+      "backendUrl": "https://7efxms2e3tmdd7a38j8uphfzrnwcgesc.app.specular.dev",
       "eas": {
         "projectId": "your-eas-project-id"
       }
