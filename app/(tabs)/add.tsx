@@ -280,18 +280,36 @@ export default function AddScreen() {
       const videoPath = `videos/${user.id}/${timestamp}.mp4`;
       const thumbPath = `thumbs/${user.id}/${timestamp}.jpg`;
 
-      console.log("Step 1: Uploading video to Supabase Storage");
-      const videoUploadResult = await uploadFileToSupabase(videoUri, videoPath, "video_public", "video/mp4");
-      console.log("✅ Video uploaded successfully:", videoUploadResult.publicUrl);
+      // Step 1: Upload video
+      console.log("Step 1: Uploading video to Supabase Storage, uri:", videoUri);
+      let videoPublicUrl: string;
+      try {
+        const videoUploadResult = await uploadFileToSupabase(videoUri, videoPath, "video_public", "video/mp4");
+        videoPublicUrl = videoUploadResult.publicUrl;
+        console.log("✅ Step 1 complete — video uploaded:", videoPublicUrl);
+      } catch (uploadErr: any) {
+        console.error("❌ Step 1 FAILED — video upload error:", uploadErr, JSON.stringify(uploadErr));
+        throw new Error(`Video upload failed: ${uploadErr?.message || String(uploadErr)}`);
+      }
 
-      console.log("Step 2: Generating thumbnail from video");
-      const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
-      console.log("Thumbnail generated:", thumbnailUri);
+      // Step 2: Generate thumbnail (optional — continue without it if it fails)
+      console.log("Step 2: Generating thumbnail from video uri:", videoUri);
+      let thumbnailPublicUrl: string | null = null;
+      try {
+        const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
+        console.log("Thumbnail generated at:", thumbResult.uri);
 
-      console.log("Step 3: Uploading thumbnail to Supabase Storage");
-      const thumbnailUploadResult = await uploadFileToSupabase(thumbnailUri, thumbPath, "video_public", "image/jpeg");
-      console.log("✅ Thumbnail uploaded successfully:", thumbnailUploadResult.publicUrl);
+        // Step 3: Upload thumbnail
+        console.log("Step 3: Uploading thumbnail to Supabase Storage");
+        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "video_public", "image/jpeg");
+        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
+        console.log("✅ Step 3 complete — thumbnail uploaded:", thumbnailPublicUrl);
+      } catch (thumbErr: any) {
+        console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail):", thumbErr, JSON.stringify(thumbErr));
+        thumbnailPublicUrl = null;
+      }
 
+      // Step 4: Build and send post payload
       console.log("Step 4: Creating post via backend API");
 
       const firstLocation = selectedLocations[0] || null;
@@ -303,8 +321,8 @@ export default function AddScreen() {
 
       const postPayload: any = {
         caption: caption.trim() || "",
-        video_url: videoUploadResult.publicUrl,
-        thumbnail_url: thumbnailUploadResult.publicUrl,
+        video_url: videoPublicUrl,
+        thumbnail_url: thumbnailPublicUrl,
       };
 
       if (firstLocation) {
@@ -319,10 +337,18 @@ export default function AddScreen() {
 
       console.log("[API] POST /api/posts payload:", JSON.stringify(postPayload, null, 2));
 
-      const createdPost = await authenticatedPost("/api/posts", postPayload);
+      let createdPost: any;
+      try {
+        createdPost = await authenticatedPost("/api/posts", postPayload);
+        console.log("[API] POST /api/posts response:", JSON.stringify(createdPost, null, 2));
+      } catch (apiErr: any) {
+        console.error("❌ Step 4 FAILED — API error:", apiErr, JSON.stringify(apiErr));
+        throw new Error(`API error: ${apiErr?.message || String(apiErr)}`);
+      }
 
       if (!createdPost || !createdPost.id) {
-        throw new Error("Failed to create post via API");
+        console.error("❌ API returned unexpected response:", JSON.stringify(createdPost));
+        throw new Error("Failed to create post via API — no post ID returned");
       }
 
       console.log("✅ Post created successfully, post ID:", createdPost.id);
@@ -336,8 +362,8 @@ export default function AddScreen() {
       console.log("Navigating to Home tab");
       router.replace("/(tabs)/(home)");
     } catch (error: any) {
-      console.error("Error posting video:", error);
-      Alert.alert("Error", error.message || "Failed to post video. Please try again.");
+      console.error("❌ handlePost FAILED:", error, JSON.stringify(error));
+      Alert.alert("Post Failed", error?.message || "Failed to post video. Please try again.");
     } finally {
       setIsPosting(false);
     }

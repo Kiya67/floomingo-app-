@@ -163,27 +163,19 @@ export default function ProfileScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchProfile();
-    fetchUserPosts();
-    fetchStats();
-  }, []);
-
-  // Refresh posts when screen comes into focus (e.g., after viewing a video)
+  // Refresh all data when screen comes into focus (covers mount + tab re-focus).
+  // setLoading(false) is handled inside fetchUserPosts; Promise.all ensures all three run in parallel.
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Profile screen focused - refreshing posts');
-      fetchUserPosts();
-      fetchStats();
+      console.log('Profile screen focused - refreshing profile, posts, and stats');
+      Promise.all([fetchProfile(), fetchUserPosts(), fetchStats()]);
     }, [])
   );
 
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
     setRefreshing(true);
-    await fetchProfile();
-    await fetchUserPosts();
-    await fetchStats();
+    await Promise.all([fetchProfile(), fetchUserPosts(), fetchStats()]);
     setRefreshing(false);
   };
 

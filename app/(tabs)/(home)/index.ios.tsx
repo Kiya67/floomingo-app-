@@ -165,13 +165,8 @@ export default function HomeScreen() {
     }
   }, [params.filterPlaceId, params.filterPlaceName]);
 
-  useEffect(() => {
-    console.log('Filter dependencies changed, fetching posts...');
-    fetchPosts();
-    fetchUnreadNotifications();
-  }, [filterPlaceId, filterKeywords]);
-
-  // Re-fetch posts every time the home screen comes into focus (e.g. after posting a new video)
+  // Re-fetch posts every time the home screen comes into focus (covers mount + tab re-focus + post-navigation return).
+  // Also re-runs when filter deps change because fetchPosts is memoized on them.
   useFocusEffect(
     useCallback(() => {
       console.log('HomeScreen (iOS) focused - re-fetching posts');

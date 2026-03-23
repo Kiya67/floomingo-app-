@@ -1,6 +1,6 @@
 
 import { supabase } from '@/lib/supabase';
-import * as FileSystem from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system';
 
 /**
  * Upload a file to Supabase Storage
@@ -30,7 +30,7 @@ export async function uploadFileToSupabase(
 
     // Step 2: Read file as base64
     const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: 'base64' as any,
     });
     console.log(`[uploadFileToSupabase] File read as base64, length: ${base64.length}`);
 
