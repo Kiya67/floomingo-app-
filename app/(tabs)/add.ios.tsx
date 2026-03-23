@@ -1,16 +1,34 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { IconSymbol } from "@/components/IconSymbol";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, StyleSheet, TouchableOpacity, useColorScheme, TextInput, ScrollView, Alert, ActivityIndicator, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  useColorScheme,
+  TextInput,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Keyboard,
+} from "react-native";
 import { colors } from "@/styles/commonStyles";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import * as ImagePicker from 'expo-image-picker';
-import * as VideoThumbnails from 'expo-video-thumbnails';
-import { supabase } from '@/lib/supabase';
-import { uploadFileToSupabase } from '@/utils/supabaseHelpers';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { authenticatedPost } from '@/utils/api';
+import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
+import { supabase } from "@/lib/supabase";
+import { uploadFileToSupabase } from "@/utils/supabaseHelpers";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { authenticatedPost } from "@/utils/api";
+import BottomSheet, {
+  BottomSheetView,
+  BottomSheetBackdrop,
+  BottomSheetTextInput,
+  BottomSheetScrollView,
+} from "@gorhom/bottom-sheet";
+import Constants from "expo-constants";
 
 interface SelectedLocation {
   place_id: string;
@@ -18,159 +36,264 @@ interface SelectedLocation {
   location_type: string;
 }
 
+interface Prediction {
+  place_id: string;
+  main_text: string;
+  secondary_text?: string;
+  description: string;
+  location_type: string;
+}
+
+type SearchMode = "any" | "city" | "place" | "country" | "region" | "address" | "airport";
+
+const SEARCH_MODE_OPTIONS: { value: SearchMode; label: string }[] = [
+  { value: "any", label: "All (recommended)" },
+  { value: "city", label: "Cities" },
+  { value: "place", label: "Places (businesses/landmarks)" },
+  { value: "country", label: "Countries" },
+  { value: "region", label: "Regions/States" },
+  { value: "address", label: "Addresses" },
+  { value: "airport", label: "Airports" },
+];
+
 export default function AddScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
+  const isDark = colorScheme === "dark";
+
   const bgColor = isDark ? colors.backgroundDark : colors.background;
   const textColor = isDark ? colors.textDark : colors.text;
   const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
   const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
+  // --- Form state ---
   const [videoUri, setVideoUri] = useState<string | null>(null);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<SelectedLocation[]>([]);
   const [isPosting, setIsPosting] = useState(false);
 
-  const player = useVideoPlayer(videoUri || '', (player) => {
-    player.loop = true;
-    player.muted = true;
+  // --- Location sheet state ---
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const [searchText, setSearchText] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("any");
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
+
+  const snapPoints = ["75%", "95%"];
+
+  const player = useVideoPlayer(videoUri || "", (p) => {
+    p.loop = true;
+    p.muted = true;
   });
 
   useEffect(() => {
-    console.log('AddScreen (iOS) mounted');
-    return () => console.log('AddScreen (iOS) unmounted');
+    console.log("AddScreen (iOS) mounted");
+    return () => console.log("AddScreen (iOS) unmounted");
+  }, []);
+
+  // --- Location search ---
+  const searchLocations = useCallback(async (input: string, mode: SearchMode) => {
+    if (!input.trim()) {
+      setPredictions([]);
+      setSearchError(null);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(null);
+    console.log("[LocationSheet iOS] Searching locations:", input, "mode:", mode);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
+      const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Supabase configuration missing");
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        apikey: supabaseAnonKey,
+      };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const body = { input: input.trim(), mode };
+      console.log("[LocationSheet iOS] API request to places_autocomplete, body:", body);
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/places_autocomplete`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      console.log("[LocationSheet iOS] API response status:", response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[LocationSheet iOS] API error:", errorText);
+        throw new Error(`API returned ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("[LocationSheet iOS] API response data:", data);
+
+      if (data.error) {
+        setSearchError(data.error);
+        setPredictions([]);
+      } else if (data.predictions && Array.isArray(data.predictions)) {
+        console.log("[LocationSheet iOS] Found", data.predictions.length, "predictions");
+        setPredictions(data.predictions);
+        if (data.predictions.length === 0) {
+          setSearchError("No locations found. Try a different search term.");
+        }
+      } else {
+        setPredictions([]);
+        setSearchError("Unexpected response format from location service");
+      }
+    } catch (err: any) {
+      console.error("[LocationSheet iOS] Error searching locations:", err);
+      setSearchError(err.message || "Failed to search locations. Please try again.");
+      setPredictions([]);
+    } finally {
+      setSearchLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-      const newLocation: SelectedLocation = {
-        place_id: params.selectedPlaceId as string,
-        main_text: params.selectedPlaceName as string,
-        location_type: params.selectedLocationType as string,
-      };
+    const timeout = setTimeout(() => {
+      if (searchText.trim()) {
+        searchLocations(searchText, searchMode);
+      } else {
+        setPredictions([]);
+        setSearchLoading(false);
+        setSearchError(null);
+      }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [searchText, searchMode, searchLocations]);
 
-      console.log('Location received from search (iOS) - adding to locations array:', {
-        placeId: newLocation.place_id,
-        placeName: newLocation.main_text,
-        locationType: newLocation.location_type,
-      });
+  const openLocationSheet = () => {
+    console.log("User tapped Add Location (iOS) — opening bottom sheet (state preserved)");
+    setSearchText("");
+    setPredictions([]);
+    setSearchError(null);
+    setShowModeDropdown(false);
+    bottomSheetRef.current?.expand();
+  };
 
-      setSelectedLocations(prev => {
-        const alreadyExists = prev.some(loc => loc.place_id === newLocation.place_id);
-        if (alreadyExists) {
-          console.log('Location already exists in array, skipping duplicate');
-          return prev;
-        }
-        console.log('Location added successfully. Total locations:', prev.length + 1);
-        return [...prev, newLocation];
-      });
+  const closeLocationSheet = () => {
+    console.log("User closed location sheet (iOS)");
+    Keyboard.dismiss();
+    bottomSheetRef.current?.close();
+  };
 
-      // Clear params so this effect doesn't re-fire on unrelated re-renders
-      router.setParams({
-        selectedPlaceId: '',
-        selectedPlaceName: '',
-        selectedLocationType: '',
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
+  const handleSelectLocation = (prediction: Prediction) => {
+    const newLocation: SelectedLocation = {
+      place_id: prediction.place_id,
+      main_text: prediction.main_text || prediction.description,
+      location_type: prediction.location_type,
+    };
+    console.log("User selected location from sheet (iOS):", newLocation);
 
+    setSelectedLocations((prev) => {
+      const alreadyExists = prev.some((loc) => loc.place_id === newLocation.place_id);
+      if (alreadyExists) {
+        console.log("Location already in list, skipping duplicate");
+        return prev;
+      }
+      const next = [...prev, newLocation];
+      console.log("Location added. Total locations:", next.length);
+      return next;
+    });
+
+    closeLocationSheet();
+  };
+
+  const handleRemoveLocation = (placeId: string) => {
+    console.log("User tapped remove location chip (iOS):", placeId);
+    setSelectedLocations((prev) => prev.filter((loc) => loc.place_id !== placeId));
+  };
+
+  // --- Video ---
   const pickVideo = async () => {
-    console.log('User tapped Pick Video button (iOS)');
-    
+    console.log("User tapped Pick Video button (iOS)");
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
       if (permissionResult.granted === false) {
-        console.log('Media library permission denied');
-        Alert.alert('Permission Required', 'Permission to access media library is required!');
+        console.log("Media library permission denied");
+        Alert.alert("Permission Required", "Permission to access media library is required!");
         return;
       }
-
-      console.log('Launching image library picker for videos');
+      console.log("Launching image library picker for videos");
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
+        mediaTypes: ["videos"],
         quality: 1,
         videoMaxDuration: 120,
       });
-
-      console.log('Image picker result:', { canceled: result.canceled, assetsCount: result.assets?.length });
-
+      console.log("Image picker result:", { canceled: result.canceled, assetsCount: result.assets?.length });
       if (!result.canceled && result.assets && result.assets[0]) {
-        console.log('Video selected successfully:', result.assets[0].uri);
+        console.log("Video selected successfully:", result.assets[0].uri);
         setVideoUri(result.assets[0].uri);
       } else {
-        console.log('Video selection was canceled or no assets returned');
+        console.log("Video selection was canceled or no assets returned");
       }
     } catch (error) {
-      console.error('Error picking video:', error);
-      Alert.alert('Error', 'Failed to pick video. Please try again.');
+      console.error("Error picking video:", error);
+      Alert.alert("Error", "Failed to pick video. Please try again.");
     }
   };
 
+  // --- Post ---
   const handlePost = async () => {
-    console.log('User tapped Post button (iOS)');
-    
+    console.log("User tapped Post button (iOS)", {
+      hasVideo: !!videoUri,
+      captionLength: caption.length,
+      locationsCount: selectedLocations.length,
+    });
+
     if (!videoUri) {
-      Alert.alert('Select a video', 'Please select a video to post');
+      Alert.alert("Select a video", "Please select a video to post");
       return;
     }
 
     setIsPosting(true);
-    
+
     try {
-      console.log('Starting post creation process with', selectedLocations.length, 'locations');
-      
+      console.log("Starting post creation process with", selectedLocations.length, "locations");
+
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) {
-        console.error('No authenticated user found');
-        Alert.alert('Error', 'You must be logged in to post');
+        console.error("No authenticated user found");
+        Alert.alert("Error", "You must be logged in to post");
         setIsPosting(false);
         return;
       }
-
-      console.log('Authenticated user ID:', user.id);
+      console.log("Authenticated user ID:", user.id);
 
       const timestamp = Date.now();
       const videoPath = `videos/${user.id}/${timestamp}.mp4`;
       const thumbPath = `thumbs/${user.id}/${timestamp}.jpg`;
-      
-      console.log('Video path for video_public bucket:', videoPath);
-      console.log('Thumbnail path for video_public bucket:', thumbPath);
 
-      console.log('Step 1: Uploading video to Supabase Storage (iOS)');
-      const videoUploadResult = await uploadFileToSupabase(
-        videoUri,
-        videoPath,
-        'video_public',
-        'video/mp4'
-      );
-      console.log('✅ Video uploaded successfully:', videoUploadResult.publicUrl);
+      console.log("Step 1: Uploading video to Supabase Storage (iOS)");
+      const videoUploadResult = await uploadFileToSupabase(videoUri, videoPath, "video_public", "video/mp4");
+      console.log("✅ Video uploaded successfully:", videoUploadResult.publicUrl);
 
-      console.log('Step 2: Generating thumbnail from video');
-      const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, {
-        time: 0,
-      });
-      console.log('Thumbnail generated:', thumbnailUri);
+      console.log("Step 2: Generating thumbnail from video");
+      const { uri: thumbnailUri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
+      console.log("Thumbnail generated:", thumbnailUri);
 
-      console.log('Step 3: Uploading thumbnail to Supabase Storage (iOS)');
-      const thumbnailUploadResult = await uploadFileToSupabase(
-        thumbnailUri,
-        thumbPath,
-        'video_public',
-        'image/jpeg'
-      );
-      console.log('✅ Thumbnail uploaded successfully:', thumbnailUploadResult.publicUrl);
+      console.log("Step 3: Uploading thumbnail to Supabase Storage (iOS)");
+      const thumbnailUploadResult = await uploadFileToSupabase(thumbnailUri, thumbPath, "video_public", "image/jpeg");
+      console.log("✅ Thumbnail uploaded successfully:", thumbnailUploadResult.publicUrl);
 
-      console.log('Step 4: Creating post via backend API (iOS)');
-      
+      console.log("Step 4: Creating post via backend API (iOS)");
+
       const firstLocation = selectedLocations[0] || null;
-      
       const locationsPayload = selectedLocations.map((loc) => ({
         place_id: loc.place_id,
         place_name: loc.main_text,
@@ -178,7 +301,7 @@ export default function AddScreen() {
       }));
 
       const postPayload: any = {
-        caption: caption.trim() || '',
+        caption: caption.trim() || "",
         video_url: videoUploadResult.publicUrl,
         thumbnail_url: thumbnailUploadResult.publicUrl,
       };
@@ -193,134 +316,105 @@ export default function AddScreen() {
         postPayload.locations = locationsPayload;
       }
 
-      console.log('[API] POST /api/posts payload (iOS):', JSON.stringify(postPayload, null, 2));
+      console.log("[API] POST /api/posts payload (iOS):", JSON.stringify(postPayload, null, 2));
 
-      const createdPost = await authenticatedPost('/api/posts', postPayload);
+      const createdPost = await authenticatedPost("/api/posts", postPayload);
 
       if (!createdPost || !createdPost.id) {
-        throw new Error('Failed to create post via API');
+        throw new Error("Failed to create post via API");
       }
 
-      console.log('✅ Post created successfully via backend API (iOS), post ID:', createdPost.id);
+      console.log("✅ Post created successfully (iOS), post ID:", createdPost.id);
 
-      Alert.alert('Posted!', 'Your video has been posted successfully');
-      
+      Alert.alert("Posted!", "Your video has been posted successfully");
+
       setVideoUri(null);
-      setCaption('');
+      setCaption("");
       setSelectedLocations([]);
-      
-      console.log('Navigating to Home tab');
-      router.replace('/(tabs)/(home)');
-      
+
+      console.log("Navigating to Home tab");
+      router.replace("/(tabs)/(home)");
     } catch (error: any) {
-      console.error('Error posting video:', error);
-      Alert.alert('Error', error.message || 'Failed to post video. Please try again.');
+      console.error("Error posting video:", error);
+      Alert.alert("Error", error.message || "Failed to post video. Please try again.");
     } finally {
       setIsPosting(false);
     }
   };
 
-  const handleOpenLocationSearch = () => {
-    console.log('User tapped location field, opening search (iOS) - preserving form state (video + caption + existing locations)');
-    router.push('/search-location');
-  };
-
-  const handleRemoveLocation = (placeId: string) => {
-    console.log('User tapped remove location:', placeId);
-    setSelectedLocations(prev => prev.filter(loc => loc.place_id !== placeId));
-  };
-
-  const captionPlaceholder = 'Share your travel story...';
-  const locationPlaceholder = 'Add location (optional)';
-  const addMoreLocationText = 'Add another location';
+  const selectedModeLabel = SEARCH_MODE_OPTIONS.find((o) => o.value === searchMode)?.label || "All (recommended)";
+  const locationButtonLabel = selectedLocations.length > 0 ? "Add another location" : "Add location (optional)";
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={["top"]}>
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: textColor }]}>Create Post</Text>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {!videoUri ? (
           <View style={styles.videoPickerSection}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.videoPlaceholder, { backgroundColor: cardColor }]}
               onPress={pickVideo}
             >
-              <IconSymbol 
+              <IconSymbol
                 ios_icon_name="video.fill"
-                android_material_icon_name="videocam" 
-                size={64} 
+                android_material_icon_name="videocam"
+                size={64}
                 color={primaryColor}
               />
-              <Text style={[styles.placeholderText, { color: textColor }]}>
-                Tap to select video
-              </Text>
-              <Text style={[styles.placeholderSubtext, { color: textSecondaryColor }]}>
-                Up to 2 minutes
-              </Text>
+              <Text style={[styles.placeholderText, { color: textColor }]}>Tap to select video</Text>
+              <Text style={[styles.placeholderSubtext, { color: textSecondaryColor }]}>Up to 2 minutes</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.videoSelectedSection}>
             <View style={styles.videoPreviewContainer}>
-              <VideoView
-                player={player}
-                style={styles.videoPreview}
-                contentFit="cover"
-                nativeControls={false}
-              />
+              <VideoView player={player} style={styles.videoPreview} contentFit="cover" nativeControls={false} />
               <View style={styles.videoOverlay}>
-                <View style={[styles.videoBadge, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
-                  <IconSymbol 
+                <View style={[styles.videoBadge, { backgroundColor: "rgba(0,0,0,0.7)" }]}>
+                  <IconSymbol
                     ios_icon_name="checkmark.circle.fill"
-                    android_material_icon_name="check-circle" 
-                    size={20} 
+                    android_material_icon_name="check-circle"
+                    size={20}
                     color="#4ADE80"
                   />
                   <Text style={styles.videoBadgeText}>Video Ready</Text>
                 </View>
               </View>
             </View>
-
-            <TouchableOpacity 
-              style={[styles.changeButton, { borderColor: primaryColor }]}
-              onPress={pickVideo}
-            >
-              <IconSymbol 
-                ios_icon_name="pencil"
-                android_material_icon_name="edit" 
-                size={20} 
-                color={primaryColor}
-              />
+            <TouchableOpacity style={[styles.changeButton, { borderColor: primaryColor }]} onPress={pickVideo}>
+              <IconSymbol ios_icon_name="pencil" android_material_icon_name="edit" size={20} color={primaryColor} />
               <Text style={[styles.changeButtonText, { color: primaryColor }]}>Change Video</Text>
             </TouchableOpacity>
           </View>
         )}
 
         <View style={styles.formSection}>
+          {/* Caption */}
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
-              <IconSymbol 
+              <IconSymbol
                 ios_icon_name="doc.text"
-                android_material_icon_name="description" 
-                size={20} 
+                android_material_icon_name="description"
+                size={20}
                 color={textColor}
               />
               <Text style={[styles.inputLabel, { color: textColor }]}>Caption</Text>
               <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
             <TextInput
-              style={[styles.captionInput, { 
-                backgroundColor: cardColor, 
-                color: textColor,
-                borderColor: isDark ? '#333' : '#E5E7EB'
-              }]}
-              placeholder={captionPlaceholder}
+              style={[
+                styles.captionInput,
+                { backgroundColor: cardColor, color: textColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+              ]}
+              placeholder="Share your travel story..."
               placeholderTextColor={textSecondaryColor}
               value={caption}
               onChangeText={setCaption}
@@ -330,42 +424,43 @@ export default function AddScreen() {
             />
           </View>
 
+          {/* Locations */}
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
-              <IconSymbol 
+              <IconSymbol
                 ios_icon_name="location.fill"
-                android_material_icon_name="location-on" 
-                size={20} 
+                android_material_icon_name="location-on"
+                size={20}
                 color={textColor}
               />
               <Text style={[styles.inputLabel, { color: textColor }]}>Locations</Text>
               <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
-            
+
             {selectedLocations.length > 0 && (
               <View style={styles.selectedLocationsContainer}>
-                {selectedLocations.map((location, index) => (
-                  <View 
+                {selectedLocations.map((location) => (
+                  <View
                     key={location.place_id}
-                    style={[styles.locationChip, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}
+                    style={[styles.locationChip, { backgroundColor: isDark ? "#333" : "#F3F4F6" }]}
                   >
-                    <IconSymbol 
+                    <IconSymbol
                       ios_icon_name="mappin.circle.fill"
-                      android_material_icon_name="location-on" 
-                      size={16} 
+                      android_material_icon_name="location-on"
+                      size={16}
                       color={primaryColor}
                     />
                     <Text style={[styles.locationChipText, { color: textColor }]} numberOfLines={1}>
                       {location.main_text}
                     </Text>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       onPress={() => handleRemoveLocation(location.place_id)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <IconSymbol 
+                      <IconSymbol
                         ios_icon_name="xmark.circle.fill"
-                        android_material_icon_name="cancel" 
-                        size={18} 
+                        android_material_icon_name="cancel"
+                        size={18}
                         color={textSecondaryColor}
                       />
                     </TouchableOpacity>
@@ -373,35 +468,34 @@ export default function AddScreen() {
                 ))}
               </View>
             )}
-            
+
             <TouchableOpacity
-              style={[styles.locationButton, { 
-                backgroundColor: cardColor,
-                borderColor: isDark ? '#333' : '#E5E7EB'
-              }]}
-              onPress={handleOpenLocationSearch}
+              style={[
+                styles.locationButton,
+                { backgroundColor: cardColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+              ]}
+              onPress={openLocationSheet}
             >
-              <Text style={[
-                styles.locationButtonText,
-                { color: selectedLocations.length > 0 ? primaryColor : textSecondaryColor }
-              ]}>
-                {selectedLocations.length > 0 ? addMoreLocationText : locationPlaceholder}
+              <Text
+                style={[
+                  styles.locationButtonText,
+                  { color: selectedLocations.length > 0 ? primaryColor : textSecondaryColor },
+                ]}
+              >
+                {locationButtonLabel}
               </Text>
-              <IconSymbol 
+              <IconSymbol
                 ios_icon_name="plus"
-                android_material_icon_name="add" 
-                size={20} 
+                android_material_icon_name="add"
+                size={20}
                 color={selectedLocations.length > 0 ? primaryColor : textSecondaryColor}
               />
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.postButton, { 
-            backgroundColor: videoUri ? primaryColor : '#999',
-            opacity: isPosting ? 0.6 : 1
-          }]}
+        <TouchableOpacity
+          style={[styles.postButton, { backgroundColor: videoUri ? primaryColor : "#999", opacity: isPosting ? 0.6 : 1 }]}
           onPress={handlePost}
           disabled={!videoUri || isPosting}
         >
@@ -412,10 +506,10 @@ export default function AddScreen() {
             </>
           ) : (
             <>
-              <IconSymbol 
+              <IconSymbol
                 ios_icon_name="paperplane.fill"
-                android_material_icon_name="send" 
-                size={24} 
+                android_material_icon_name="send"
+                size={24}
                 color="#FFFFFF"
               />
               <Text style={styles.postButtonText}>Post</Text>
@@ -423,6 +517,249 @@ export default function AddScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Location picker bottom sheet */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        onClose={() => {
+          setSearchText("");
+          setPredictions([]);
+          setSearchError(null);
+          setShowModeDropdown(false);
+        }}
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} pressBehavior="close" />
+        )}
+        backgroundStyle={{ backgroundColor: bgColor }}
+        handleIndicatorStyle={{ backgroundColor: textSecondaryColor }}
+      >
+        <BottomSheetView style={[styles.sheetHeader, { borderBottomColor: isDark ? "#333" : "#E5E7EB" }]}>
+          <Text style={[styles.sheetTitle, { color: textColor }]}>Add Location</Text>
+          <TouchableOpacity onPress={closeLocationSheet} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <IconSymbol
+              ios_icon_name="xmark.circle.fill"
+              android_material_icon_name="cancel"
+              size={28}
+              color={textSecondaryColor}
+            />
+          </TouchableOpacity>
+        </BottomSheetView>
+
+        <BottomSheetScrollView
+          style={styles.sheetContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Mode dropdown */}
+          <View style={styles.sheetDropdownSection}>
+            <Text style={[styles.sheetDropdownLabel, { color: textColor }]}>Search type</Text>
+            <TouchableOpacity
+              style={[
+                styles.sheetDropdownButton,
+                { backgroundColor: cardColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+              ]}
+              onPress={() => {
+                console.log("User toggled search mode dropdown (iOS)");
+                setShowModeDropdown((v) => !v);
+              }}
+            >
+              <Text style={[styles.sheetDropdownButtonText, { color: textColor }]}>{selectedModeLabel}</Text>
+              <IconSymbol
+                ios_icon_name={showModeDropdown ? "chevron.up" : "chevron.down"}
+                android_material_icon_name={showModeDropdown ? "arrow-upward" : "arrow-downward"}
+                size={20}
+                color={textSecondaryColor}
+              />
+            </TouchableOpacity>
+
+            {showModeDropdown && (
+              <View
+                style={[
+                  styles.sheetDropdownMenu,
+                  { backgroundColor: cardColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+                ]}
+              >
+                {SEARCH_MODE_OPTIONS.map((option, index) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.sheetDropdownItem,
+                      searchMode === option.value && { backgroundColor: isDark ? "#444" : "#F3F4F6" },
+                      index < SEARCH_MODE_OPTIONS.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: isDark ? "#333" : "#E5E7EB",
+                      },
+                    ]}
+                    onPress={() => {
+                      console.log("User changed search mode to (iOS):", option.value);
+                      setSearchMode(option.value);
+                      setShowModeDropdown(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.sheetDropdownItemText,
+                        { color: searchMode === option.value ? primaryColor : textColor },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {searchMode === option.value && (
+                      <IconSymbol
+                        ios_icon_name="checkmark"
+                        android_material_icon_name="check"
+                        size={20}
+                        color={primaryColor}
+                      />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Search input */}
+          <View
+            style={[
+              styles.sheetSearchContainer,
+              { backgroundColor: cardColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+            ]}
+          >
+            <IconSymbol
+              ios_icon_name="magnifyingglass"
+              android_material_icon_name="search"
+              size={20}
+              color={textSecondaryColor}
+            />
+            <BottomSheetTextInput
+              style={[styles.sheetSearchInput, { color: textColor }]}
+              placeholder="Search location..."
+              placeholderTextColor={textSecondaryColor}
+              value={searchText}
+              onChangeText={(t) => {
+                console.log("User typing in location search (iOS):", t);
+                setSearchText(t);
+              }}
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  console.log("User cleared location search text (iOS)");
+                  setSearchText("");
+                }}
+              >
+                <IconSymbol
+                  ios_icon_name="xmark.circle.fill"
+                  android_material_icon_name="close"
+                  size={20}
+                  color={textSecondaryColor}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Results */}
+          <View style={styles.sheetResults}>
+            {searchLoading && (
+              <View style={styles.sheetLoadingContainer}>
+                <ActivityIndicator size="large" color={primaryColor} />
+                <Text style={[styles.sheetLoadingText, { color: textSecondaryColor }]}>Searching locations...</Text>
+              </View>
+            )}
+
+            {!searchLoading && searchText.trim() === "" && (
+              <View style={styles.sheetEmptyContainer}>
+                <IconSymbol
+                  ios_icon_name="location.fill"
+                  android_material_icon_name="location-on"
+                  size={48}
+                  color={textSecondaryColor}
+                />
+                <Text style={[styles.sheetEmptyText, { color: textSecondaryColor }]}>
+                  Start typing to search for a location
+                </Text>
+              </View>
+            )}
+
+            {!searchLoading && searchText.trim() !== "" && predictions.length === 0 && (
+              <View style={styles.sheetEmptyContainer}>
+                <IconSymbol
+                  ios_icon_name={searchError ? "exclamationmark.triangle" : "magnifyingglass"}
+                  android_material_icon_name={searchError ? "error" : "search"}
+                  size={48}
+                  color={searchError ? "#EF4444" : textSecondaryColor}
+                />
+                <Text style={[styles.sheetEmptyText, { color: searchError ? "#EF4444" : textSecondaryColor }]}>
+                  {searchError || "No results found"}
+                </Text>
+              </View>
+            )}
+
+            {!searchLoading &&
+              predictions.map((prediction, index) => {
+                const mainText = prediction.main_text || prediction.description;
+                const secondaryText = prediction.secondary_text || prediction.description;
+                const isAlreadyAdded = selectedLocations.some((l) => l.place_id === prediction.place_id);
+
+                return (
+                  <TouchableOpacity
+                    key={`${prediction.place_id}-${index}`}
+                    style={[
+                      styles.sheetResultItem,
+                      { backgroundColor: cardColor, opacity: isAlreadyAdded ? 0.5 : 1 },
+                    ]}
+                    onPress={() => {
+                      if (!isAlreadyAdded) {
+                        handleSelectLocation(prediction);
+                      }
+                    }}
+                    disabled={isAlreadyAdded}
+                  >
+                    <IconSymbol
+                      ios_icon_name="location.fill"
+                      android_material_icon_name="location-on"
+                      size={24}
+                      color={primaryColor}
+                    />
+                    <View style={styles.sheetResultTextContainer}>
+                      <Text style={[styles.sheetResultMainText, { color: textColor }]}>{mainText}</Text>
+                      {secondaryText && secondaryText !== mainText && (
+                        <Text style={[styles.sheetResultSecondaryText, { color: textSecondaryColor }]}>
+                          {secondaryText}
+                        </Text>
+                      )}
+                      {isAlreadyAdded && (
+                        <Text style={[styles.sheetResultSecondaryText, { color: primaryColor }]}>Already added</Text>
+                      )}
+                    </View>
+                    {isAlreadyAdded ? (
+                      <IconSymbol
+                        ios_icon_name="checkmark.circle.fill"
+                        android_material_icon_name="check-circle"
+                        size={20}
+                        color={primaryColor}
+                      />
+                    ) : (
+                      <IconSymbol
+                        ios_icon_name="plus.circle"
+                        android_material_icon_name="add-circle-outline"
+                        size={20}
+                        color={primaryColor}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+            <View style={{ height: 40 }} />
+          </View>
+        </BottomSheetScrollView>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -437,7 +774,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   content: {
     flex: 1,
@@ -452,15 +789,15 @@ const styles = StyleSheet.create({
   videoPlaceholder: {
     height: 400,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: '#999',
+    borderStyle: "dashed",
+    borderColor: "#999",
   },
   placeholderText: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 16,
   },
   placeholderSubtext: {
@@ -473,35 +810,35 @@ const styles = StyleSheet.create({
   videoPreviewContainer: {
     height: 400,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
     marginBottom: 16,
   },
   videoPreview: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   videoOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 16,
     right: 16,
   },
   videoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
   },
   videoBadgeText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   changeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 2,
@@ -509,7 +846,7 @@ const styles = StyleSheet.create({
   },
   changeButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   formSection: {
     marginTop: 24,
@@ -519,17 +856,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   inputHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   inputLabel: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   optionalLabel: {
     fontSize: 14,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   captionInput: {
     borderRadius: 12,
@@ -539,29 +876,29 @@ const styles = StyleSheet.create({
     minHeight: 100,
   },
   selectedLocationsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     marginBottom: 8,
   },
   locationChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
-    maxWidth: '100%',
+    maxWidth: "100%",
   },
   locationChipText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     flex: 1,
   },
   locationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
@@ -569,20 +906,131 @@ const styles = StyleSheet.create({
   locationButtonText: {
     fontSize: 16,
     flex: 1,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   postButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
     marginTop: 24,
     gap: 8,
   },
   postButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
+  },
+  // Bottom sheet styles
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  sheetContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  sheetDropdownSection: {
+    marginBottom: 16,
+  },
+  sheetDropdownLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  sheetDropdownButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  sheetDropdownButtonText: {
+    fontSize: 16,
+    flex: 1,
+  },
+  sheetDropdownMenu: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  sheetDropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  sheetDropdownItemText: {
+    fontSize: 15,
+    flex: 1,
+  },
+  sheetSearchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    marginBottom: 16,
+  },
+  sheetSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    paddingVertical: 4,
+  },
+  sheetResults: {
+    flex: 1,
+  },
+  sheetLoadingContainer: {
+    paddingVertical: 40,
+    alignItems: "center",
+    gap: 12,
+  },
+  sheetLoadingText: {
+    fontSize: 14,
+  },
+  sheetEmptyContainer: {
+    paddingVertical: 60,
+    alignItems: "center",
+    gap: 16,
+  },
+  sheetEmptyText: {
+    fontSize: 16,
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  sheetResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  sheetResultTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  sheetResultMainText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  sheetResultSecondaryText: {
+    fontSize: 14,
   },
 });
