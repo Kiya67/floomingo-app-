@@ -25,7 +25,6 @@ import { authenticatedPost } from "@/utils/api";
 import BottomSheet, {
   BottomSheetView,
   BottomSheetBackdrop,
-  BottomSheetTextInput,
   BottomSheetScrollView,
 } from "@gorhom/bottom-sheet";
 import Constants from "expo-constants";
@@ -634,7 +633,7 @@ export default function AddScreen() {
               size={20}
               color={textSecondaryColor}
             />
-            <BottomSheetTextInput
+            <TextInput
               style={[styles.sheetSearchInput, { color: textColor }]}
               placeholder="Search location..."
               placeholderTextColor={textSecondaryColor}

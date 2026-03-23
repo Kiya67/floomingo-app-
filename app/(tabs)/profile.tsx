@@ -259,8 +259,8 @@ export default function ProfileScreen() {
   const avatarUrl = profile?.avatar_url || '';
   const coverUrl = profile?.cover_url || '';
   const initials = getInitials(displayName);
-  const followersCount = stats.follower_count;
-  const followingCount = stats.following_count;
+  const followersCount = Number(stats.follower_count ?? 0);
+  const followingCount = Number(stats.following_count ?? 0);
   const followersCountText = followersCount.toString();
   const followingCountText = followingCount.toString();
   const emptyText = 'No travel videos yet';
