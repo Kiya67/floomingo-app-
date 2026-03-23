@@ -17,7 +17,12 @@
       "bundleIdentifier": "com.houseofmakiya.floomingo",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Floomingo uses your photo library so you can select and upload photos to your travel posts, reviews, and profile.",
+        "NSPhotoLibraryAddUsageDescription": "Floomingo saves edited or generated travel images to your photo library when you choose to save them.",
+        "NSCameraUsageDescription": "Floomingo uses your camera so you can take photos and videos for travel posts, reviews, and your profile.",
+        "NSMicrophoneUsageDescription": "Floomingo uses your microphone so you can record audio when creating videos and other content in the app.",
+        "NSLocationWhenInUseUsageDescription": "Floomingo uses your location while you use the app to show nearby destinations and travel recommendations."
       }
     },
     "android": {

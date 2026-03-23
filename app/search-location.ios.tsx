@@ -179,13 +179,15 @@ export default function SearchLocationScreen() {
         },
       });
     } else {
-      console.log('Using router.setParams + router.back() to preserve Add screen state (iOS)');
-      router.setParams({
-        selectedPlaceId: placeId,
-        selectedPlaceName: placeName,
-        selectedLocationType: locationType,
+      console.log('Navigating back to Add screen with location params (iOS)');
+      router.navigate({
+        pathname: '/(tabs)/add',
+        params: {
+          selectedPlaceId: placeId,
+          selectedPlaceName: placeName,
+          selectedLocationType: locationType,
+        },
       });
-      router.back();
     }
   };
 

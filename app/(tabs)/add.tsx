@@ -47,35 +47,37 @@ export default function AddScreen() {
 
   useEffect(() => {
     if (params.selectedPlaceId && params.selectedPlaceName && params.selectedLocationType) {
-      console.log('Location selected from search - ADDING to locations array:', {
-        placeId: params.selectedPlaceId,
-        placeName: params.selectedPlaceName,
-        locationType: params.selectedLocationType,
-        currentLocations: selectedLocations.length,
-      });
-      
       const newLocation: SelectedLocation = {
         place_id: params.selectedPlaceId as string,
         main_text: params.selectedPlaceName as string,
         location_type: params.selectedLocationType as string,
       };
-      
-      const alreadyExists = selectedLocations.some(loc => loc.place_id === newLocation.place_id);
-      
-      if (!alreadyExists) {
-        setSelectedLocations(prev => [...prev, newLocation]);
-        console.log('Location added successfully. Total locations:', selectedLocations.length + 1);
-      } else {
-        console.log('Location already exists in array, skipping duplicate');
-      }
-      
+
+      console.log('Location received from search - adding to locations array:', {
+        placeId: newLocation.place_id,
+        placeName: newLocation.main_text,
+        locationType: newLocation.location_type,
+      });
+
+      setSelectedLocations(prev => {
+        const alreadyExists = prev.some(loc => loc.place_id === newLocation.place_id);
+        if (alreadyExists) {
+          console.log('Location already exists in array, skipping duplicate');
+          return prev;
+        }
+        console.log('Location added successfully. Total locations:', prev.length + 1);
+        return [...prev, newLocation];
+      });
+
+      // Clear params so this effect doesn't re-fire on unrelated re-renders
       router.setParams({
-        selectedPlaceId: undefined,
-        selectedPlaceName: undefined,
-        selectedLocationType: undefined,
+        selectedPlaceId: '',
+        selectedPlaceName: '',
+        selectedLocationType: '',
       });
     }
-  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType, router, selectedLocations]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.selectedPlaceId, params.selectedPlaceName, params.selectedLocationType]);
 
   const pickVideo = async () => {
     console.log('User tapped Pick Video button');
