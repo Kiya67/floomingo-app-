@@ -148,14 +148,14 @@ export default function ProfileScreen() {
         .eq('user_id', user.id);
 
       setStats({
-        follower_count: followCounts.followers,
-        following_count: followCounts.following,
+        follower_count: followCounts.followerCount,
+        following_count: followCounts.followingCount,
         post_count: postCount ?? 0,
       });
       
       console.log('Profile stats fetched successfully:', {
-        followers: followCounts.followers,
-        following: followCounts.following,
+        followers: followCounts.followerCount,
+        following: followCounts.followingCount,
         posts: postCount ?? 0,
       });
     } catch (error) {

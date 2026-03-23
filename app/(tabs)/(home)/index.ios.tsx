@@ -171,6 +171,15 @@ export default function HomeScreen() {
     fetchUnreadNotifications();
   }, [filterPlaceId, filterKeywords]);
 
+  // Re-fetch posts every time the home screen comes into focus (e.g. after posting a new video)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('HomeScreen (iOS) focused - re-fetching posts');
+      fetchPosts();
+      fetchUnreadNotifications();
+    }, [fetchPosts, fetchUnreadNotifications])
+  );
+
   const onRefresh = async () => {
     console.log('User pulled to refresh posts');
     setRefreshing(true);

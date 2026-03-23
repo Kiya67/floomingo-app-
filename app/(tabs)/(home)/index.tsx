@@ -103,17 +103,14 @@ export default function HomeScreen() {
       
       if (user) {
         try {
-          const blocksResponse = await authenticatedApiCall('/api/blocks', {
+          // authenticatedApiCall returns parsed JSON directly, not a Response object
+          const blocksData = await authenticatedApiCall<any[]>('/api/blocks', {
             method: 'GET',
           });
-          
-          if (blocksResponse.ok) {
-            const blocksData = await blocksResponse.json();
-            console.log('[API] Blocked users fetched for feed filtering:', blocksData.length);
-            blockedUserIds = blocksData.map((block: any) => 
-              block.blockerId === user.id ? block.blockedId : block.blockerId
-            );
-          }
+          console.log('[API] Blocked users fetched for feed filtering:', blocksData.length);
+          blockedUserIds = blocksData.map((block: any) =>
+            block.blockerId === user.id ? block.blockedId : block.blockerId
+          );
         } catch (error) {
           console.error('[API] Error fetching blocked users:', error);
         }
@@ -199,6 +196,15 @@ export default function HomeScreen() {
     fetchPosts();
     fetchUnreadNotifications();
   }, [filterPlaceId, filterKeywords]);
+
+  // Re-fetch posts every time the home screen comes into focus (e.g. after posting a new video)
+  useFocusEffect(
+    useCallback(() => {
+      console.log('HomeScreen focused - re-fetching posts');
+      fetchPosts();
+      fetchUnreadNotifications();
+    }, [fetchPosts, fetchUnreadNotifications])
+  );
 
   const onRefresh = async () => {
     console.log('User pulled to refresh posts');
