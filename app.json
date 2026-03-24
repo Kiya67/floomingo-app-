@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Flomingo",
-    "slug": "flomingo",
+    "name": "Floomingo",
+    "slug": "floomingo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/Untitled (Logo).png",
@@ -42,7 +42,7 @@
       "expo-router",
       "expo-web-browser"
     ],
-    "scheme": "flomingo",
+    "scheme": "floomingo",
     "experiments": {
       "typedRoutes": true
     },
