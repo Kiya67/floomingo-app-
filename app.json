@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.makiyaa.floomingo.001",
+      "bundleIdentifier": "com.p7abd5571b07b4c76adb32018b8134a3d.app",
       "buildNumber": "2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
