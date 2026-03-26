@@ -11,16 +11,14 @@ import {
   ActivityIndicator,
   Animated,
   RefreshControl,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, Stack } from "expo-router";
 import { Film, Play } from "lucide-react-native";
 import { apiGet } from "@/utils/api";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const PINK = "#FF3B7A";
-const { width } = Dimensions.get("window");
-const THUMB_HEIGHT = (width - 32) * (9 / 16);
 
 interface UserSummary {
   id: string;
@@ -44,7 +42,9 @@ interface Experience {
   created_at: string;
 }
 
-function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+function resolveImageSource(
+  source: string | number | ImageSourcePropType | undefined
+): ImageSourcePropType {
   if (!source) return { uri: "" };
   if (typeof source === "string") return { uri: source };
   return source as ImageSourcePropType;
@@ -57,7 +57,7 @@ function getInitials(name: string): string {
   return name.substring(0, 2).toUpperCase();
 }
 
-function SkeletonCard() {
+function SkeletonCard({ thumbHeight }: { thumbHeight: number }) {
   const opacity = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
     Animated.loop(
@@ -69,7 +69,7 @@ function SkeletonCard() {
   }, []);
   return (
     <View style={skeletonStyles.card}>
-      <Animated.View style={[skeletonStyles.thumb, { opacity }]} />
+      <Animated.View style={[skeletonStyles.thumb, { opacity, height: thumbHeight }]} />
       <View style={skeletonStyles.info}>
         <Animated.View style={[skeletonStyles.titleLine, { opacity }]} />
         <Animated.View style={[skeletonStyles.titleLineShort, { opacity }]} />
@@ -84,7 +84,7 @@ function SkeletonCard() {
 
 const skeletonStyles = StyleSheet.create({
   card: { marginHorizontal: 16, marginBottom: 20 },
-  thumb: { width: "100%", height: THUMB_HEIGHT, borderRadius: 14, backgroundColor: "#E5E7EB" },
+  thumb: { width: "100%", borderRadius: 14, backgroundColor: "#E5E7EB" },
   info: { paddingTop: 10, gap: 6 },
   titleLine: { height: 16, borderRadius: 8, backgroundColor: "#E5E7EB", width: "85%" },
   titleLineShort: { height: 16, borderRadius: 8, backgroundColor: "#E5E7EB", width: "60%" },
@@ -102,10 +102,24 @@ function AnimatedCard({ index, children }: { index: number; children: React.Reac
       Animated.timing(translateY, { toValue: 0, duration: 350, delay: Math.min(index * 60, 300), useNativeDriver: true }),
     ]).start();
   }, []);
-  return <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>;
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
+  );
 }
 
-function ExperienceCard({ experience, onPress, index }: { experience: Experience; onPress: () => void; index: number }) {
+function ExperienceCard({
+  experience,
+  onPress,
+  index,
+  thumbHeight,
+}: {
+  experience: Experience;
+  onPress: () => void;
+  index: number;
+  thumbHeight: number;
+}) {
   const username = experience.user?.username || "unknown";
   const avatarUrl = experience.user?.avatar_url || "";
   const initials = getInitials(username);
@@ -117,9 +131,13 @@ function ExperienceCard({ experience, onPress, index }: { experience: Experience
       <TouchableOpacity style={cardStyles.card} onPress={onPress} activeOpacity={0.92}>
         <View style={cardStyles.thumbContainer}>
           {hasThumbnail ? (
-            <Image source={resolveImageSource(experience.thumbnail_url)} style={cardStyles.thumb} resizeMode="cover" />
+            <Image
+              source={resolveImageSource(experience.thumbnail_url)}
+              style={[cardStyles.thumb, { height: thumbHeight }]}
+              resizeMode="cover"
+            />
           ) : (
-            <View style={cardStyles.thumbPlaceholder}>
+            <View style={[cardStyles.thumbPlaceholder, { height: thumbHeight }]}>
               <Play size={32} color="rgba(255,255,255,0.5)" strokeWidth={1.5} />
             </View>
           )}
@@ -150,8 +168,8 @@ function ExperienceCard({ experience, onPress, index }: { experience: Experience
 const cardStyles = StyleSheet.create({
   card: { marginHorizontal: 16, marginBottom: 20 },
   thumbContainer: { position: "relative", borderRadius: 14, overflow: "hidden" },
-  thumb: { width: "100%", height: THUMB_HEIGHT, backgroundColor: "#E5E7EB" },
-  thumbPlaceholder: { width: "100%", height: THUMB_HEIGHT, backgroundColor: "#1A1A2E", justifyContent: "center", alignItems: "center" },
+  thumb: { width: "100%", backgroundColor: "#E5E7EB" },
+  thumbPlaceholder: { width: "100%", backgroundColor: "#1A1A2E", justifyContent: "center", alignItems: "center" },
   playOverlay: { position: "absolute", bottom: 10, right: 10 },
   playCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.3)" },
   info: { paddingTop: 10, gap: 6 },
@@ -165,6 +183,9 @@ const cardStyles = StyleSheet.create({
 
 export default function ExperiencesScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const thumbHeight = (width - 32) * (9 / 16);
+
   const [experiences, setExperiences] = useState<Experience[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -173,11 +194,13 @@ export default function ExperiencesScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   const fetchExperiences = useCallback(async (cursor?: string, isRefresh = false) => {
-    console.log("Experiences: fetching, cursor:", cursor, "refresh:", isRefresh);
+    console.log("Experiences (iOS): fetching, cursor:", cursor, "refresh:", isRefresh);
     try {
       const params = new URLSearchParams({ limit: "20" });
       if (cursor) params.set("cursor", cursor);
-      const data = await apiGet<{ experiences: Experience[]; next_cursor: string | null }>(`/api/experiences?${params}`);
+      const data = await apiGet<{ experiences: Experience[]; next_cursor: string | null }>(
+        `/api/experiences?${params}`
+      );
       const newItems = Array.isArray(data?.experiences) ? data.experiences : [];
       if (cursor && !isRefresh) {
         setExperiences((prev) => [...prev, ...newItems]);
@@ -187,7 +210,7 @@ export default function ExperiencesScreen() {
       setNextCursor(data?.next_cursor ?? null);
       setError(null);
     } catch (e: any) {
-      console.error("Experiences: fetch error:", e);
+      console.error("Experiences (iOS): fetch error:", e);
       if (!cursor) setError("Couldn't load experiences. Check your connection.");
     } finally {
       setLoading(false);
@@ -198,14 +221,14 @@ export default function ExperiencesScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log("ExperiencesScreen focused - fetching experiences");
+      console.log("ExperiencesScreen (iOS) focused - fetching experiences");
       setLoading(true);
       fetchExperiences();
     }, [fetchExperiences])
   );
 
   const handleRefresh = useCallback(() => {
-    console.log("User pulled to refresh experiences");
+    console.log("User pulled to refresh experiences (iOS)");
     setRefreshing(true);
     fetchExperiences(undefined, true);
   }, [fetchExperiences]);
@@ -216,40 +239,54 @@ export default function ExperiencesScreen() {
     fetchExperiences(nextCursor);
   }, [nextCursor, loadingMore, fetchExperiences]);
 
-  const handleCardPress = useCallback((experience: Experience) => {
-    console.log("User tapped experience card:", experience.id, experience.title);
-    router.push(`/experience/${experience.id}` as any);
-  }, [router]);
+  const handleCardPress = useCallback(
+    (experience: Experience) => {
+      console.log("User tapped experience card (iOS):", experience.id, experience.title);
+      router.push(`/experience/${experience.id}` as any);
+    },
+    [router]
+  );
 
-  const renderItem = useCallback(({ item, index }: { item: Experience; index: number }) => (
-    <ExperienceCard experience={item} onPress={() => handleCardPress(item)} index={index} />
-  ), [handleCardPress]);
-
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Film size={22} color={PINK} strokeWidth={2} />
-      <Text style={styles.headerTitle}>Experiences</Text>
-    </View>
+  const renderItem = useCallback(
+    ({ item, index }: { item: Experience; index: number }) => (
+      <ExperienceCard
+        experience={item}
+        onPress={() => handleCardPress(item)}
+        index={index}
+        thumbHeight={thumbHeight}
+      />
+    ),
+    [handleCardPress, thumbHeight]
   );
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        {renderHeader()}
-        {[0, 1, 2].map((i) => <SkeletonCard key={i} />)}
+      <SafeAreaView style={styles.container} edges={["bottom"]}>
+        <Stack.Screen options={{ title: "Experiences", headerShown: true }} />
+        {[0, 1, 2].map((i) => (
+          <SkeletonCard key={i} thumbHeight={thumbHeight} />
+        ))}
       </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        {renderHeader()}
+      <SafeAreaView style={styles.container} edges={["bottom"]}>
+        <Stack.Screen options={{ title: "Experiences", headerShown: true }} />
         <View style={styles.errorState}>
           <Film size={48} color="#D1D5DB" strokeWidth={1.5} />
           <Text style={styles.errorTitle}>Couldn't load experiences</Text>
           <Text style={styles.errorSubtitle}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); fetchExperiences(); }} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => {
+              console.log("User tapped retry on experiences screen (iOS)");
+              setLoading(true);
+              fetchExperiences();
+            }}
+            activeOpacity={0.8}
+          >
             <Text style={styles.retryBtnText}>Try again</Text>
           </TouchableOpacity>
         </View>
@@ -258,25 +295,33 @@ export default function ExperiencesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      <Stack.Screen options={{ title: "Experiences", headerShown: true }} />
       <FlatList
         data={experiences}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PINK} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PINK} />
+        }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Film size={48} color="#D1D5DB" strokeWidth={1.5} />
             <Text style={styles.emptyTitle}>No experiences yet</Text>
-            <Text style={styles.emptySubtitle}>Long-form travel experiences will appear here</Text>
+            <Text style={styles.emptySubtitle}>
+              Long-form travel experiences will appear here
+            </Text>
           </View>
         }
-        ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={PINK} style={{ marginVertical: 20 }} /> : null}
+        ListFooterComponent={
+          loadingMore ? (
+            <ActivityIndicator size="small" color={PINK} style={{ marginVertical: 20 }} />
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -284,9 +329,7 @@ export default function ExperiencesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
-  header: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16 },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#111827", letterSpacing: -0.5 },
-  listContent: { paddingBottom: 100 },
+  listContent: { paddingTop: 12, paddingBottom: 40 },
   emptyState: { alignItems: "center", paddingTop: 80, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#374151", marginTop: 16 },
   emptySubtitle: { fontSize: 14, color: "#9CA3AF", marginTop: 8, textAlign: "center", lineHeight: 20 },

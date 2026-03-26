@@ -108,6 +108,7 @@ export default function RootLayout() {
               <Stack.Screen name="auth-callback" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="experience/[id]" options={{ headerShown: true, title: '' }} />
+              <Stack.Screen name="experiences" options={{ headerShown: true, title: 'Experiences' }} />
               <Stack.Screen name="upload-type" options={{ headerShown: false, presentation: 'modal' }} />
               <Stack.Screen name="upload-moment" options={{ headerShown: true }} />
               <Stack.Screen name="upload-experience" options={{ headerShown: true }} />
