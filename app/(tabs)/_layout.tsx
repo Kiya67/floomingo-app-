@@ -81,7 +81,7 @@ export default function TabLayout() {
             <CreateTabButton
               onPress={() => {
                 console.log('User tapped Create tab button');
-                router.push('/upload-type' as any);
+                router.push('/(tabs)/add' as any);
               }}
             />
           ),

@@ -29,6 +29,8 @@ import BottomSheet, {
 } from "@gorhom/bottom-sheet";
 import Constants from "expo-constants";
 
+type UploadType = "moment" | "experience";
+
 interface SelectedLocation {
   place_id: string;
   main_text: string;
@@ -55,6 +57,8 @@ const SEARCH_MODE_OPTIONS: { value: SearchMode; label: string }[] = [
   { value: "airport", label: "Airports" },
 ];
 
+const ACCENT = "#FF4D6D";
+
 export default function AddScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -66,9 +70,15 @@ export default function AddScreen() {
   const cardColor = isDark ? colors.cardDark : colors.card;
   const primaryColor = isDark ? colors.primaryDark : colors.primary;
 
+  // --- Type toggle ---
+  const [uploadType, setUploadType] = useState<UploadType>("moment");
+
   // --- Form state ---
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
+  // Experience fields
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<SelectedLocation[]>([]);
   const [isPosting, setIsPosting] = useState(false);
 
@@ -93,6 +103,21 @@ export default function AddScreen() {
     console.log("AddScreen mounted");
     return () => console.log("AddScreen unmounted");
   }, []);
+
+  const resetForm = () => {
+    setVideoUri(null);
+    setCaption("");
+    setTitle("");
+    setDescription("");
+    setSelectedLocations([]);
+  };
+
+  const handleTypeSwitch = (type: UploadType) => {
+    if (type === uploadType) return;
+    console.log("User switched upload type to:", type);
+    setUploadType(type);
+    resetForm();
+  };
 
   // --- Location search ---
   const searchLocations = useCallback(async (input: string, mode: SearchMode) => {
@@ -178,7 +203,7 @@ export default function AddScreen() {
   }, [searchText, searchMode, searchLocations]);
 
   const openLocationSheet = () => {
-    console.log("User tapped Add Location — opening bottom sheet (state preserved)");
+    console.log("User tapped Add Location — opening bottom sheet");
     setSearchText("");
     setPredictions([]);
     setSearchError(null);
@@ -249,82 +274,72 @@ export default function AddScreen() {
     }
   };
 
-  // --- Post ---
-  const handlePost = async () => {
-    console.log("User tapped Share button", {
+  // --- Upload helpers ---
+  const uploadVideoAndThumbnail = async (userId: string) => {
+    const timestamp = Date.now();
+    const videoPath = `videos/${userId}/${timestamp}.mp4`;
+    const thumbPath = `thumbs/${userId}/${timestamp}.jpg`;
+
+    console.log("Step 1: Uploading video to Supabase Storage, uri:", videoUri);
+    let videoPublicUrl: string;
+    try {
+      const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "video_public", "video/mp4");
+      videoPublicUrl = videoUploadResult.publicUrl;
+      console.log("✅ Step 1 complete — video uploaded:", videoPublicUrl);
+    } catch (uploadErr: any) {
+      console.error("❌ Step 1 FAILED — video upload error:", uploadErr, JSON.stringify(uploadErr));
+      throw new Error(`Video upload failed: ${uploadErr?.message || String(uploadErr)}`);
+    }
+
+    console.log("Step 2: Generating thumbnail from video uri:", videoUri);
+    let thumbnailPublicUrl: string | null = null;
+    try {
+      const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri!, { time: 0 });
+      console.log("Thumbnail generated at:", thumbResult.uri);
+      console.log("Step 3: Uploading thumbnail to Supabase Storage");
+      const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "video_public", "image/jpeg");
+      thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
+      console.log("✅ Step 3 complete — thumbnail uploaded:", thumbnailPublicUrl);
+    } catch (thumbErr: any) {
+      console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail):", thumbErr);
+      thumbnailPublicUrl = null;
+    }
+
+    return { videoPublicUrl, thumbnailPublicUrl };
+  };
+
+  // --- Post Moment ---
+  const handlePostMoment = async () => {
+    console.log("User tapped Share button — Moment", {
       hasVideo: !!videoUri,
       captionLength: caption.length,
       locationsCount: selectedLocations.length,
     });
 
     if (!videoUri) {
-      Alert.alert('No Video', 'Please select a video first.');
-      return;
-    }
-    if (!caption.trim()) {
-      Alert.alert('No Caption', 'Please add a caption to your moment.');
+      Alert.alert("No Video", "Please select a video first.");
       return;
     }
 
     setIsPosting(true);
-
     try {
-      console.log("Starting post creation process with", selectedLocations.length, "locations");
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         console.error("No authenticated user found");
         Alert.alert("Error", "You must be logged in to post");
-        setIsPosting(false);
         return;
       }
       console.log("Authenticated user ID:", user.id);
 
-      const timestamp = Date.now();
-      const videoPath = `videos/${user.id}/${timestamp}.mp4`;
-      const thumbPath = `thumbs/${user.id}/${timestamp}.jpg`;
+      const { videoPublicUrl, thumbnailPublicUrl } = await uploadVideoAndThumbnail(user.id);
 
-      // Step 1: Upload video
-      console.log("Step 1: Uploading video to Supabase Storage, uri:", videoUri);
-      let videoPublicUrl: string;
-      try {
-        const videoUploadResult = await uploadFileToSupabase(videoUri, videoPath, "video_public", "video/mp4");
-        videoPublicUrl = videoUploadResult.publicUrl;
-        console.log("✅ Step 1 complete — video uploaded:", videoPublicUrl);
-      } catch (uploadErr: any) {
-        console.error("❌ Step 1 FAILED — video upload error:", uploadErr, JSON.stringify(uploadErr));
-        throw new Error(`Video upload failed: ${uploadErr?.message || String(uploadErr)}`);
-      }
-
-      // Step 2: Generate thumbnail (optional — continue without it if it fails)
-      console.log("Step 2: Generating thumbnail from video uri:", videoUri);
-      let thumbnailPublicUrl: string | null = null;
-      try {
-        const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 0 });
-        console.log("Thumbnail generated at:", thumbResult.uri);
-
-        // Step 3: Upload thumbnail
-        console.log("Step 3: Uploading thumbnail to Supabase Storage");
-        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "video_public", "image/jpeg");
-        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
-        console.log("✅ Step 3 complete — thumbnail uploaded:", thumbnailPublicUrl);
-      } catch (thumbErr: any) {
-        console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail):", thumbErr, JSON.stringify(thumbErr));
-        thumbnailPublicUrl = null;
-      }
-
-      // Step 4: Build and send post payload
-      console.log("Step 4: Creating post via backend API");
-
+      console.log("Step 4: Creating moment (post) via backend API");
       const firstLocation = selectedLocations[0] || null;
       const locationsPayload = selectedLocations.map((loc) => ({
         place_id: loc.place_id,
         place_name: loc.main_text,
         location_type: loc.location_type,
       }));
-
-      console.log("[Post] Locations array formatted for payload:", JSON.stringify(locationsPayload, null, 2));
-      console.log("[Post] First location (top-level fields):", firstLocation ? JSON.stringify(firstLocation) : "none");
 
       const postPayload: any = {
         caption: caption.trim() || "",
@@ -337,7 +352,6 @@ export default function AddScreen() {
         postPayload.place_name = firstLocation.main_text;
         postPayload.location_type = firstLocation.location_type;
       }
-
       if (locationsPayload.length > 0) {
         postPayload.locations = locationsPayload;
       }
@@ -352,7 +366,6 @@ export default function AddScreen() {
         console.log("[API] POST /api/posts — response body:", JSON.stringify(createdPost, null, 2));
       } catch (apiErr: any) {
         console.error("❌ Step 4 FAILED — API error:", apiErr?.message || String(apiErr));
-        // Extract a clean message — strip any HTML that may come from a non-JSON error response
         const rawMsg: string = apiErr?.message || String(apiErr);
         const isHtml = rawMsg.includes("<html") || rawMsg.includes("<!DOCTYPE");
         const cleanMsg = isHtml
@@ -366,31 +379,136 @@ export default function AddScreen() {
         throw new Error("Failed to create post via API — no post ID returned");
       }
 
-      console.log("✅ Post created successfully, post ID:", createdPost.id);
-
-      Alert.alert("Posted!", "Your video has been posted successfully");
-
-      setVideoUri(null);
-      setCaption("");
-      setSelectedLocations([]);
-
+      console.log("✅ Moment created successfully, post ID:", createdPost.id);
+      Alert.alert("Posted!", "Your moment has been posted successfully");
+      resetForm();
       console.log("Navigating to Home tab");
       router.replace("/(tabs)/(home)");
     } catch (error: any) {
-      console.error("❌ handlePost FAILED:", error, JSON.stringify(error));
+      console.error("❌ handlePostMoment FAILED:", error, JSON.stringify(error));
       Alert.alert("Post Failed", error?.message || "Failed to post video. Please try again.");
     } finally {
       setIsPosting(false);
     }
   };
 
+  // --- Post Experience ---
+  const handlePostExperience = async () => {
+    console.log("User tapped Share button — Experience", {
+      hasVideo: !!videoUri,
+      titleLength: title.length,
+      descriptionLength: description.length,
+      locationsCount: selectedLocations.length,
+    });
+
+    if (!videoUri) {
+      Alert.alert("No Video", "Please select a video first.");
+      return;
+    }
+    if (!title.trim()) {
+      Alert.alert("Title Required", "Please add a title for your experience.");
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("No authenticated user found");
+        Alert.alert("Error", "You must be logged in to post");
+        return;
+      }
+      console.log("Authenticated user ID:", user.id);
+
+      const { videoPublicUrl, thumbnailPublicUrl } = await uploadVideoAndThumbnail(user.id);
+
+      console.log("Step 4: Creating experience via backend API");
+
+      const experiencePayload: any = {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        video_url: videoPublicUrl,
+        thumbnail_url: thumbnailPublicUrl,
+      };
+
+      console.log("[API] POST /api/experiences — full payload:", JSON.stringify(experiencePayload, null, 2));
+      console.log("[API] POST endpoint URL:", `${BACKEND_URL}/api/experiences`);
+
+      let createdExperience: any;
+      try {
+        createdExperience = await authenticatedPost("/api/experiences", experiencePayload);
+        console.log("[API] POST /api/experiences — response status: 2xx OK");
+        console.log("[API] POST /api/experiences — response body:", JSON.stringify(createdExperience, null, 2));
+      } catch (apiErr: any) {
+        console.error("❌ Step 4 FAILED — API error:", apiErr?.message || String(apiErr));
+        const rawMsg: string = apiErr?.message || String(apiErr);
+        const isHtml = rawMsg.includes("<html") || rawMsg.includes("<!DOCTYPE");
+        const cleanMsg = isHtml
+          ? `Server error (${rawMsg.match(/API error: (\d+)/)?.[1] || "unknown status"}) — please try again`
+          : rawMsg;
+        throw new Error(cleanMsg);
+      }
+
+      if (!createdExperience || !createdExperience.id) {
+        console.error("❌ API returned unexpected response:", JSON.stringify(createdExperience));
+        throw new Error("Failed to create experience via API — no ID returned");
+      }
+
+      console.log("✅ Experience created successfully, experience ID:", createdExperience.id);
+      Alert.alert("Posted!", "Your experience has been posted successfully");
+      resetForm();
+      console.log("Navigating to Home tab");
+      router.replace("/(tabs)/(home)");
+    } catch (error: any) {
+      console.error("❌ handlePostExperience FAILED:", error, JSON.stringify(error));
+      Alert.alert("Post Failed", error?.message || "Failed to post experience. Please try again.");
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handlePost = () => {
+    if (uploadType === "moment") {
+      handlePostMoment();
+    } else {
+      handlePostExperience();
+    }
+  };
+
   const selectedModeLabel = SEARCH_MODE_OPTIONS.find((o) => o.value === searchMode)?.label || "All (recommended)";
   const locationButtonLabel = selectedLocations.length > 0 ? "Add another location" : "Add location (optional)";
+
+  const isMoment = uploadType === "moment";
+  const headerTitle = isMoment ? "New Moment" : "New Experience";
+  const isPostEnabled = isMoment
+    ? !!videoUri
+    : !!videoUri && title.trim().length > 0;
+  const postButtonBg = isPostEnabled ? primaryColor : "#999";
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Share Moment</Text>
+        <Text style={[styles.headerTitle, { color: textColor }]}>{headerTitle}</Text>
+      </View>
+
+      {/* Type toggle */}
+      <View style={styles.toggleContainer}>
+        <View style={[styles.toggleTrack, { backgroundColor: isDark ? "#2A2A2A" : "#F0F0F0" }]}>
+          <TouchableOpacity
+            style={[styles.togglePill, isMoment && styles.togglePillActive]}
+            onPress={() => handleTypeSwitch("moment")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.togglePillText, isMoment && styles.togglePillTextActive]}>Moment</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.togglePill, !isMoment && styles.togglePillActive]}
+            onPress={() => handleTypeSwitch("experience")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.togglePillText, !isMoment && styles.togglePillTextActive]}>Experience</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -399,6 +517,7 @@ export default function AddScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Video picker */}
         {!videoUri ? (
           <View style={styles.videoPickerSection}>
             <TouchableOpacity
@@ -439,34 +558,99 @@ export default function AddScreen() {
         )}
 
         <View style={styles.formSection}>
-          {/* Caption */}
-          <View style={styles.inputContainer}>
-            <View style={styles.inputHeader}>
-              <IconSymbol
-                ios_icon_name="doc.text"
-                android_material_icon_name="description"
-                size={20}
-                color={textColor}
+          {isMoment ? (
+            /* ---- MOMENT FIELDS ---- */
+            <View style={styles.inputContainer}>
+              <View style={styles.inputHeader}>
+                <IconSymbol
+                  ios_icon_name="doc.text"
+                  android_material_icon_name="description"
+                  size={20}
+                  color={textColor}
+                />
+                <Text style={[styles.inputLabel, { color: textColor }]}>Caption</Text>
+                <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
+              </View>
+              <TextInput
+                style={[
+                  styles.captionInput,
+                  { backgroundColor: cardColor, color: textColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+                ]}
+                placeholder="Share your travel story..."
+                placeholderTextColor={textSecondaryColor}
+                value={caption}
+                onChangeText={setCaption}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
               />
-              <Text style={[styles.inputLabel, { color: textColor }]}>Caption</Text>
-              <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
             </View>
-            <TextInput
-              style={[
-                styles.captionInput,
-                { backgroundColor: cardColor, color: textColor, borderColor: isDark ? "#333" : "#E5E7EB" },
-              ]}
-              placeholder="Share your travel story..."
-              placeholderTextColor={textSecondaryColor}
-              value={caption}
-              onChangeText={setCaption}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
+          ) : (
+            /* ---- EXPERIENCE FIELDS ---- */
+            <>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <IconSymbol
+                    ios_icon_name="textformat"
+                    android_material_icon_name="title"
+                    size={20}
+                    color={textColor}
+                  />
+                  <Text style={[styles.inputLabel, { color: textColor }]}>Title</Text>
+                  <Text style={[styles.requiredLabel, { color: ACCENT }]}>(required)</Text>
+                </View>
+                <TextInput
+                  style={[
+                    styles.titleInput,
+                    { backgroundColor: cardColor, color: textColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+                  ]}
+                  placeholder="Give your experience a title..."
+                  placeholderTextColor={textSecondaryColor}
+                  value={title}
+                  onChangeText={(t) => setTitle(t.slice(0, 120))}
+                  maxLength={120}
+                  returnKeyType="next"
+                />
+                <Text style={[styles.charCount, { color: textSecondaryColor }]}>
+                  {title.length}
+                  /120
+                </Text>
+              </View>
 
-          {/* Locations */}
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeader}>
+                  <IconSymbol
+                    ios_icon_name="doc.text"
+                    android_material_icon_name="description"
+                    size={20}
+                    color={textColor}
+                  />
+                  <Text style={[styles.inputLabel, { color: textColor }]}>Description</Text>
+                  <Text style={[styles.optionalLabel, { color: textSecondaryColor }]}>(optional)</Text>
+                </View>
+                <TextInput
+                  style={[
+                    styles.captionInput,
+                    { backgroundColor: cardColor, color: textColor, borderColor: isDark ? "#333" : "#E5E7EB" },
+                  ]}
+                  placeholder="Describe your experience..."
+                  placeholderTextColor={textSecondaryColor}
+                  value={description}
+                  onChangeText={(t) => setDescription(t.slice(0, 2000))}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  maxLength={2000}
+                />
+                <Text style={[styles.charCount, { color: textSecondaryColor }]}>
+                  {description.length}
+                  /2000
+                </Text>
+              </View>
+            </>
+          )}
+
+          {/* Locations (both modes) */}
           <View style={styles.inputContainer}>
             <View style={styles.inputHeader}>
               <IconSymbol
@@ -537,9 +721,9 @@ export default function AddScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.postButton, { backgroundColor: videoUri ? primaryColor : "#999", opacity: isPosting ? 0.6 : 1 }]}
+          style={[styles.postButton, { backgroundColor: postButtonBg, opacity: isPosting ? 0.6 : 1 }]}
           onPress={handlePost}
-          disabled={!videoUri || isPosting}
+          disabled={!isPostEnabled || isPosting}
         >
           {isPosting ? (
             <>
@@ -799,7 +983,6 @@ export default function AddScreen() {
                 );
               })}
 
-            {/* Bottom padding inside scroll */}
             <View style={{ height: 40 }} />
           </View>
         </BottomSheetScrollView>
@@ -814,11 +997,40 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: "bold",
+  },
+  toggleContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    alignItems: "center",
+  },
+  toggleTrack: {
+    flexDirection: "row",
+    borderRadius: 24,
+    padding: 4,
+  },
+  togglePill: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+  togglePillActive: {
+    backgroundColor: ACCENT,
+  },
+  togglePillText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#888",
+  },
+  togglePillTextActive: {
+    color: "#FFFFFF",
   },
   content: {
     flex: 1,
@@ -828,10 +1040,10 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   videoPickerSection: {
-    marginTop: 24,
+    marginTop: 16,
   },
   videoPlaceholder: {
-    height: 400,
+    height: 360,
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
@@ -849,10 +1061,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   videoSelectedSection: {
-    marginTop: 24,
+    marginTop: 16,
   },
   videoPreviewContainer: {
-    height: 400,
+    height: 360,
     borderRadius: 16,
     overflow: "hidden",
     marginBottom: 16,
@@ -893,7 +1105,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   formSection: {
-    marginTop: 24,
+    marginTop: 20,
     gap: 20,
   },
   inputContainer: {
@@ -912,12 +1124,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontStyle: "italic",
   },
+  requiredLabel: {
+    fontSize: 14,
+    fontStyle: "italic",
+  },
+  titleInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    fontSize: 16,
+  },
   captionInput: {
     borderRadius: 12,
     borderWidth: 1,
     padding: 12,
     fontSize: 16,
     minHeight: 100,
+  },
+  charCount: {
+    fontSize: 12,
+    textAlign: "right",
   },
   selectedLocationsContainer: {
     flexDirection: "row",
