@@ -3,8 +3,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { IconSymbol } from '@/components/IconSymbol';
 import { colors } from '@/styles/commonStyles';
-import { useColorScheme } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { useColorScheme, StyleSheet } from 'react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -22,32 +21,9 @@ export default function TabLayout() {
         tabBarInactiveTintColor,
         tabBarStyle: {
           backgroundColor: tabBarBackgroundColor,
-          borderTopWidth: 0,
-          height: 70,
-          paddingBottom: 12,
-          paddingTop: 12,
-          position: 'absolute',
-          bottom: 8,
-          left: 16,
-          right: 16,
-          borderRadius: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: isDark ? 0.3 : 0.15,
-          shadowRadius: 8,
-          elevation: 8,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
         },
-        tabBarBackground: () => (
-          <BlurView
-            intensity={80}
-            style={{
-              flex: 1,
-              borderRadius: 20,
-              backgroundColor: tabBarBackgroundColor,
-              overflow: 'hidden',
-            }}
-          />
-        ),
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
