@@ -186,6 +186,14 @@ describe('Boards Feature', () => {
     await expectStatus(res, 404);
   });
 
+  it('should return 400 when getting videos with invalid board UUID format', async () => {
+    const res = await authenticatedApi(
+      `/api/boards/invalid-uuid/videos`,
+      authToken
+    );
+    await expectStatus(res, 400);
+  });
+
   it('should return 401 when getting board videos without authentication', async () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
     const res = await api(`/api/boards/${nonExistentId}/videos`);
@@ -549,6 +557,32 @@ describe('Posts Feature', () => {
     postId = data.id;
   });
 
+  it('should create a post with locations array', async () => {
+    const res = await authenticatedApi('/api/posts', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        caption: 'Post with multiple locations',
+        video_url: 'https://example.com/video2.mp4',
+        locations: [
+          {
+            place_id: 'place-456',
+            place_name: 'Location One',
+            location_type: 'city',
+          },
+          {
+            place_id: 'place-789',
+            place_name: 'Location Two',
+            location_type: 'landmark',
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data.caption).toBe('Post with multiple locations');
+  });
+
   it('should get a single post with view count', async () => {
     const res = await api(`/api/posts/${postId}`);
     await expectStatus(res, 200);
@@ -561,6 +595,11 @@ describe('Posts Feature', () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
     const res = await api(`/api/posts/${nonExistentId}`);
     await expectStatus(res, 404);
+  });
+
+  it('should return 400 when getting post with invalid UUID format', async () => {
+    const res = await api(`/api/posts/invalid-uuid`);
+    await expectStatus(res, 400);
   });
 
   it('should return 401 when incrementing view without authentication', async () => {
@@ -1268,6 +1307,32 @@ describe('Moments Feature', () => {
     momentId = data.id;
   });
 
+  it('should create moment with places array', async () => {
+    const res = await authenticatedApi('/api/moments', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/moment2.mp4',
+        caption: 'Moment with places',
+        places: [
+          {
+            place_id: 'place-001',
+            place_name: 'Paris',
+            place_address: '75001 Paris, France',
+          },
+          {
+            place_id: 'place-002',
+            place_name: 'Eiffel Tower',
+          },
+        ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('video_url');
+  });
+
   it('should get moment by ID', async () => {
     const res = await api(`/api/moments/${momentId}`);
     await expectStatus(res, 200);
@@ -1279,6 +1344,11 @@ describe('Moments Feature', () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
     const res = await api(`/api/moments/${nonExistentId}`);
     await expectStatus(res, 404);
+  });
+
+  it('should return 400 when getting moment with invalid UUID format', async () => {
+    const res = await api(`/api/moments/invalid-uuid`);
+    await expectStatus(res, 400);
   });
 
   it('should toggle like on moment', async () => {
@@ -1366,6 +1436,7 @@ describe('Experiences Feature', () => {
   let userId: string;
   let otherUserToken: string;
   let experienceId: string;
+  let momentId: string;
 
   it('should set up test users', async () => {
     const user1 = await signUpTestUser();
@@ -1374,6 +1445,20 @@ describe('Experiences Feature', () => {
 
     const user2 = await signUpTestUser();
     otherUserToken = user2.token;
+  });
+
+  it('should create a moment for linking to experience', async () => {
+    const res = await authenticatedApi('/api/moments', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/moment-for-exp.mp4',
+        caption: 'Moment to link',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    momentId = data.id;
   });
 
   it('should return 401 when getting experiences without authentication', async () => {
@@ -1463,6 +1548,21 @@ describe('Experiences Feature', () => {
     expect(data).toHaveProperty('id');
   });
 
+  it('should create experience with linked_moment_id', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/exp3.mp4',
+        title: 'Experience with Linked Moment',
+        linked_moment_id: momentId,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+  });
+
   it('should return 401 when getting experience without authentication', async () => {
     const res = await api(`/api/experiences/${experienceId}`);
     await expectStatus(res, 401);
@@ -1479,5 +1579,10 @@ describe('Experiences Feature', () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
     const res = await authenticatedApi(`/api/experiences/${nonExistentId}`, authToken);
     await expectStatus(res, 404);
+  });
+
+  it('should return 400 when getting experience with invalid UUID format', async () => {
+    const res = await authenticatedApi(`/api/experiences/invalid-uuid`, authToken);
+    await expectStatus(res, 400);
   });
 });
