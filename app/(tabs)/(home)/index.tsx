@@ -1,14 +1,26 @@
 
-import React, { useEffect, useState, useCallback } from "react";
-import { StyleSheet, View, Text, ScrollView, useColorScheme, ActivityIndicator, Dimensions, RefreshControl, TouchableOpacity } from "react-native";
-import { IconSymbol } from "@/components/IconSymbol";
-import { colors } from "@/styles/commonStyles";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  StyleSheet,
+  View,
+  Text,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  FlatList,
+  useWindowDimensions,
+  Image,
+  ImageSourcePropType,
+} from "react-native";
 import { supabase } from "@/lib/supabase";
-import { VideoGridItem } from "@/components/VideoGridItem";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
 import { authenticatedApiCall } from "@/utils/api";
 import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Heart, MessageCircle, Bookmark, Send, MoreHorizontal, Settings } from "lucide-react-native";
 
 interface Post {
   id: string;
@@ -26,87 +38,208 @@ interface Post {
   };
 }
 
-const windowWidth = Dimensions.get('window').width;
-const gridItemSize = (windowWidth - 48) / 3;
-const gridItemHeight = gridItemSize * 1.5;
-const MAX_PLAYING_VIDEOS = 2;
+function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+  if (!source) return { uri: '' };
+  if (typeof source === 'string') return { uri: source };
+  return source as ImageSourcePropType;
+}
+
+interface MomentItemProps {
+  item: Post;
+  isVisible: boolean;
+  screenHeight: number;
+  screenWidth: number;
+  insets: { top: number; bottom: number };
+  onFilterPress: () => void;
+}
+
+function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, onFilterPress }: MomentItemProps) {
+  const player = useVideoPlayer(item.video_url || '', (p) => {
+    p.loop = true;
+    p.muted = false;
+  });
+
+  useEffect(() => {
+    if (isVisible) {
+      player.play();
+    } else {
+      player.pause();
+    }
+  }, [isVisible]);
+
+  const displayName = item.profiles?.display_name || 'Unknown';
+  const avatarUrl = item.profiles?.avatar_url || '';
+  const placeName = item.place_name || '';
+  const caption = item.caption || '';
+
+  const handleLikePress = () => {
+    console.log('User tapped like on moment:', item.id);
+  };
+
+  const handleCommentPress = () => {
+    console.log('User tapped comment on moment:', item.id);
+  };
+
+  const handleBookmarkPress = () => {
+    console.log('User tapped bookmark on moment:', item.id);
+  };
+
+  const handleSharePress = () => {
+    console.log('User tapped share on moment:', item.id);
+  };
+
+  const handleMorePress = () => {
+    console.log('User tapped more on moment:', item.id);
+  };
+
+  const handleFollowPress = () => {
+    console.log('User tapped Follow on moment:', item.id, 'user:', item.user_id);
+  };
+
+  const bottomPadding = insets.bottom + 60;
+  const topPadding = insets.top;
+
+  return (
+    <View style={{ width: screenWidth, height: screenHeight }}>
+      {/* Full-screen video */}
+      <VideoView
+        player={player}
+        style={StyleSheet.absoluteFill}
+        contentFit="cover"
+        nativeControls={false}
+      />
+
+      {/* Top gradient */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
+        style={[styles.topGradient, { height: screenHeight * 0.15 }]}
+        pointerEvents="none"
+      />
+
+      {/* Bottom gradient */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
+        style={[styles.bottomGradient, { height: screenHeight * 0.4 }]}
+        pointerEvents="none"
+      />
+
+      {/* Top-left filter icon */}
+      <TouchableOpacity
+        style={[styles.topLeftIcon, { top: topPadding + 12 }]}
+        onPress={onFilterPress}
+        activeOpacity={0.7}
+      >
+        <Settings size={24} color="#FFFFFF" />
+      </TouchableOpacity>
+
+      {/* Top-right play indicator */}
+      <View style={[styles.topRightIndicator, { top: topPadding + 12 }]}>
+        <View style={styles.playTriangle} />
+      </View>
+
+      {/* Bottom-right action buttons */}
+      <View style={[styles.rightActions, { bottom: bottomPadding }]}>
+        <TouchableOpacity style={styles.actionButton} onPress={handleLikePress} activeOpacity={0.7}>
+          <Heart size={28} color="#FFFFFF" />
+          <Text style={styles.actionCount}>0</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleCommentPress} activeOpacity={0.7}>
+          <MessageCircle size={28} color="#FFFFFF" />
+          <Text style={styles.actionCount}>0</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleBookmarkPress} activeOpacity={0.7}>
+          <Bookmark size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleSharePress} activeOpacity={0.7}>
+          <Send size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleMorePress} activeOpacity={0.7}>
+          <MoreHorizontal size={28} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom-left user info */}
+      <View style={[styles.bottomLeft, { bottom: bottomPadding }]}>
+        <View style={styles.userRow}>
+          {avatarUrl ? (
+            <Image source={resolveImageSource(avatarUrl)} style={styles.avatar} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
+          <Text style={styles.username}>{displayName}</Text>
+          <TouchableOpacity style={styles.followPill} onPress={handleFollowPress} activeOpacity={0.7}>
+            <Text style={styles.followText}>Follow</Text>
+          </TouchableOpacity>
+        </View>
+
+        {placeName ? (
+          <Text style={styles.locationText}>{placeName}</Text>
+        ) : null}
+
+        {caption ? (
+          <Text style={styles.captionText} numberOfLines={2}>{caption}</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
-  const bgColor = isDark ? colors.backgroundDark : colors.background;
-  const textColor = isDark ? colors.textDark : colors.text;
-  const textSecondaryColor = isDark ? colors.textSecondaryDark : colors.textSecondary;
-  const primaryColor = isDark ? colors.primaryDark : colors.primary;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [showOnboardingTooltip, setShowOnboardingTooltip] = useState(false);
+  const [visibleIndex, setVisibleIndex] = useState(0);
 
   // Filter state
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
   const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
   const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
 
-  // Calculate active filters count
   const activeFiltersCount = [filterPlaceId, filterKeywords].filter(Boolean).length;
 
-  // Check if we should show onboarding tooltip when screen comes into focus
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      setVisibleIndex(viewableItems[0].index ?? 0);
+    }
+  }).current;
+
   useFocusEffect(
     useCallback(() => {
       const checkOnboarding = async () => {
         const shouldShow = await shouldShowOnboardingTooltip();
         console.log('HomeScreen - Should show onboarding tooltip:', shouldShow);
         if (shouldShow) {
-          // Delay slightly to ensure UI is ready
-          setTimeout(() => {
-            setShowOnboardingTooltip(true);
-          }, 500);
+          setTimeout(() => setShowOnboardingTooltip(true), 500);
         }
       };
-      
       checkOnboarding();
     }, [])
   );
 
-  const fetchUnreadNotifications = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-
-      if (!error && data) {
-        setUnreadNotificationsCount(data.length);
-      }
-    } catch (error) {
-      console.error('Error fetching unread notifications:', error);
-    }
-  }, []);
-
   const fetchPosts = useCallback(async () => {
-    console.log('Fetching posts with filters:', { filterPlaceId, filterKeywords });
+    console.log('Fetching moments with filters:', { filterPlaceId, filterKeywords });
     try {
-      // Fetch blocked users list from API
       let blockedUserIds: string[] = [];
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (user) {
         try {
-          // authenticatedApiCall returns parsed JSON directly, not a Response object
-          const blocksData = await authenticatedApiCall<any[]>('/api/blocks', {
-            method: 'GET',
-          });
+          const blocksData = await authenticatedApiCall<any[]>('/api/blocks', { method: 'GET' });
           console.log('[API] Blocked users fetched for feed filtering:', blocksData.length);
           blockedUserIds = blocksData.map((block: any) =>
             block.blockerId === user.id ? block.blockedId : block.blockerId
@@ -127,13 +260,11 @@ export default function HomeScreen() {
         `)
         .order('created_at', { ascending: false });
 
-      // Apply location filter
       if (filterPlaceId) {
         console.log('Applying place_id filter:', filterPlaceId);
         query = query.eq('place_id', filterPlaceId);
       }
 
-      // Filter out blocked users
       if (blockedUserIds.length > 0) {
         console.log('Filtering out blocked users from feed:', blockedUserIds.length);
         query = query.not('user_id', 'in', `(${blockedUserIds.join(',')})`);
@@ -142,34 +273,27 @@ export default function HomeScreen() {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching posts:', error);
+        console.error('Error fetching moments:', error);
         setPosts([]);
       } else {
         let filteredData = Array.isArray(data) ? data : [];
 
         try {
-          // Apply keyword filter client-side
           if (filterKeywords && filterKeywords.trim()) {
-            const keywords = filterKeywords
-              .toLowerCase()
-              .split(/[\s,]+/)
-              .filter(k => k.length > 0);
-            
+            const keywords = filterKeywords.toLowerCase().split(/[\s,]+/).filter(k => k.length > 0);
             console.log('Applying keyword filters:', keywords);
-
             filteredData = filteredData.filter(post => {
               const caption = (post?.caption ?? '').toLowerCase();
               const placeName = (post?.place_name ?? '').toLowerCase();
               const searchText = `${caption} ${placeName}`;
-
               return keywords.every(keyword => searchText.includes(keyword));
             });
           }
 
-          console.log('Posts fetched successfully:', filteredData.length);
+          console.log('Moments fetched successfully:', filteredData.length);
           setPosts(filteredData);
         } catch (filterError) {
-          console.error('Error applying video filter:', filterError);
+          console.error('Error applying filter:', filterError);
           setPosts(filteredData);
         }
       }
@@ -181,7 +305,6 @@ export default function HomeScreen() {
     }
   }, [filterPlaceId, filterKeywords]);
 
-  // Listen for filter params from location search
   useEffect(() => {
     if (params.filterPlaceId) {
       console.log('Received filter location from search:', params.filterPlaceName);
@@ -191,42 +314,27 @@ export default function HomeScreen() {
     }
   }, [params.filterPlaceId, params.filterPlaceName]);
 
-  // Re-fetch posts every time the home screen comes into focus (covers mount + tab re-focus + post-navigation return).
-  // Also re-runs when filter deps change because fetchPosts is memoized on them.
   useFocusEffect(
     useCallback(() => {
-      console.log('HomeScreen focused - re-fetching posts');
+      console.log('HomeScreen focused - re-fetching moments');
       fetchPosts();
-      fetchUnreadNotifications();
-    }, [fetchPosts, fetchUnreadNotifications])
+    }, [fetchPosts])
   );
 
   const onRefresh = async () => {
-    console.log('User pulled to refresh posts');
+    console.log('User pulled to refresh moments');
     setRefreshing(true);
     await fetchPosts();
-    await fetchUnreadNotifications();
     setRefreshing(false);
   };
 
-  const handleGridItemPress = (post: Post) => {
-    console.log('User tapped grid item, opening full screen:', post.id);
-    router.push(`/video/${post.id}`);
-  };
-
   const handleFilterPress = () => {
-    console.log('User tapped filter icon');
+    console.log('User tapped filter icon on feed');
     setFilterModalVisible(true);
-  };
-
-  const handleNotificationsPress = () => {
-    console.log('User tapped notifications icon - navigating to notifications tab');
-    router.push('/(tabs)/notifications');
   };
 
   const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
     console.log('Applying filters:', { placeId, placeName, keywords });
-    
     try {
       setFilterPlaceId(placeId);
       setFilterPlaceName(placeName);
@@ -240,7 +348,6 @@ export default function HomeScreen() {
 
   const handleClearFilters = () => {
     console.log('Clearing all filters');
-    
     try {
       setFilterPlaceId(null);
       setFilterPlaceName(null);
@@ -257,108 +364,72 @@ export default function HomeScreen() {
     setShowOnboardingTooltip(false);
   };
 
-  const emptyText = activeFiltersCount > 0 
-    ? 'No videos found. Try clearing filters.' 
-    : 'No videos yet. Be the first to post!';
+  const emptyText = activeFiltersCount > 0
+    ? 'No moments found. Try clearing filters.'
+    : 'No moments yet';
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: bgColor }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={primaryColor} />
-          <Text style={[styles.loadingText, { color: textColor }]}>Loading videos...</Text>
-        </View>
+      <View style={[styles.loadingContainer, { backgroundColor: '#000' }]}>
+        <ActivityIndicator size="large" color="#FF6B8A" />
+      </View>
+    );
+  }
+
+  if (posts.length === 0) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: '#000' }]}>
+        <Text style={styles.emptyText}>{emptyText}</Text>
+        <Text style={styles.emptySubtext}>Check back soon for travel moments</Text>
+
+        <FilterModal
+          visible={filterModalVisible}
+          onClose={() => setFilterModalVisible(false)}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+          initialPlaceId={filterPlaceId}
+          initialPlaceName={filterPlaceName}
+          initialKeywords={filterKeywords}
+        />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bgColor }]}>
-      <View style={[styles.headerBar, { backgroundColor: bgColor }]}>
-        <View style={styles.headerLeft}>
-          <TouchableOpacity 
-            style={styles.iconButton}
-            onPress={handleNotificationsPress}
-            activeOpacity={0.7}
-          >
-            <View>
-              <IconSymbol 
-                android_material_icon_name="favorite" 
-                size={28} 
-                color={primaryColor}
-              />
-              {unreadNotificationsCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
-                  <Text style={styles.badgeText}>
-                    {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={styles.iconButton}
-            onPress={handleFilterPress}
-            activeOpacity={0.7}
-          >
-            <View>
-              <IconSymbol 
-                android_material_icon_name="filter-list" 
-                size={28} 
-                color={textColor}
-              />
-              {activeFiltersCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: primaryColor }]}>
-                  <Text style={styles.badgeText}>{activeFiltersCount}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView 
-        style={styles.feed} 
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <FlatList
+        data={posts}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item, index }) => (
+          <MomentItem
+            item={item}
+            isVisible={index === visibleIndex}
+            screenHeight={screenHeight}
+            screenWidth={screenWidth}
+            insets={insets}
+            onFilterPress={handleFilterPress}
+          />
+        )}
+        pagingEnabled
         showsVerticalScrollIndicator={false}
+        snapToInterval={screenHeight}
+        decelerationRate="fast"
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={primaryColor}
-            colors={[primaryColor]}
+            tintColor="#FF6B8A"
+            colors={['#FF6B8A']}
           />
         }
-      >
-        {!Array.isArray(posts) || posts.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <IconSymbol 
-              android_material_icon_name="videocam" 
-              size={64} 
-              color={textSecondaryColor}
-            />
-            <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-              {emptyText}
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.gridContainer}>
-            {posts.map((post, index) => (
-              post && post.id ? (
-                <VideoGridItem
-                  key={post.id}
-                  post={post}
-                  size={gridItemSize}
-                  onPress={() => handleGridItemPress(post)}
-                  shouldPlay={index < MAX_PLAYING_VIDEOS}
-                  showFollowButton={false}
-                />
-              ) : null
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        getItemLayout={(_, index) => ({
+          length: screenHeight,
+          offset: screenHeight * index,
+          index,
+        })}
+      />
 
       <FilterModal
         visible={filterModalVisible}
@@ -379,77 +450,146 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-  },
-  feed: {
-    flex: 1,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 80,
-  },
   emptyText: {
-    fontSize: 16,
-    marginTop: 16,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '600',
     textAlign: 'center',
   },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 12,
-    paddingTop: 12,
+  emptySubtext: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 15,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  bottomGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  topLeftIcon: {
+    position: 'absolute',
+    left: 16,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topRightIndicator: {
+    position: 'absolute',
+    right: 16,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playTriangle: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 12,
+    borderBottomWidth: 12,
+    borderLeftWidth: 20,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: '#FF6B8A',
+  },
+  rightActions: {
+    position: 'absolute',
+    right: 12,
+    alignItems: 'center',
+    gap: 20,
+  },
+  actionButton: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionCount: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  bottomLeft: {
+    position: 'absolute',
+    left: 12,
+    right: 80,
     gap: 6,
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FF6B8A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  avatarInitial: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  username: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  followPill: {
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  followText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  locationText: {
+    color: '#FF6B8A',
+    fontSize: 13,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  captionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 20,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 });

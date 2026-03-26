@@ -251,7 +251,7 @@ export default function AddScreen() {
 
   // --- Post ---
   const handlePost = async () => {
-    console.log("User tapped Post button", {
+    console.log("User tapped Share button", {
       hasVideo: !!videoUri,
       captionLength: caption.length,
       locationsCount: selectedLocations.length,
@@ -386,7 +386,7 @@ export default function AddScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]} edges={["top"]}>
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: textColor }]}>Create Post</Text>
+        <Text style={[styles.headerTitle, { color: textColor }]}>Share Moment</Text>
       </View>
 
       <ScrollView
@@ -540,7 +540,7 @@ export default function AddScreen() {
           {isPosting ? (
             <>
               <ActivityIndicator color="#FFFFFF" />
-              <Text style={styles.postButtonText}>Posting...</Text>
+              <Text style={styles.postButtonText}>Sharing...</Text>
             </>
           ) : (
             <>
@@ -550,7 +550,7 @@ export default function AddScreen() {
                 size={24}
                 color="#FFFFFF"
               />
-              <Text style={styles.postButtonText}>Post</Text>
+              <Text style={styles.postButtonText}>Share</Text>
             </>
           )}
         </TouchableOpacity>

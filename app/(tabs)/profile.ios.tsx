@@ -1,11 +1,12 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, Modal } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { VideoGridItem } from "@/components/VideoGridItem";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
+import { Bell } from "lucide-react-native";
 
 interface Profile {
   id: string;
@@ -68,9 +69,10 @@ export default function ProfileScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   const fetchProfile = async () => {
-    console.log('Fetching user profile');
+    console.log('Fetching user profile (iOS)');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -99,7 +101,7 @@ export default function ProfileScreen() {
   };
 
   const fetchUserPosts = async () => {
-    console.log('Fetching user posts');
+    console.log('Fetching user moments (iOS)');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -115,9 +117,9 @@ export default function ProfileScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching posts:', error);
+        console.error('Error fetching moments:', error);
       } else {
-        console.log('User posts fetched successfully:', data?.length || 0);
+        console.log('User moments fetched successfully (iOS):', data?.length || 0);
         setPosts(data || []);
       }
     } catch (error) {
@@ -128,7 +130,7 @@ export default function ProfileScreen() {
   };
 
   const fetchStats = async () => {
-    console.log('Fetching profile stats');
+    console.log('Fetching profile stats (iOS)');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -146,7 +148,7 @@ export default function ProfileScreen() {
       if (error) {
         console.error('Error fetching stats:', error);
       } else {
-        console.log('Profile stats fetched successfully:', data);
+        console.log('Profile stats fetched successfully (iOS):', data);
         setStats(data || { follower_count: 0, following_count: 0, post_count: 0 });
       }
     } catch (error) {
@@ -154,42 +156,56 @@ export default function ProfileScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchProfile();
-    fetchUserPosts();
-    fetchStats();
-  }, []);
+  const fetchUnreadNotifications = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-  // Refresh posts when screen comes into focus (e.g., after viewing a video)
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      if (!error && data) {
+        setUnreadNotificationsCount(data.length);
+      }
+    } catch (error) {
+      console.error('Error fetching unread notifications (iOS):', error);
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Profile screen focused - refreshing posts');
-      fetchUserPosts();
-      fetchStats();
+      console.log('Profile screen (iOS) focused - refreshing moments and stats');
+      Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
     }, [])
   );
 
   const onRefresh = async () => {
-    console.log('User pulled to refresh profile');
+    console.log('User pulled to refresh profile (iOS)');
     setRefreshing(true);
-    await fetchProfile();
-    await fetchUserPosts();
-    await fetchStats();
+    await Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
     setRefreshing(false);
   };
 
   const handleEditProfile = () => {
-    console.log('User tapped Edit Profile button');
+    console.log('User tapped Edit Profile button (iOS)');
     router.push('/edit-profile');
   };
 
   const handleSettings = () => {
-    console.log('User tapped Settings button');
+    console.log('User tapped Settings button (iOS)');
     router.push('/settings');
   };
 
+  const handleNotifications = () => {
+    console.log('User tapped Notifications bell on profile (iOS)');
+    router.push('/(tabs)/notifications');
+  };
+
   const handleLongPress = (post: Post) => {
-    console.log('User long pressed on post:', post.id);
+    console.log('User long pressed on moment (iOS):', post.id);
     setPostToDelete(post);
     setShowDeleteModal(true);
   };
@@ -197,11 +213,10 @@ export default function ProfileScreen() {
   const handleDeletePost = async () => {
     if (!postToDelete) return;
 
-    console.log('User confirmed delete for post:', postToDelete.id);
+    console.log('User confirmed delete for moment (iOS):', postToDelete.id);
     setDeleting(true);
 
     try {
-      // Delete from posts table (cascading deletes will handle related records)
       const { error: postError } = await supabase
         .from('posts')
         .delete()
@@ -209,26 +224,23 @@ export default function ProfileScreen() {
 
       if (postError) throw postError;
 
-      console.log('Post deleted successfully');
+      console.log('Moment deleted successfully (iOS)');
       
-      // Update local state
       setPosts(prevPosts => prevPosts.filter(p => p.id !== postToDelete.id));
       
-      // Close modal
       setShowDeleteModal(false);
       setPostToDelete(null);
       
-      // Refresh stats
       await fetchStats();
     } catch (error) {
-      console.error('Error deleting post:', error);
+      console.error('Error deleting moment (iOS):', error);
     } finally {
       setDeleting(false);
     }
   };
 
   const handleCancelDelete = () => {
-    console.log('User cancelled delete');
+    console.log('User cancelled delete (iOS)');
     setShowDeleteModal(false);
     setPostToDelete(null);
   };
@@ -252,9 +264,12 @@ export default function ProfileScreen() {
   const initials = getInitials(displayName);
   const followersCount = stats.follower_count;
   const followingCount = stats.following_count;
+  const momentsCount = Number(stats.post_count ?? 0);
   const followersCountText = followersCount.toString();
   const followingCountText = followingCount.toString();
-  const emptyText = 'No travel videos yet';
+  const momentsCountText = momentsCount.toString();
+  const emptyText = 'No moments yet';
+  const unreadBadgeText = unreadNotificationsCount > 9 ? '9+' : String(unreadNotificationsCount);
 
   if (loading) {
     return (
@@ -290,17 +305,32 @@ export default function ProfileScreen() {
             <View style={[styles.coverPlaceholder, { backgroundColor: primaryColor }]} />
           )}
           
-          <TouchableOpacity 
-            style={[styles.settingsButton, { backgroundColor: cardColor }]}
-            onPress={handleSettings}
-          >
-            <IconSymbol 
-              ios_icon_name="gearshape.fill"
-              android_material_icon_name="settings" 
-              size={24} 
-              color={textColor}
-            />
-          </TouchableOpacity>
+          {/* Top-right header buttons: bell + settings */}
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={[styles.headerIconButton, { backgroundColor: cardColor }]}
+              onPress={handleNotifications}
+            >
+              <Bell size={22} color={textColor} />
+              {unreadNotificationsCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
+                  <Text style={styles.badgeText}>{unreadBadgeText}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.headerIconButton, { backgroundColor: cardColor }]}
+              onPress={handleSettings}
+            >
+              <IconSymbol 
+                ios_icon_name="gearshape.fill"
+                android_material_icon_name="settings" 
+                size={22} 
+                color={textColor}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.profileInfo}>
@@ -334,7 +364,7 @@ export default function ProfileScreen() {
             <TouchableOpacity 
               style={styles.statItem}
               onPress={() => {
-                console.log('User tapped Followers');
+                console.log('User tapped Followers (iOS)');
                 if (profile?.id) {
                   router.push(`/followers/${profile.id}`);
                 }
@@ -346,7 +376,7 @@ export default function ProfileScreen() {
             <TouchableOpacity 
               style={styles.statItem}
               onPress={() => {
-                console.log('User tapped Following');
+                console.log('User tapped Following (iOS)');
                 if (profile?.id) {
                   router.push(`/following/${profile.id}`);
                 }
@@ -355,6 +385,10 @@ export default function ProfileScreen() {
               <Text style={[styles.statValue, { color: textColor }]}>{followingCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
             </TouchableOpacity>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: textColor }]}>{momentsCountText}</Text>
+              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Moments</Text>
+            </View>
           </View>
 
           <TouchableOpacity 
@@ -379,7 +413,7 @@ export default function ProfileScreen() {
               size={24} 
               color={textColor}
             />
-            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Videos</Text>
+            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Moments</Text>
           </View>
 
           {posts.length === 0 ? (
@@ -396,14 +430,14 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {posts.map((post, index) => (
+              {posts.map((post) => (
                 <VideoGridItem
                   key={post.id}
                   post={post}
                   size={gridItemSize}
                   shouldPlay={false}
                   onPress={() => {
-                    console.log('User tapped video:', post.id);
+                    console.log('User tapped moment (iOS):', post.id);
                     router.push(`/video/${post.id}`);
                   }}
                   onLongPress={() => handleLongPress(post)}
@@ -424,9 +458,9 @@ export default function ProfileScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Post</Text>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Moment</Text>
             <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
-              Are you sure you want to delete this post? This action cannot be undone.
+              Are you sure you want to delete this moment? This action cannot be undone.
             </Text>
             
             <View style={styles.modalButtons}>
@@ -482,10 +516,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  settingsButton: {
+  headerButtons: {
     position: 'absolute',
     top: 60,
     right: 16,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  headerIconButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -496,6 +534,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   profileInfo: {
     paddingHorizontal: 16,
@@ -550,7 +604,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 20,
-    gap: 40,
+    gap: 32,
   },
   statItem: {
     alignItems: 'center',

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme, ActivityIndicator, Image, RefreshControl, Dimensions, Modal } from "react-native";
 import { colors } from "@/styles/commonStyles";
 import { VideoGridItem } from "@/components/VideoGridItem";
@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useRouter, useFocusEffect } from "expo-router";
 import { IconSymbol } from "@/components/IconSymbol";
 import { getFollowCounts } from "@/utils/supabaseHelpers";
+import { Bell } from "lucide-react-native";
 
 interface Profile {
   id: string;
@@ -69,6 +70,7 @@ export default function ProfileScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [postToDelete, setPostToDelete] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   const fetchProfile = async () => {
     console.log('Fetching user profile');
@@ -100,7 +102,7 @@ export default function ProfileScreen() {
   };
 
   const fetchUserPosts = async () => {
-    console.log('Fetching user posts');
+    console.log('Fetching user moments');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -116,9 +118,9 @@ export default function ProfileScreen() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching posts:', error);
+        console.error('Error fetching moments:', error);
       } else {
-        console.log('User posts fetched successfully:', data?.length || 0);
+        console.log('User moments fetched successfully:', data?.length || 0);
         setPosts(data || []);
       }
     } catch (error) {
@@ -138,10 +140,8 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Use Supabase client to fetch follow counts
       const followCounts = await getFollowCounts(user.id);
       
-      // Get post count
       const { count: postCount } = await supabase
         .from('posts')
         .select('*', { count: 'exact', head: true })
@@ -156,26 +156,43 @@ export default function ProfileScreen() {
       console.log('Profile stats fetched successfully:', {
         followers: followCounts.followerCount,
         following: followCounts.followingCount,
-        posts: postCount ?? 0,
+        moments: postCount ?? 0,
       });
     } catch (error) {
       console.error('Error in fetchStats:', error);
     }
   };
 
-  // Refresh all data when screen comes into focus (covers mount + tab re-focus).
-  // setLoading(false) is handled inside fetchUserPosts; Promise.all ensures all three run in parallel.
+  const fetchUnreadNotifications = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_read', false);
+
+      if (!error && data) {
+        setUnreadNotificationsCount(data.length);
+      }
+    } catch (error) {
+      console.error('Error fetching unread notifications:', error);
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Profile screen focused - refreshing profile, posts, and stats');
-      Promise.all([fetchProfile(), fetchUserPosts(), fetchStats()]);
+      console.log('Profile screen focused - refreshing profile, moments, and stats');
+      Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
     }, [])
   );
 
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
     setRefreshing(true);
-    await Promise.all([fetchProfile(), fetchUserPosts(), fetchStats()]);
+    await Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
     setRefreshing(false);
   };
 
@@ -189,8 +206,13 @@ export default function ProfileScreen() {
     router.push('/settings');
   };
 
+  const handleNotifications = () => {
+    console.log('User tapped Notifications bell on profile');
+    router.push('/(tabs)/notifications');
+  };
+
   const handleLongPress = (post: Post) => {
-    console.log('User long pressed on post:', post.id);
+    console.log('User long pressed on moment:', post.id);
     setPostToDelete(post);
     setShowDeleteModal(true);
   };
@@ -198,11 +220,10 @@ export default function ProfileScreen() {
   const handleDeletePost = async () => {
     if (!postToDelete) return;
 
-    console.log('User confirmed delete for post:', postToDelete.id);
+    console.log('User confirmed delete for moment:', postToDelete.id);
     setDeleting(true);
 
     try {
-      // Delete from posts table (cascading deletes will handle related records)
       const { error: postError } = await supabase
         .from('posts')
         .delete()
@@ -210,19 +231,16 @@ export default function ProfileScreen() {
 
       if (postError) throw postError;
 
-      console.log('Post deleted successfully');
+      console.log('Moment deleted successfully');
       
-      // Update local state
       setPosts(prevPosts => prevPosts.filter(p => p.id !== postToDelete.id));
       
-      // Close modal
       setShowDeleteModal(false);
       setPostToDelete(null);
       
-      // Refresh stats
       await fetchStats();
     } catch (error) {
-      console.error('Error deleting post:', error);
+      console.error('Error deleting moment:', error);
     } finally {
       setDeleting(false);
     }
@@ -253,9 +271,12 @@ export default function ProfileScreen() {
   const initials = getInitials(displayName);
   const followersCount = Number(stats.follower_count ?? 0);
   const followingCount = Number(stats.following_count ?? 0);
+  const momentsCount = Number(stats.post_count ?? 0);
   const followersCountText = followersCount.toString();
   const followingCountText = followingCount.toString();
-  const emptyText = 'No travel videos yet';
+  const momentsCountText = momentsCount.toString();
+  const emptyText = 'No moments yet';
+  const unreadBadgeText = unreadNotificationsCount > 9 ? '9+' : String(unreadNotificationsCount);
 
   if (loading) {
     return (
@@ -291,16 +312,31 @@ export default function ProfileScreen() {
             <View style={[styles.coverPlaceholder, { backgroundColor: primaryColor }]} />
           )}
           
-          <TouchableOpacity 
-            style={[styles.settingsButton, { backgroundColor: cardColor }]}
-            onPress={handleSettings}
-          >
-            <IconSymbol 
-              android_material_icon_name="settings" 
-              size={24} 
-              color={textColor}
-            />
-          </TouchableOpacity>
+          {/* Top-right header buttons: bell + settings */}
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={[styles.headerIconButton, { backgroundColor: cardColor }]}
+              onPress={handleNotifications}
+            >
+              <Bell size={22} color={textColor} />
+              {unreadNotificationsCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: '#FF3B30' }]}>
+                  <Text style={styles.badgeText}>{unreadBadgeText}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.headerIconButton, { backgroundColor: cardColor }]}
+              onPress={handleSettings}
+            >
+              <IconSymbol 
+                android_material_icon_name="settings" 
+                size={22} 
+                color={textColor}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.profileInfo}>
@@ -355,6 +391,10 @@ export default function ProfileScreen() {
               <Text style={[styles.statValue, { color: textColor }]}>{followingCountText}</Text>
               <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Following</Text>
             </TouchableOpacity>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: textColor }]}>{momentsCountText}</Text>
+              <Text style={[styles.statLabel, { color: textSecondaryColor }]}>Moments</Text>
+            </View>
           </View>
 
           <TouchableOpacity 
@@ -377,7 +417,7 @@ export default function ProfileScreen() {
               size={24} 
               color={textColor}
             />
-            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Videos</Text>
+            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Moments</Text>
           </View>
 
           {posts.length === 0 ? (
@@ -393,8 +433,7 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.gridContainer}>
-              {posts.map((post, index) => {
-                // CRITICAL: Safe render with guard
+              {posts.map((post) => {
                 if (!post) return null;
                 return (
                   <VideoGridItem
@@ -403,7 +442,7 @@ export default function ProfileScreen() {
                     size={gridItemSize}
                     shouldPlay={false}
                     onPress={() => {
-                      console.log('User tapped video:', post.id);
+                      console.log('User tapped moment:', post.id);
                       router.push(`/video/${post.id}`);
                     }}
                     onLongPress={() => handleLongPress(post)}
@@ -425,9 +464,9 @@ export default function ProfileScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Post</Text>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Delete Moment</Text>
             <Text style={[styles.modalMessage, { color: textSecondaryColor }]}>
-              Are you sure you want to delete this post? This action cannot be undone.
+              Are you sure you want to delete this moment? This action cannot be undone.
             </Text>
             
             <View style={styles.modalButtons}>
@@ -483,10 +522,14 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  settingsButton: {
+  headerButtons: {
     position: 'absolute',
     top: 60,
     right: 16,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  headerIconButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -497,6 +540,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   profileInfo: {
     paddingHorizontal: 16,
@@ -551,7 +610,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 20,
-    gap: 40,
+    gap: 32,
   },
   statItem: {
     alignItems: 'center',
