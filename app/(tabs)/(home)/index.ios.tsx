@@ -11,16 +11,17 @@ import {
   useWindowDimensions,
   Image,
   ImageSourcePropType,
+  Share,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
-import { authenticatedApiCall } from "@/utils/api";
+import { authenticatedApiCall, authenticatedPost, authenticatedDelete } from "@/utils/api";
 import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Heart, MessageCircle, Bookmark, Send, MoreHorizontal, Settings } from "lucide-react-native";
+import { Heart, MessageCircle, Bookmark, Send, MoreHorizontal, MapPin } from "lucide-react-native";
 
 interface Post {
   id: string;
@@ -53,11 +54,16 @@ interface MomentItemProps {
   onFilterPress: () => void;
 }
 
-function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, onFilterPress }: MomentItemProps) {
+function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: MomentItemProps) {
+  const router = useRouter();
   const player = useVideoPlayer(item.video_url || '', (p) => {
     p.loop = true;
     p.muted = false;
   });
+
+  const [liked, setLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
+  const [following, setFollowing] = useState(false);
 
   useEffect(() => {
     if (isVisible) {
@@ -71,33 +77,81 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, onFilt
   const avatarUrl = item.profiles?.avatar_url || '';
   const placeName = item.place_name || '';
   const caption = item.caption || '';
+  const avatarInitial = displayName.charAt(0).toUpperCase();
+
+  const likeIconColor = liked ? '#FF6B8A' : '#FFFFFF';
+  const followPillStyle = following ? styles.followPillActive : styles.followPill;
+  const followTextStyle = following ? styles.followTextActive : styles.followText;
+  const followLabel = following ? 'Following' : 'Follow';
+
+  const handleUserPress = () => {
+    console.log('User tapped avatar/username (iOS), navigating to user:', item.user_id);
+    router.push(`/user/${item.user_id}`);
+  };
 
   const handleLikePress = () => {
-    console.log('User tapped like on moment (iOS):', item.id);
+    const newLiked = !liked;
+    const newCount = newLiked ? likeCount + 1 : Math.max(0, likeCount - 1);
+    console.log('User tapped like on moment (iOS):', item.id, '— liked:', newLiked);
+    setLiked(newLiked);
+    setLikeCount(newCount);
+    authenticatedPost('/api/rpc/toggle-like', { post_id: item.id }).catch((err) => {
+      console.error('Error toggling like (iOS):', err);
+    });
   };
 
   const handleCommentPress = () => {
     console.log('User tapped comment on moment (iOS):', item.id);
+    router.push(`/video/${item.id}`);
   };
 
   const handleBookmarkPress = () => {
     console.log('User tapped bookmark on moment (iOS):', item.id);
+    router.push(`/video/${item.id}`);
   };
 
-  const handleSharePress = () => {
+  const handleSharePress = async () => {
     console.log('User tapped share on moment (iOS):', item.id);
+    try {
+      await Share.share({
+        message: 'Check out this moment on Floomingo!',
+        url: `https://floomingo.app/video/${item.id}`,
+      });
+    } catch (err) {
+      console.error('Error sharing moment (iOS):', err);
+    }
   };
 
   const handleMorePress = () => {
     console.log('User tapped more on moment (iOS):', item.id);
+    router.push(`/video/${item.id}`);
   };
 
   const handleFollowPress = () => {
-    console.log('User tapped Follow on moment (iOS):', item.id, 'user:', item.user_id);
+    const newFollowing = !following;
+    console.log('User tapped follow on moment (iOS):', item.id, 'user:', item.user_id, '— following:', newFollowing);
+    setFollowing(newFollowing);
+    if (newFollowing) {
+      authenticatedPost('/api/follows', { followingId: item.user_id }).catch((err) => {
+        console.error('Error following user (iOS):', err);
+        setFollowing(false);
+      });
+    } else {
+      authenticatedDelete(`/api/follows/${item.user_id}`).catch((err) => {
+        console.error('Error unfollowing user (iOS):', err);
+        setFollowing(true);
+      });
+    }
+  };
+
+  const handleLocationPress = () => {
+    if (!item.place_id) return;
+    const encodedName = encodeURIComponent(item.place_name || '');
+    console.log('User tapped location (iOS):', item.place_name, '— navigating to location:', item.place_id);
+    router.push(`/location/${item.place_id}?name=${encodedName}`);
   };
 
   const bottomPadding = insets.bottom + 60;
-  const topPadding = insets.top;
 
   return (
     <View style={{ width: screenWidth, height: screenHeight }}>
@@ -123,68 +177,69 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, onFilt
         pointerEvents="none"
       />
 
-      {/* Top-left filter icon */}
-      <TouchableOpacity
-        style={[styles.topLeftIcon, { top: topPadding + 12 }]}
-        onPress={onFilterPress}
-        activeOpacity={0.7}
-      >
-        <Settings size={24} color="#FFFFFF" />
-      </TouchableOpacity>
-
-      {/* Top-right play indicator */}
-      <View style={[styles.topRightIndicator, { top: topPadding + 12 }]}>
-        <View style={styles.playTriangle} />
-      </View>
-
-      {/* Bottom-right action buttons */}
-      <View style={[styles.rightActions, { bottom: bottomPadding }]}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleLikePress} activeOpacity={0.7}>
-          <Heart size={28} color="#FFFFFF" />
-          <Text style={styles.actionCount}>0</Text>
+      {/* Location pill — absolutely positioned above bottom overlay */}
+      {placeName ? (
+        <TouchableOpacity
+          style={[styles.locationPill, { bottom: bottomPadding + 80 }]}
+          onPress={handleLocationPress}
+          activeOpacity={0.7}
+        >
+          <MapPin size={13} color="#FF6B8A" />
+          <Text style={styles.locationText}>{placeName}</Text>
         </TouchableOpacity>
+      ) : null}
 
-        <TouchableOpacity style={styles.actionButton} onPress={handleCommentPress} activeOpacity={0.7}>
-          <MessageCircle size={28} color="#FFFFFF" />
-          <Text style={styles.actionCount}>0</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionButton} onPress={handleBookmarkPress} activeOpacity={0.7}>
-          <Bookmark size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionButton} onPress={handleSharePress} activeOpacity={0.7}>
-          <Send size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.actionButton} onPress={handleMorePress} activeOpacity={0.7}>
-          <MoreHorizontal size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Bottom-left user info */}
-      <View style={[styles.bottomLeft, { bottom: bottomPadding }]}>
+      {/* Bottom overlay */}
+      <View style={[styles.bottomOverlay, { bottom: bottomPadding }]}>
+        {/* Row 1: user info */}
         <View style={styles.userRow}>
-          {avatarUrl ? (
-            <Image source={resolveImageSource(avatarUrl)} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarInitial}>{displayName.charAt(0).toUpperCase()}</Text>
-            </View>
-          )}
-          <Text style={styles.username}>{displayName}</Text>
-          <TouchableOpacity style={styles.followPill} onPress={handleFollowPress} activeOpacity={0.7}>
-            <Text style={styles.followText}>Follow</Text>
+          <TouchableOpacity onPress={handleUserPress} activeOpacity={0.8}>
+            {avatarUrl ? (
+              <Image source={resolveImageSource(avatarUrl)} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleUserPress} activeOpacity={0.8}>
+            <Text style={styles.username}>{displayName}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={followPillStyle} onPress={handleFollowPress} activeOpacity={0.7}>
+            <Text style={followTextStyle}>{followLabel}</Text>
           </TouchableOpacity>
         </View>
 
-        {placeName ? (
-          <Text style={styles.locationText}>{placeName}</Text>
-        ) : null}
-
+        {/* Row 2: caption */}
         {caption ? (
           <Text style={styles.captionText} numberOfLines={2}>{caption}</Text>
         ) : null}
+
+        {/* Row 3: action buttons */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+            <Heart size={24} color={likeIconColor} fill={liked ? '#FF6B8A' : 'transparent'} />
+            <Text style={styles.actionCount}>{likeCount}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={handleCommentPress} activeOpacity={0.7}>
+            <MessageCircle size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={handleBookmarkPress} activeOpacity={0.7}>
+            <Bookmark size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={handleSharePress} activeOpacity={0.7}>
+            <Send size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={handleMorePress} activeOpacity={0.7}>
+            <MoreHorizontal size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -479,55 +534,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
   },
-  topLeftIcon: {
-    position: 'absolute',
-    left: 16,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topRightIndicator: {
-    position: 'absolute',
-    right: 16,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playTriangle: {
-    width: 0,
-    height: 0,
-    borderTopWidth: 12,
-    borderBottomWidth: 12,
-    borderLeftWidth: 20,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#FF6B8A',
-  },
-  rightActions: {
-    position: 'absolute',
-    right: 12,
-    alignItems: 'center',
-    gap: 20,
-  },
-  actionButton: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  actionCount: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  bottomLeft: {
+  bottomOverlay: {
     position: 'absolute',
     left: 12,
-    right: 80,
-    gap: 6,
+    right: 12,
+    gap: 8,
   },
   userRow: {
     flexDirection: 'row',
@@ -571,23 +582,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
+  followPillActive: {
+    borderWidth: 1.5,
+    borderColor: '#FF6B8A',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    backgroundColor: '#FF6B8A',
+  },
   followText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
   },
-  locationText: {
-    color: '#FF6B8A',
+  followTextActive: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  captionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 20,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    marginTop: 4,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionCount: {
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  captionText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
+  locationPill: {
+    position: 'absolute',
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  locationText: {
+    color: '#FF6B8A',
+    fontSize: 13,
+    fontWeight: '600',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,

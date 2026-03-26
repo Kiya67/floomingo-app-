@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { ChevronLeft } from 'lucide-react-native';
 
 interface Notification {
   id: string;
@@ -66,11 +67,11 @@ export default function NotificationsScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchNotifications = useCallback(async () => {
-    console.log('Fetching notifications');
+    console.log('Fetching notifications (iOS)');
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('No authenticated user');
+        console.log('No authenticated user (iOS)');
         setNotifications([]);
         setLoading(false);
         return;
@@ -92,14 +93,14 @@ export default function NotificationsScreen() {
         .limit(50);
 
       if (error) {
-        console.error('Error fetching notifications:', error);
+        console.error('Error fetching notifications (iOS):', error);
         setNotifications([]);
       } else {
-        console.log('Notifications fetched:', data?.length || 0);
+        console.log('Notifications fetched (iOS):', data?.length || 0);
         setNotifications(data || []);
       }
     } catch (error) {
-      console.error('Error in fetchNotifications:', error);
+      console.error('Error in fetchNotifications (iOS):', error);
       setNotifications([]);
     } finally {
       setLoading(false);
@@ -110,7 +111,7 @@ export default function NotificationsScreen() {
   const markNotificationsAsRead = useCallback(async () => {
     if (!currentUserId) return;
 
-    console.log('Marking visible notifications as read');
+    console.log('Marking visible notifications as read (iOS)');
     try {
       const unreadIds = notifications
         .filter(n => !n.is_read)
@@ -125,15 +126,15 @@ export default function NotificationsScreen() {
         .eq('user_id', currentUserId);
 
       if (error) {
-        console.error('Error marking notifications as read:', error);
+        console.error('Error marking notifications as read (iOS):', error);
       } else {
-        console.log('Marked notifications as read:', unreadIds.length);
+        console.log('Marked notifications as read (iOS):', unreadIds.length);
         setNotifications(prev =>
           prev.map(n => unreadIds.includes(n.id) ? { ...n, is_read: true } : n)
         );
       }
     } catch (error) {
-      console.error('Error in markNotificationsAsRead:', error);
+      console.error('Error in markNotificationsAsRead (iOS):', error);
     }
   }, [notifications, currentUserId]);
 
@@ -143,7 +144,7 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Notifications screen focused - marking as read');
+      console.log('Notifications screen focused - marking as read (iOS)');
       const timer = setTimeout(() => {
         markNotificationsAsRead();
       }, 1000);
@@ -153,27 +154,27 @@ export default function NotificationsScreen() {
   );
 
   const onRefresh = useCallback(() => {
-    console.log('User pulled to refresh notifications');
+    console.log('User pulled to refresh notifications (iOS)');
     setRefreshing(true);
     fetchNotifications();
   }, [fetchNotifications]);
 
   const handleNotificationPress = useCallback((notification: Notification) => {
-    console.log('User tapped notification:', notification.type);
+    console.log('User tapped notification (iOS):', notification.type);
 
     if (notification.type === 'like' || notification.type === 'comment') {
       if (notification.post_id) {
-        console.log('Navigating to video:', notification.post_id);
+        console.log('Navigating to video (iOS):', notification.post_id);
         router.push(`/video/${notification.post_id}`);
       }
     } else if (notification.type === 'follow') {
-      console.log('Navigating to user profile:', notification.actor_id);
+      console.log('Navigating to user profile (iOS):', notification.actor_id);
       router.push(`/user/${notification.actor_id}`);
     }
   }, [router]);
 
   const handleBack = () => {
-    console.log('User tapped back button on notifications');
+    console.log('User tapped back button on notifications (iOS)');
     router.back();
   };
 
@@ -266,6 +267,12 @@ export default function NotificationsScreen() {
     );
   };
 
+  const headerLeft = () => (
+    <TouchableOpacity onPress={handleBack} style={{ paddingLeft: 4 }}>
+      <ChevronLeft size={24} color={textColor} />
+    </TouchableOpacity>
+  );
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: bgColor }]}>
@@ -273,7 +280,7 @@ export default function NotificationsScreen() {
           options={{
             headerShown: true,
             title: 'Notifications',
-            headerBackTitle: 'Back',
+            headerLeft,
             headerStyle: { backgroundColor: bgColor },
             headerTintColor: textColor,
           }}
@@ -291,7 +298,7 @@ export default function NotificationsScreen() {
         options={{
           headerShown: true,
           title: 'Notifications',
-          headerBackTitle: 'Back',
+          headerLeft,
           headerStyle: { backgroundColor: bgColor },
           headerTintColor: textColor,
         }}

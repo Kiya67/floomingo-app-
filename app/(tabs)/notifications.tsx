@@ -5,6 +5,7 @@ import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { colors } from '@/styles/commonStyles';
 import { IconSymbol } from '@/components/IconSymbol';
+import { ChevronLeft } from 'lucide-react-native';
 
 interface Notification {
   id: string;
@@ -265,6 +266,12 @@ export default function NotificationsScreen() {
     );
   };
 
+  const headerLeft = () => (
+    <TouchableOpacity onPress={handleBack} style={{ paddingLeft: 4 }}>
+      <ChevronLeft size={24} color={textColor} />
+    </TouchableOpacity>
+  );
+
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: bgColor }]}>
@@ -272,7 +279,7 @@ export default function NotificationsScreen() {
           options={{
             headerShown: true,
             title: 'Notifications',
-            headerBackTitle: 'Back',
+            headerLeft,
             headerStyle: { backgroundColor: bgColor },
             headerTintColor: textColor,
           }}
@@ -290,7 +297,7 @@ export default function NotificationsScreen() {
         options={{
           headerShown: true,
           title: 'Notifications',
-          headerBackTitle: 'Back',
+          headerLeft,
           headerStyle: { backgroundColor: bgColor },
           headerTintColor: textColor,
         }}
