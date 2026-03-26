@@ -11,18 +11,16 @@ import {
   StatusBar,
   Image,
   ImageSourcePropType,
-  ScrollView,
   Share,
+  Alert,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Film } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { apiGet, authenticatedGet, authenticatedPost, authenticatedDelete } from "@/utils/api";
+import { apiGet, authenticatedPost, authenticatedDelete } from "@/utils/api";
 import { supabase } from "@/lib/supabase";
 import { IconSymbol } from "@/components/IconSymbol";
-import { SaveToTripsModal } from "@/components/SaveToTripsModal";
-import { FilterModal } from "@/components/FilterModal";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Modal } from "@/components/ui/Modal";
@@ -116,7 +114,7 @@ function VideoPlayer({
   useEffect(() => {
     if (!player) return;
     if (isActive) {
-      console.log("Home feed: video active, playing:", postId);
+      console.log("Explore feed: video active, playing:", postId);
       const t = setTimeout(() => {
         if (isMountedRef.current) {
           try {
@@ -124,7 +122,7 @@ function VideoPlayer({
             setIsPlaying(true);
             onPlayingChange(true);
           } catch (e) {
-            console.error("Error playing video:", e);
+            console.error("Explore feed: error playing video:", e);
           }
         }
       }, 300);
@@ -139,7 +137,7 @@ function VideoPlayer({
   }, [player, postId, isActive]);
 
   const toggle = useCallback(() => {
-    console.log("User tapped video to toggle play/pause, post:", postId);
+    console.log("User tapped video to toggle play/pause (explore), post:", postId);
     if (!player) return;
     try {
       if (isPlaying) {
@@ -152,7 +150,7 @@ function VideoPlayer({
         onPlayingChange(true);
       }
     } catch (e) {
-      console.error("Error toggling play/pause:", e);
+      console.error("Explore feed: error toggling play/pause:", e);
     }
   }, [player, isPlaying, onPlayingChange, postId]);
 
@@ -183,13 +181,12 @@ function VideoPlayer({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function HomeScreen() {
+export default function ExploreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [feed, setFeed] = useState<Moment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -200,14 +197,6 @@ export default function HomeScreen() {
   const [playingMap, setPlayingMap] = useState<Map<string, boolean>>(new Map());
   const toggleFnMap = useRef<Map<string, () => void>>(new Map());
   const flatListRef = useRef<FlatList>(null);
-
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
-  const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
-  const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
-
-  const [showSaveModal, setShowSaveModal] = useState(false);
-  const [selectedMoment, setSelectedMoment] = useState<Moment | null>(null);
 
   const [isSharing, setIsSharing] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -253,7 +242,7 @@ export default function HomeScreen() {
   // ── Fetch feed ──
   const fetchMoments = useCallback(
     async (isRefresh = false, cursor: string | null = null) => {
-      console.log("Home feed: fetching from Supabase posts, isRefresh:", isRefresh, "cursor:", cursor);
+      console.log("Explore feed: fetching from Supabase posts, isRefresh:", isRefresh, "cursor:", cursor);
       try {
         let query = supabase
           .from("posts")
@@ -272,15 +261,8 @@ export default function HomeScreen() {
         if (cursor) {
           query = query.lt("created_at", cursor);
         }
-        if (filterPlaceId) {
-          query = query.eq("place_id", filterPlaceId);
-        }
-        if (filterKeywords) {
-          query = query.ilike("caption", `%${filterKeywords}%`);
-        }
 
         const { data, error } = await query;
-
         if (error) throw error;
 
         const posts = (data || []).map((p: any) => ({
@@ -304,7 +286,7 @@ export default function HomeScreen() {
           view_count: 0,
         }));
 
-        console.log("Home feed: fetched", posts.length, "posts from Supabase");
+        console.log("Explore feed: fetched", posts.length, "posts from Supabase");
 
         const newNextCursor = posts.length === 20 ? posts[posts.length - 1].created_at : null;
 
@@ -326,20 +308,19 @@ export default function HomeScreen() {
           loadPostInteractions(posts[0].id, currentUserId);
         }
       } catch (e: any) {
-        console.error("Home feed: fetch error:", e);
+        console.error("Explore feed: fetch error:", e);
         setError("Couldn't load videos. Check your connection.");
       } finally {
         setLoading(false);
-        setRefreshing(false);
         setLoadingMore(false);
       }
     },
-    [filterPlaceId, filterKeywords, currentUserId]
+    [currentUserId]
   );
 
   useFocusEffect(
     useCallback(() => {
-      console.log("HomeScreen focused - loading fullscreen feed");
+      console.log("ExploreScreen focused - loading fullscreen feed");
       setLoading(true);
       setNextCursor(null);
       setHasMore(true);
@@ -356,34 +337,34 @@ export default function HomeScreen() {
     try {
       const likeRes = await supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).limit(1);
       if (likeRes.error) {
-        console.log("Home feed: post_likes query error (table may not exist yet):", likeRes.error.message);
+        console.log("Explore feed: post_likes query error (table may not exist yet):", likeRes.error.message);
       } else {
         isLiked = !!(likeRes.data && likeRes.data.length > 0);
       }
     } catch (e) {
-      console.log("Home feed: post_likes unavailable, skipping:", e);
+      console.log("Explore feed: post_likes unavailable, skipping:", e);
     }
 
     try {
       const statsRes = await supabase.from("post_stats").select("*").eq("post_id", postId).single();
       if (statsRes.error) {
-        console.log("Home feed: post_stats query error (table may not exist yet):", statsRes.error.message);
+        console.log("Explore feed: post_stats query error (table may not exist yet):", statsRes.error.message);
       } else if (statsRes.data) {
         stats = { like_count: statsRes.data.like_count || 0, comment_count: statsRes.data.comment_count || 0, share_count: statsRes.data.share_count || 0 };
       }
     } catch (e) {
-      console.log("Home feed: post_stats unavailable, skipping:", e);
+      console.log("Explore feed: post_stats unavailable, skipping:", e);
     }
 
     try {
       const savedRes = await supabase.from("board_posts").select("id, board_id, boards!inner(user_id)").eq("post_id", postId).eq("boards.user_id", userId).limit(1);
       if (savedRes.error) {
-        console.log("Home feed: board_posts query error:", savedRes.error.message);
+        console.log("Explore feed: board_posts query error:", savedRes.error.message);
       } else {
         isSaved = !!(savedRes.data && savedRes.data.length > 0);
       }
     } catch (e) {
-      console.log("Home feed: board_posts unavailable, skipping:", e);
+      console.log("Explore feed: board_posts unavailable, skipping:", e);
     }
 
     setPostInteractions((prev) => {
@@ -402,15 +383,13 @@ export default function HomeScreen() {
         if (moment && currentUserId) {
           loadPostInteractions(moment.id, currentUserId);
 
-          // Increment view count
           if (!viewedPostIds.has(moment.id) && moment.user_id !== currentUserId) {
-            console.log("Home feed: incrementing view count for:", moment.id);
+            console.log("Explore feed: incrementing view count for:", moment.id);
             authenticatedPost("/api/rpc/increment-view", { postId: moment.id })
               .then(() => setViewedPostIds((prev) => new Set(prev).add(moment.id)))
-              .catch((e) => console.error("Error incrementing view count:", e));
+              .catch((e) => console.error("Explore feed: error incrementing view count:", e));
           }
 
-          // Check follow status
           if (moment.user_id !== currentUserId) {
             supabase
               .from("follows")
@@ -432,7 +411,7 @@ export default function HomeScreen() {
 
   // ── Actions ──
   const handleLike = async (moment: Moment) => {
-    console.log("User tapped like button for post:", moment.id);
+    console.log("User tapped like button (explore) for post:", moment.id);
     if (likeLoading || !currentUserId) return;
     const current = postInteractions.get(moment.id);
     if (!current) return;
@@ -450,13 +429,13 @@ export default function HomeScreen() {
     try {
       if (wasLiked) {
         await supabase.from("post_likes").delete().eq("post_id", moment.id).eq("user_id", currentUserId);
-        console.log("Post unliked");
+        console.log("Explore feed: post unliked");
       } else {
         await supabase.from("post_likes").insert({ post_id: moment.id, user_id: currentUserId });
-        console.log("Post liked");
+        console.log("Explore feed: post liked");
       }
     } catch (e) {
-      console.error("Error toggling like:", e);
+      console.error("Explore feed: error toggling like:", e);
       setPostInteractions((prev) => {
         const m = new Map(prev);
         const i = m.get(moment.id);
@@ -469,7 +448,7 @@ export default function HomeScreen() {
   };
 
   const handleComment = async (moment: Moment) => {
-    console.log("User tapped comment button for post:", moment.id);
+    console.log("User tapped comment button (explore) for post:", moment.id);
     setShowCommentsModal(true);
     commentsSheetRef.current?.expand();
     setCommentsLoading(true);
@@ -481,9 +460,9 @@ export default function HomeScreen() {
         .order("created_at", { ascending: true });
       if (error) throw error;
       setComments(data || []);
-      console.log("Comments loaded:", data?.length || 0);
+      console.log("Explore feed: comments loaded:", data?.length || 0);
     } catch (e) {
-      console.error("Error loading comments:", e);
+      console.error("Explore feed: error loading comments:", e);
       setComments([]);
     } finally {
       setCommentsLoading(false);
@@ -495,7 +474,7 @@ export default function HomeScreen() {
     if (!trimmed || commentSubmitting || !currentUserId) return;
     const moment = feed[currentIndex];
     if (!moment) return;
-    console.log("Submitting comment for post:", moment.id);
+    console.log("Explore feed: submitting comment for post:", moment.id);
     setCommentSubmitting(true);
     try {
       const { data, error } = await supabase
@@ -512,41 +491,32 @@ export default function HomeScreen() {
         if (i) m.set(moment.id, { ...i, stats: { ...i.stats, comment_count: i.stats.comment_count + 1 } });
         return m;
       });
-      console.log("Comment submitted successfully");
+      console.log("Explore feed: comment submitted successfully");
     } catch (e) {
-      console.error("Error submitting comment:", e);
+      console.error("Explore feed: error submitting comment:", e);
     } finally {
       setCommentSubmitting(false);
     }
   };
 
   const handleSave = (moment: Moment) => {
-    console.log("User tapped save button for post:", moment.id);
-    setSelectedMoment(moment);
-    setShowSaveModal(true);
-  };
-
-  const handleSaveModalClose = () => {
-    console.log("Closing save modal");
-    setShowSaveModal(false);
-    setSelectedMoment(null);
-    const moment = feed[currentIndex];
-    if (moment && currentUserId) loadPostInteractions(moment.id, currentUserId);
+    console.log("User tapped save button (explore) for post:", moment.id);
+    Alert.alert("Saved!", "This moment has been saved.");
   };
 
   const handleShare = async (moment: Moment) => {
-    console.log("User tapped share button for post:", moment.id);
+    console.log("User tapped share button (explore) for post:", moment.id);
     if (!moment.video_url || isSharing) return;
     setIsSharing(true);
     try {
       const shareMessage = moment.caption || "";
       const result = await Share.share({ message: shareMessage, url: moment.video_url });
       if (result.action === Share.sharedAction) {
-        console.log("Share completed successfully");
+        console.log("Explore feed: share completed successfully");
         showToast("Shared", "success");
       }
     } catch (e) {
-      console.error("Error sharing:", e);
+      console.error("Explore feed: error sharing:", e);
       showToast("Couldn't share", "error");
     } finally {
       setIsSharing(false);
@@ -554,28 +524,28 @@ export default function HomeScreen() {
   };
 
   const handleFollowToggle = async (moment: Moment) => {
-    console.log("User tapped follow/unfollow for user:", moment.user_id);
+    console.log("User tapped follow/unfollow (explore) for user:", moment.user_id);
     if (followLoading || !currentUserId || moment.user_id === currentUserId) return;
     setFollowLoading(true);
     try {
       if (isFollowing) {
         await supabase.from("follows").delete().eq("follower_id", currentUserId).eq("following_id", moment.user_id);
         setIsFollowing(false);
-        console.log("Unfollowed user:", moment.user_id);
+        console.log("Explore feed: unfollowed user:", moment.user_id);
       } else {
         await supabase.from("follows").insert({ follower_id: currentUserId, following_id: moment.user_id });
         setIsFollowing(true);
-        console.log("Followed user:", moment.user_id);
+        console.log("Explore feed: followed user:", moment.user_id);
       }
     } catch (e) {
-      console.error("Error toggling follow:", e);
+      console.error("Explore feed: error toggling follow:", e);
     } finally {
       setFollowLoading(false);
     }
   };
 
   const handleMoreOptions = (moment: Moment) => {
-    console.log("User tapped more options for post:", moment.id);
+    console.log("User tapped more options (explore) for post:", moment.id);
     if (moment.user_id === currentUserId) return;
     setShowMoreModal(true);
   };
@@ -583,7 +553,7 @@ export default function HomeScreen() {
   const handleBlockUser = async () => {
     const moment = feed[currentIndex];
     if (!moment || !currentUserId || moment.user_id === currentUserId) return;
-    console.log("User tapped block/unblock for user:", moment.user_id);
+    console.log("User tapped block/unblock (explore) for user:", moment.user_id);
     setShowMoreModal(false);
     setBlockLoading(true);
     try {
@@ -599,32 +569,11 @@ export default function HomeScreen() {
         setFeed((prev) => prev.filter((m) => m.user_id !== moment.user_id));
       }
     } catch (e) {
-      console.error("Error blocking user:", e);
+      console.error("Explore feed: error blocking user:", e);
       showToast("Failed to update block status", "error");
     } finally {
       setBlockLoading(false);
     }
-  };
-
-  const handleFilterPress = () => {
-    console.log("User tapped filter button on home feed");
-    setShowFilterModal(true);
-  };
-
-  const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
-    console.log("User applied filters:", { placeId, placeName, keywords });
-    setFilterPlaceId(placeId);
-    setFilterPlaceName(placeName);
-    setFilterKeywords(keywords);
-    setShowFilterModal(false);
-  };
-
-  const handleClearFilters = () => {
-    console.log("User cleared filters on home feed");
-    setFilterPlaceId(null);
-    setFilterPlaceName(null);
-    setFilterKeywords(null);
-    setShowFilterModal(false);
   };
 
   const getInitials = (name: string) => {
@@ -677,11 +626,9 @@ export default function HomeScreen() {
           />
 
           <View style={styles.overlay}>
-            {/* Filter button top-left */}
+            {/* Explore label top */}
             <View style={[styles.topControls, { paddingTop: insets.top + 8 }]}>
-              <TouchableOpacity style={styles.filterButton} onPress={handleFilterPress} activeOpacity={0.8}>
-                <IconSymbol android_material_icon_name="filter-list" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
+              <Text style={styles.exploreLabel}>Explore</Text>
             </View>
 
             {/* Bottom info */}
@@ -692,7 +639,7 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     style={styles.userRow}
                     onPress={() => {
-                      console.log("User tapped profile, navigating to:", moment.user_id);
+                      console.log("User tapped profile (explore), navigating to:", moment.user_id);
                       router.push(`/user/${moment.user_id}` as any);
                     }}
                     activeOpacity={0.7}
@@ -728,7 +675,7 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     style={styles.locationRow}
                     onPress={() => {
-                      console.log("User tapped location chip:", placeName);
+                      console.log("User tapped location chip (explore):", placeName);
                       if (placeId) router.push(`/location/${placeId}` as any);
                     }}
                     activeOpacity={0.7}
@@ -813,7 +760,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.retryBtn}
           onPress={() => {
-            console.log("User tapped retry on home feed");
+            console.log("User tapped retry on explore feed");
             setLoading(true);
             fetchMoments(false, null);
           }}
@@ -836,7 +783,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.retryBtn}
           onPress={() => {
-            console.log("User tapped refresh on empty home feed");
+            console.log("User tapped refresh on empty explore feed");
             setLoading(true);
             fetchMoments(false, null);
           }}
@@ -866,7 +813,7 @@ export default function HomeScreen() {
         onEndReached={() => {
           if (!loadingMore && hasMore && nextCursor) {
             setLoadingMore(true);
-            console.log("Home feed: loading more moments");
+            console.log("Explore feed: loading more moments");
             fetchMoments(false, nextCursor);
           }
         }}
@@ -876,35 +823,6 @@ export default function HomeScreen() {
         windowSize={5}
         getItemLayout={(_, index) => ({ length: height, offset: height * index, index })}
       />
-
-      {/* Filter Modal */}
-      <FilterModal
-        visible={showFilterModal}
-        onClose={() => setShowFilterModal(false)}
-        onApply={handleApplyFilters}
-        onClear={handleClearFilters}
-        currentPlaceId={filterPlaceId}
-        currentPlaceName={filterPlaceName}
-        currentKeywords={filterKeywords}
-      />
-
-      {/* Save Modal */}
-      {showSaveModal && selectedMoment && (
-        <SaveToTripsModal
-          visible={showSaveModal}
-          onClose={handleSaveModalClose}
-          post={{
-            id: selectedMoment.id,
-            user_id: selectedMoment.user_id,
-            video_url: selectedMoment.video_url,
-            caption: selectedMoment.caption || "",
-            place_id: selectedMoment.places?.[0]?.place_id ?? null,
-            place_name: selectedMoment.places?.[0]?.place_name ?? null,
-            location_type: null,
-            created_at: selectedMoment.created_at,
-          }}
-        />
-      )}
 
       {/* Comments Bottom Sheet */}
       {showCommentsModal && (
@@ -980,7 +898,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.modalOption}
           onPress={() => {
-            console.log("User tapped report");
+            console.log("User tapped report (explore)");
             setShowMoreModal(false);
             showToast("Report functionality coming soon", "info");
           }}
@@ -1066,13 +984,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
   },
-  filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
+  exploreLabel: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   bottomInfo: {
     paddingHorizontal: 16,
