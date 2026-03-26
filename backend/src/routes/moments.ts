@@ -64,7 +64,7 @@ export function registerMomentRoutes(app: App) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            moments: { type: 'array' },
             next_cursor: { type: ['string', 'null'] },
             has_more: { type: 'boolean' },
           },
@@ -74,7 +74,7 @@ export function registerMomentRoutes(app: App) {
   }, async (
     request: FastifyRequest<{ Querystring: { limit?: string; cursor?: string; place_id?: string; keywords?: string } }>,
     reply: FastifyReply
-  ): Promise<{ data: any[]; next_cursor: string | null; has_more: boolean }> => {
+  ): Promise<{ moments: any[]; next_cursor: string | null; has_more: boolean }> => {
     const limit = Math.min(parseInt(request.query.limit || '20'), 100);
     let cursorDate: Date | null = null;
 
@@ -164,7 +164,7 @@ export function registerMomentRoutes(app: App) {
     const nextCursor = hasMore ? posts[posts.length - 1].post.createdAt.toISOString() : null;
 
     return {
-      data,
+      moments: data,
       next_cursor: nextCursor,
       has_more: hasMore,
     };

@@ -1240,17 +1240,17 @@ describe('Moments Feature', () => {
     const res = await api('/api/moments');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('data');
+    expect(data).toHaveProperty('moments');
     expect(data).toHaveProperty('next_cursor');
     expect(data).toHaveProperty('has_more');
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(Array.isArray(data.moments)).toBe(true);
   });
 
   it('should list moments with limit and cursor parameters', async () => {
     const res = await api('/api/moments?limit=10');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(Array.isArray(data.moments)).toBe(true);
     expect(typeof data.has_more).toBe('boolean');
   });
 
@@ -1258,16 +1258,16 @@ describe('Moments Feature', () => {
     const res = await api('/api/moments?place_id=test-place-123');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('data');
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(data).toHaveProperty('moments');
+    expect(Array.isArray(data.moments)).toBe(true);
   });
 
   it('should list moments with keywords filter', async () => {
     const res = await api('/api/moments?keywords=adventure');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('data');
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(data).toHaveProperty('moments');
+    expect(Array.isArray(data.moments)).toBe(true);
   });
 
   it('should return 400 when creating moment without video_url', async () => {
@@ -1324,6 +1324,23 @@ describe('Moments Feature', () => {
             place_name: 'Eiffel Tower',
           },
         ],
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('video_url');
+  });
+
+  it('should create moment with linked_experience_id', async () => {
+    // First create an experience to link to (if needed)
+    const res = await authenticatedApi('/api/moments', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/moment3.mp4',
+        caption: 'Moment with linked experience',
+        linked_experience_id: '550e8400-e29b-41d4-a716-446655440000',
       }),
       headers: { 'Content-Type': 'application/json' },
     });
@@ -1482,6 +1499,13 @@ describe('Experiences Feature', () => {
     const data = await res.json();
     expect(Array.isArray(data.data)).toBe(true);
     expect(typeof data.has_more).toBe('boolean');
+  });
+
+  it('should list experiences with keywords filter', async () => {
+    const res = await authenticatedApi('/api/experiences?keywords=adventure', authToken);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data.data)).toBe(true);
   });
 
   it('should return 401 when creating experience without authentication', async () => {
