@@ -256,7 +256,11 @@ export default function AddScreen() {
     });
 
     if (!videoUri) {
-      Alert.alert("Select a video", "Please select a video to post");
+      Alert.alert('No Video', 'Please select a video first.');
+      return;
+    }
+    if (!caption.trim()) {
+      Alert.alert('No Caption', 'Please add a caption to your moment.');
       return;
     }
 

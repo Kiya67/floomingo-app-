@@ -67,6 +67,7 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, curren
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [following, setFollowing] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
 
   useEffect(() => {
     if (isVisible) {
@@ -106,35 +107,74 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, curren
     });
   };
 
+  const handleBlockToggle = async () => {
+    if (isOwnPost) return;
+    const newBlocked = !isBlocked;
+    setIsBlocked(newBlocked);
+    console.log('User toggling block on moment:', item.id, 'user:', item.user_id, '— blocked:', newBlocked);
+    try {
+      if (newBlocked) {
+        await authenticatedApiCall('/api/blocks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blocked_id: item.user_id }),
+        });
+        console.log('User blocked successfully:', item.user_id);
+      } else {
+        await authenticatedApiCall(`/api/blocks/${item.user_id}`, { method: 'DELETE' });
+        console.log('User unblocked successfully:', item.user_id);
+      }
+    } catch (err) {
+      console.error('Block toggle error:', err);
+      setIsBlocked(!newBlocked);
+    }
+  };
+
   const handleCommentPress = () => {
     console.log('User tapped comment on moment:', item.id);
-    router.push({ pathname: `/video/${item.id}`, params: { openComments: 'true' } });
+    router.push({ pathname: `/video/${item.id}` as any, params: { openComments: '1' } });
   };
 
   const handleBookmarkPress = () => {
     console.log('User tapped bookmark on moment:', item.id);
-    router.push({ pathname: `/video/${item.id}`, params: { openSave: 'true' } });
+    router.push({ pathname: `/video/${item.id}` as any, params: { openSave: '1' } });
   };
 
   const handleSharePress = async () => {
     console.log('User tapped share on moment:', item.id);
     try {
-      await Share.share({
-        message: 'Check out this moment on Floomingo!',
-        url: `https://floomingo.app/video/${item.id}`,
-      });
-    } catch (err) {
-      console.error('Error sharing moment:', err);
+      const result = await Share.share(
+        {
+          message: `Check out this moment on Floomingo! https://floomingo.app/video/${item.id}`,
+          url: `https://floomingo.app/video/${item.id}`,
+          title: 'Floomingo Moment',
+        },
+        { dialogTitle: 'Share this moment' }
+      );
+      console.log('Share result:', result.action);
+    } catch (err: any) {
+      console.error('Share error:', err?.message);
     }
   };
 
+  const blockLabel = isOwnPost ? 'Delete Moment' : (isBlocked ? 'Unblock User' : 'Block User');
+
   const handleMorePress = () => {
     console.log('User tapped more on moment:', item.id);
-    Alert.alert('More Options', '', [
-      { text: 'Report', style: 'destructive', onPress: () => console.log('Report moment:', item.id) },
-      { text: 'Not Interested', onPress: () => console.log('Not interested:', item.id) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    Alert.alert(
+      'More Options',
+      '',
+      [
+        {
+          text: blockLabel,
+          style: 'destructive',
+          onPress: () => handleBlockToggle(),
+        },
+        { text: 'Report', onPress: () => Alert.alert('Report', 'Report functionality coming soon.') },
+        { text: 'Not Interested', onPress: () => console.log('Not interested:', item.id) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   };
 
   const handleFollowPress = async () => {
@@ -632,7 +672,7 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 28,
+    gap: 36,
     marginTop: 4,
   },
   actionBtn: {

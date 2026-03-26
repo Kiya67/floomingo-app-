@@ -195,7 +195,7 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { vi
 }
 
 export default function VideoFullScreenScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, openComments, openSave } = useLocalSearchParams();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -246,6 +246,7 @@ export default function VideoFullScreenScreen() {
   
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
+  const autoOpenDone = useRef(false);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToastMessage(message);
@@ -440,6 +441,22 @@ export default function VideoFullScreenScreen() {
       isMountedRef.current = false;
     };
   }, [fetchPosts]);
+
+  // Auto-open comments or save modal when navigated from feed with params
+  useEffect(() => {
+    if (!posts.length || autoOpenDone.current) return;
+    const post = posts[0];
+    if (!post) return;
+    autoOpenDone.current = true;
+
+    if (openComments === '1') {
+      console.log('Auto-opening comments sheet from feed param');
+      setTimeout(() => handleComment(post), 400);
+    } else if (openSave === '1') {
+      console.log('Auto-opening save modal from feed param');
+      setTimeout(() => handleSave(post), 400);
+    }
+  }, [posts]);
 
   const incrementViewCount = useCallback(async (postId: string, postOwnerId: string) => {
     // Don't increment if already viewed in this session
