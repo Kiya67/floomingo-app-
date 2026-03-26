@@ -5,442 +5,131 @@ import {
   View,
   Text,
   ActivityIndicator,
-  Dimensions,
   StatusBar,
   Image,
   ImageSourcePropType,
   FlatList,
   Share,
-  TextInput,
   TouchableOpacity,
-  ScrollView,
-  Animated,
+  useWindowDimensions,
+  RefreshControl,
 } from "react-native";
-import { ChevronUp, X, MapPin, Calendar, BookOpen, Layers, Star } from "lucide-react-native";
-import { supabase } from "@/lib/supabase";
-import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
+import {
+  Heart,
+  Bookmark,
+  Share2,
+  MapPin,
+  Film,
+  SlidersHorizontal,
+  Play,
+  Pause,
+} from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FilterModal } from "@/components/FilterModal";
-import { SaveToTripsModal } from "@/components/SaveToTripsModal";
-import { Modal } from "@/components/ui/Modal";
-import { Toast } from "@/components/ui/Toast";
-import { IconSymbol } from "@/components/IconSymbol";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { authenticatedGet, authenticatedPost, authenticatedDelete, apiGet, authenticatedApiCall } from "@/utils/api";
-import { colors } from "@/styles/commonStyles";
-import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
+import { apiGet, apiCall, BACKEND_URL } from "@/utils/api";
 
-interface Post {
+const PINK = "#FF3B7A";
+const TAB_BAR_HEIGHT = 83;
+
+interface MomentPlace {
+  id: string;
+  place_id: string;
+  place_name: string;
+  place_address?: string;
+}
+
+interface MomentUser {
+  id: string;
+  username: string;
+  avatar_url?: string;
+}
+
+interface LinkedExperience {
+  id: string;
+  video_url: string;
+  thumbnail_url?: string;
+  title: string;
+}
+
+interface Moment {
   id: string;
   user_id: string;
   video_url: string;
-  caption: string;
-  place_id: string | null;
-  place_name: string | null;
-  location_type: string | null;
+  thumbnail_url?: string;
+  caption?: string;
+  linked_experience_id?: string;
+  linked_experience?: LinkedExperience;
+  likes_count: number;
+  bookmarks_count: number;
+  is_liked: boolean;
+  is_bookmarked: boolean;
+  places: MomentPlace[];
+  user: MomentUser;
   created_at: string;
-  view_count?: number;
-  profiles?: {
-    display_name: string;
-    avatar_url: string | null;
-  };
 }
 
-interface PostLocation {
-  id: string;
-  post_id: string;
-  place_id: string;
-  place_name: string;
-  location_type: string;
-  display_order: number;
+interface InteractionState {
+  is_liked: boolean;
+  is_bookmarked: boolean;
+  likes_count: number;
+  bookmarks_count: number;
 }
 
-interface PostStats {
-  like_count: number;
-  comment_count: number;
-  share_count: number;
-}
-
-interface Comment {
-  id: string;
-  comment_text: string;
-  created_at: string;
-  user_id: string;
-  profiles?: {
-    display_name: string;
-    avatar_url: string | null;
-  };
-}
-
-const { width, height } = Dimensions.get("window");
-
-function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
+function resolveImageSource(
+  source: string | number | ImageSourcePropType | undefined
+): ImageSourcePropType {
   if (!source) return { uri: "" };
   if (typeof source === "string") return { uri: source };
   return source as ImageSourcePropType;
 }
 
-// ─── Experiences Panel ───────────────────────────────────────────────────────
-
-const PANEL_HEIGHT = Dimensions.get("window").height * 0.72;
-
-interface ExperiencesPanelProps {
-  visible: boolean;
-  onClose: () => void;
-  post: { caption: string; place_name: string | null; profiles?: { display_name: string } } | null;
-  locations: { id: string; place_name: string; place_id: string }[];
+function getInitials(name: string): string {
+  if (!name) return "?";
+  const parts = name.split(/[\s_]+/);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.substring(0, 2).toUpperCase();
 }
 
-function ExperiencesPanel({ visible, onClose, post, locations }: ExperiencesPanelProps) {
-  const translateY = useRef(new Animated.Value(PANEL_HEIGHT)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
+// ─── FeedItem ────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 200 }),
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(translateY, { toValue: PANEL_HEIGHT, duration: 260, useNativeDriver: true }),
-        Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [visible]);
-
-  if (!visible && !post) return null;
-
-  const title = post?.caption || "Untitled Experience";
-  const creator = post?.profiles?.display_name || "Unknown";
-
-  return (
-    <>
-      <Animated.View style={[expStyles.backdrop, { opacity: backdropOpacity }]} pointerEvents={visible ? "auto" : "none"}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-      </Animated.View>
-      <Animated.View style={[expStyles.panel, { transform: [{ translateY }] }]} pointerEvents={visible ? "auto" : "none"}>
-        <View style={expStyles.handle} />
-        <View style={expStyles.panelHeader}>
-          <View style={expStyles.panelTitleRow}>
-            <Layers size={18} color="#FF69B4" strokeWidth={2} />
-            <Text style={expStyles.panelLabel}>Experience</Text>
-          </View>
-          <TouchableOpacity style={expStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
-            <X size={20} color="rgba(255,255,255,0.8)" strokeWidth={2} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={expStyles.scrollView} contentContainerStyle={expStyles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Title */}
-          <Text style={expStyles.experienceTitle} numberOfLines={3}>{title}</Text>
-          <Text style={expStyles.creatorText}>by {creator}</Text>
-
-          {/* Rating placeholder */}
-          <View style={expStyles.ratingRow}>
-            {[1,2,3,4,5].map((i) => (
-              <Star key={i} size={14} color="#F59E0B" fill={i <= 4 ? "#F59E0B" : "transparent"} strokeWidth={1.5} />
-            ))}
-            <Text style={expStyles.ratingText}>4.8 · 124 reviews</Text>
-          </View>
-
-          {/* Linked Places */}
-          {locations.length > 0 && (
-            <View style={expStyles.section}>
-              <View style={expStyles.sectionHeader}>
-                <MapPin size={16} color="#FF69B4" strokeWidth={2} />
-                <Text style={expStyles.sectionTitle}>Linked Places</Text>
-              </View>
-              {locations.map((loc) => (
-                <View key={loc.id} style={expStyles.placeRow}>
-                  <View style={expStyles.placeDot} />
-                  <Text style={expStyles.placeText}>{loc.place_name}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Itinerary */}
-          <View style={expStyles.section}>
-            <View style={expStyles.sectionHeader}>
-              <Calendar size={16} color="#FF69B4" strokeWidth={2} />
-              <Text style={expStyles.sectionTitle}>Itinerary</Text>
-            </View>
-            {[
-              { day: "Day 1", items: ["Arrive & check in", "Sunset walk along the waterfront", "Dinner at local restaurant"] },
-              { day: "Day 2", items: ["Morning market visit", "Guided cultural tour", "Free afternoon exploration"] },
-              { day: "Day 3", items: ["Scenic hike or boat trip", "Souvenir shopping", "Farewell dinner"] },
-            ].map((d) => (
-              <View key={d.day} style={expStyles.dayBlock}>
-                <Text style={expStyles.dayLabel}>{d.day}</Text>
-                {d.items.map((item, i) => (
-                  <View key={i} style={expStyles.itineraryItem}>
-                    <View style={expStyles.itineraryDot} />
-                    <Text style={expStyles.itineraryText}>{item}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-          </View>
-
-          {/* Booking */}
-          <View style={expStyles.section}>
-            <View style={expStyles.sectionHeader}>
-              <BookOpen size={16} color="#FF69B4" strokeWidth={2} />
-              <Text style={expStyles.sectionTitle}>Booking</Text>
-            </View>
-            <View style={expStyles.bookingCard}>
-              <View style={expStyles.bookingPriceRow}>
-                <Text style={expStyles.bookingPrice}>From $299</Text>
-                <Text style={expStyles.bookingPer}>/ person</Text>
-              </View>
-              <Text style={expStyles.bookingNote}>Includes accommodation, guided tours & select meals</Text>
-              <TouchableOpacity style={expStyles.bookButton} activeOpacity={0.85} onPress={() => console.log("User tapped Book this experience")}>
-                <Text style={expStyles.bookButtonText}>Book this experience</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Related */}
-          <View style={expStyles.section}>
-            <Text style={expStyles.sectionTitle}>Related Experiences</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-              {["Hidden Gems Tour", "Coastal Adventure", "Food & Culture Walk"].map((name) => (
-                <TouchableOpacity key={name} style={expStyles.relatedCard} activeOpacity={0.8} onPress={() => console.log("User tapped related experience:", name)}>
-                  <View style={expStyles.relatedThumb} />
-                  <Text style={expStyles.relatedName} numberOfLines={2}>{name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </ScrollView>
-      </Animated.View>
-    </>
-  );
-}
-
-const expStyles = StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    zIndex: 10,
-  },
-  panel: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: PANEL_HEIGHT,
-    backgroundColor: "#0F0F14",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    zIndex: 11,
-    borderTopWidth: 1,
-    borderColor: "rgba(255,105,180,0.15)",
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    alignSelf: "center",
-    marginTop: 10,
-  },
-  panelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  panelTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  panelLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FF69B4",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 48 },
-  experienceTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: -0.3,
-    marginTop: 4,
-    lineHeight: 30,
-  },
-  creatorText: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.5)",
-    marginTop: 4,
-  },
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    marginTop: 10,
-    marginBottom: 4,
-  },
-  ratingText: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.6)",
-    marginLeft: 4,
-  },
-  section: {
-    marginTop: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  placeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
-  },
-  placeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#FF69B4",
-  },
-  placeText: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.85)",
-  },
-  dayBlock: {
-    marginBottom: 16,
-  },
-  dayLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FF69B4",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  itineraryItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    paddingVertical: 4,
-  },
-  itineraryDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: "rgba(255,255,255,0.4)",
-    marginTop: 7,
-  },
-  itineraryText: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.75)",
-    lineHeight: 20,
-    flex: 1,
-  },
-  bookingCard: {
-    backgroundColor: "rgba(255,105,180,0.08)",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,105,180,0.2)",
-  },
-  bookingPriceRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 4,
-  },
-  bookingPrice: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  bookingPer: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.5)",
-  },
-  bookingNote: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.5)",
-    marginTop: 6,
-    marginBottom: 14,
-    lineHeight: 17,
-  },
-  bookButton: {
-    backgroundColor: "#FF69B4",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  bookButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  relatedCard: {
-    width: 120,
-    marginRight: 12,
-  },
-  relatedThumb: {
-    width: 120,
-    height: 80,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    marginBottom: 6,
-  },
-  relatedName: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.75)",
-    lineHeight: 16,
-  },
-});
-
-// ─── VideoPlayer ──────────────────────────────────────────────────────────────
-
-function VideoPlayer({
-  videoUrl,
-  postId,
-  isActive,
-  onPlayingChange,
-  onTogglePlayPause,
-}: {
-  videoUrl: string;
-  postId: string;
+interface FeedItemProps {
+  item: Moment;
   isActive: boolean;
-  onPlayingChange: (playing: boolean) => void;
-  onTogglePlayPause: (toggle: () => void) => void;
-}) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const isMountedRef = useRef(true);
+  screenHeight: number;
+  screenWidth: number;
+  insetTop: number;
+  interaction: InteractionState;
+  onLike: (moment: Moment) => void;
+  onBookmark: (moment: Moment) => void;
+  onShare: (moment: Moment) => void;
+  onProfilePress: (userId: string) => void;
+  onPlacePress: (placeId: string) => void;
+  onFilterPress: () => void;
+}
 
-  const player = useVideoPlayer(videoUrl, (p) => {
+function FeedItem({
+  item,
+  isActive,
+  screenHeight,
+  screenWidth,
+  insetTop,
+  interaction,
+  onLike,
+  onBookmark,
+  onShare,
+  onProfilePress,
+  onPlacePress,
+  onFilterPress,
+}: FeedItemProps) {
+  const isMountedRef = useRef(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const player = useVideoPlayer(item.video_url || "", (p) => {
     p.loop = true;
+    p.muted = false;
   });
 
   useEffect(() => {
@@ -448,7 +137,7 @@ function VideoPlayer({
     return () => {
       isMountedRef.current = false;
       try {
-        if (player && player.playing) player.pause();
+        if (player?.playing) player.pause();
       } catch {}
     };
   }, [player]);
@@ -461,10 +150,9 @@ function VideoPlayer({
           try {
             player.play();
             setIsPlaying(true);
-            onPlayingChange(true);
-            console.log("Video playing for post:", postId);
+            console.log("FeedItem: playing video for moment:", item.id);
           } catch (e) {
-            console.error("Error playing video:", e);
+            console.error("FeedItem: error playing video:", e);
           }
         }
       }, 300);
@@ -473,703 +161,613 @@ function VideoPlayer({
       try {
         player.pause();
         setIsPlaying(false);
-        onPlayingChange(false);
       } catch {}
     }
-  }, [player, postId, isActive]);
+  }, [isActive, player, item.id]);
 
-  const toggle = useCallback(() => {
-    console.log("User tapped play/pause button");
+  const handleTap = useCallback(() => {
+    console.log("User tapped video - toggling play/pause, moment:", item.id);
     if (!player) return;
     try {
-      if (isPlaying) {
+      if (player.playing) {
         player.pause();
         setIsPlaying(false);
-        onPlayingChange(false);
       } else {
         player.play();
         setIsPlaying(true);
-        onPlayingChange(true);
       }
     } catch {}
-  }, [player, isPlaying, onPlayingChange]);
+  }, [player, item.id]);
 
-  useEffect(() => {
-    onTogglePlayPause(toggle);
-  }, [toggle]);
+  const handlePlayPauseBtn = useCallback(() => {
+    console.log(
+      "User tapped pink play/pause button, moment:",
+      item.id,
+      "currently playing:",
+      isPlaying
+    );
+    if (!player) return;
+    try {
+      if (player.playing) {
+        player.pause();
+        setIsPlaying(false);
+      } else {
+        player.play();
+        setIsPlaying(true);
+      }
+    } catch {}
+  }, [player, item.id, isPlaying]);
 
-  const handleTap = () => {
-    console.log("User tapped video - toggling play/pause");
-    toggle();
-  };
+  const username = item.user?.username || "unknown";
+  const avatarUrl = item.user?.avatar_url || "";
+  const initials = getInitials(username);
+  const likeColor = interaction.is_liked ? PINK : "#FFFFFF";
+  const bookmarkColor = interaction.is_bookmarked ? PINK : "#FFFFFF";
+  const likesText = String(Number(interaction.likes_count) || 0);
+  const bookmarksText = String(Number(interaction.bookmarks_count) || 0);
+  const captionText = item.caption || "";
+  const PlayPauseIcon = isPlaying ? Pause : Play;
+  const filterBtnTop = insetTop + 12;
+  const places = item.places || [];
 
-  if (!videoUrl) return null;
+  if (!item.video_url) return null;
 
   return (
-    <TouchableOpacity style={styles.video} activeOpacity={1} onPress={handleTap}>
-      <VideoView
-        style={styles.video}
-        player={player}
-        nativeControls={false}
-        contentFit="cover"
-        allowsFullscreen={false}
-        allowsPictureInPicture={false}
+    <View style={[styles.slide, { width: screenWidth, height: screenHeight }]}>
+      {/* Video */}
+      <TouchableOpacity
+        style={[styles.videoContainer, { height: screenHeight }]}
+        activeOpacity={1}
+        onPress={handleTap}
+      >
+        <VideoView
+          style={[styles.video, { height: screenHeight }]}
+          player={player}
+          nativeControls={false}
+          contentFit="cover"
+          allowsFullscreen={false}
+          allowsPictureInPicture={false}
+        />
+      </TouchableOpacity>
+
+      {/* Gradient overlay */}
+      <LinearGradient
+        colors={["transparent", "rgba(0,0,0,0.85)"]}
+        style={styles.gradient}
+        pointerEvents="none"
       />
-      {!isPlaying && (
-        <View style={styles.playPauseIndicator}>
-          <IconSymbol android_material_icon_name="play-arrow" size={64} color="#FFFFFF" />
+
+      {/* TOP-LEFT: Filter button */}
+      <TouchableOpacity
+        style={[styles.filterBtn, { top: filterBtnTop }]}
+        onPress={onFilterPress}
+        activeOpacity={0.8}
+      >
+        <SlidersHorizontal size={20} color="#FFFFFF" strokeWidth={2} />
+      </TouchableOpacity>
+
+      {/* RIGHT-CENTER: Pink play/pause button */}
+      <TouchableOpacity
+        style={styles.playPauseBtn}
+        onPress={handlePlayPauseBtn}
+        activeOpacity={0.85}
+      >
+        <PlayPauseIcon size={24} color="#FFFFFF" fill="#FFFFFF" strokeWidth={0} />
+      </TouchableOpacity>
+
+      {/* Bottom overlay */}
+      <View style={[styles.bottomSection, { paddingBottom: TAB_BAR_HEIGHT + 16 }]}>
+        {/* Left: user info + caption + places */}
+        <View style={styles.leftContent}>
+          <TouchableOpacity
+            style={styles.userRow}
+            onPress={() => onProfilePress(item.user_id)}
+            activeOpacity={0.8}
+          >
+            {avatarUrl ? (
+              <Image
+                source={resolveImageSource(avatarUrl)}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+            <Text style={styles.username}>@{username}</Text>
+          </TouchableOpacity>
+
+          {captionText ? (
+            <Text style={styles.caption} numberOfLines={3}>
+              {captionText}
+            </Text>
+          ) : null}
+
+          {places.length > 0 ? (
+            <View style={styles.placesRow}>
+              {places.map((place) => (
+                <TouchableOpacity
+                  key={place.id}
+                  style={styles.placePill}
+                  onPress={() => onPlacePress(place.place_id)}
+                  activeOpacity={0.8}
+                >
+                  <MapPin size={11} color="#FFFFFF" strokeWidth={2} />
+                  <Text style={styles.placePillText} numberOfLines={1}>
+                    {place.place_name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
         </View>
-      )}
-    </TouchableOpacity>
+
+        {/* Right: action buttons */}
+        <View style={styles.rightActions}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => onLike(item)}
+            activeOpacity={0.8}
+          >
+            <Heart
+              size={28}
+              color={likeColor}
+              fill={interaction.is_liked ? PINK : "transparent"}
+              strokeWidth={2}
+            />
+            <Text style={styles.actionCount}>{likesText}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => onBookmark(item)}
+            activeOpacity={0.8}
+          >
+            <Bookmark
+              size={28}
+              color={bookmarkColor}
+              fill={interaction.is_bookmarked ? PINK : "transparent"}
+              strokeWidth={2}
+            />
+            <Text style={styles.actionCount}>{bookmarksText}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => onShare(item)}
+            activeOpacity={0.8}
+          >
+            <Share2 size={28} color="#FFFFFF" strokeWidth={2} />
+            <Text style={styles.actionCount}>Share</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   );
 }
 
+// ─── HomeScreen ───────────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [feed, setFeed] = useState<Moment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followLoading, setFollowLoading] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [showSaveModal, setShowSaveModal] = useState(false);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [isSharing, setIsSharing] = useState(false);
-  const [playingMap, setPlayingMap] = useState<Map<string, boolean>>(new Map());
-  const toggleFnMap = useRef<Map<string, () => void>>(new Map());
-  const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
-
-  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [interactions, setInteractions] = useState<Map<string, InteractionState>>(new Map());
+  const [filterVisible, setFilterVisible] = useState(false);
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
   const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
   const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
 
-  const [showMoreModal, setShowMoreModal] = useState(false);
-  const [isBlocked, setIsBlocked] = useState(false);
-  const [blockLoading, setBlockLoading] = useState(false);
-
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastType, setToastType] = useState<"success" | "error" | "info">("info");
-
-  const [postInteractions, setPostInteractions] = useState<
-    Map<string, { isLiked: boolean; isSaved: boolean; stats: PostStats }>
-  >(new Map());
-  const [postLocations, setPostLocations] = useState<Map<string, PostLocation[]>>(new Map());
-  const [likeLoading, setLikeLoading] = useState(false);
-
-  const [showCommentsModal, setShowCommentsModal] = useState(false);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [newComment, setNewComment] = useState("");
-  const [commentSubmitting, setCommentSubmitting] = useState(false);
-  const [deleteCommentId, setDeleteCommentId] = useState<string | null>(null);
-  const [showDeleteCommentModal, setShowDeleteCommentModal] = useState(false);
-
-  const [showOnboardingTooltip, setShowOnboardingTooltip] = useState(false);
-  const [showExperiencesPanel, setShowExperiencesPanel] = useState(false);
-
-  const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
   const isMountedRef = useRef(true);
 
-  const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
-    setToastMessage(message);
-    setToastType(type);
-    setToastVisible(true);
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      const checkOnboarding = async () => {
-        const shouldShow = await shouldShowOnboardingTooltip();
-        if (shouldShow) setTimeout(() => setShowOnboardingTooltip(true), 500);
-      };
-      checkOnboarding();
-    }, [])
-  );
-
-  const loadPostLocations = useCallback(async (postId: string) => {
-    try {
-      const data = await apiGet<PostLocation[]>(`/api/posts/${postId}/locations`);
-      setPostLocations((prev) => {
-        const m = new Map(prev);
-        m.set(postId, data && data.length > 0 ? data : []);
-        return m;
-      });
-    } catch {
-      setPostLocations((prev) => {
-        const m = new Map(prev);
-        m.set(postId, []);
-        return m;
-      });
-    }
-  }, []);
-
-  const loadPostInteractions = useCallback(
-    async (postId: string, userId: string) => {
-      try {
-        const [{ data: likeData }, { data: statsData }, { data: savedData }] = await Promise.all([
-          supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).limit(1),
-          supabase.from("post_stats").select("*").eq("post_id", postId).single(),
-          supabase
-            .from("board_posts")
-            .select("id, board_id, boards!inner(user_id)")
-            .eq("post_id", postId)
-            .eq("boards.user_id", userId)
-            .limit(1),
-        ]);
-        const isLiked = !!(likeData && likeData.length > 0);
-        const isSaved = !!(savedData && savedData.length > 0);
-        const stats = statsData
-          ? { like_count: statsData.like_count || 0, comment_count: statsData.comment_count || 0, share_count: statsData.share_count || 0 }
-          : { like_count: 0, comment_count: 0, share_count: 0 };
-        setPostInteractions((prev) => {
-          const m = new Map(prev);
-          m.set(postId, { isLiked, isSaved, stats });
-          return m;
+  const buildInteractions = useCallback(
+    (moments: Moment[]): Map<string, InteractionState> => {
+      const m = new Map<string, InteractionState>();
+      moments.forEach((moment) => {
+        m.set(moment.id, {
+          is_liked: !!moment.is_liked,
+          is_bookmarked: !!moment.is_bookmarked,
+          likes_count: Number(moment.likes_count) || 0,
+          bookmarks_count: Number(moment.bookmarks_count) || 0,
         });
-        await loadPostLocations(postId);
-      } catch {
-        setPostInteractions((prev) => {
-          const m = new Map(prev);
-          m.set(postId, { isLiked: false, isSaved: false, stats: { like_count: 0, comment_count: 0, share_count: 0 } });
-          return m;
-        });
-      }
+      });
+      return m;
     },
-    [loadPostLocations]
+    []
   );
 
-  const checkBlockStatus = useCallback(async (targetUserId: string) => {
-    try {
-      const data = await authenticatedGet<{ isBlocked: boolean }>(`/api/blocks/check/${targetUserId}`);
-      setIsBlocked(data.isBlocked || false);
-    } catch {
-      setIsBlocked(false);
-    }
-  }, []);
+  const fetchMoments = useCallback(
+    async (isRefresh = false, cursor: string | null = null) => {
+      const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "&cursor=";
+      const endpoint = `/api/moments?limit=20${cursorParam}`;
+      console.log(
+        "Home: fetching moments from API, isRefresh:",
+        isRefresh,
+        "cursor:",
+        cursor
+      );
+      try {
+        const data = await apiGet<{ moments: Moment[]; next_cursor: string | null }>(endpoint);
 
-  const fetchPosts = useCallback(async () => {
-    console.log("HomeScreen: Fetching posts with filters:", { filterPlaceId, filterKeywords });
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) setCurrentUserId(user.id);
+        const moments = data.moments || [];
+        const newNextCursor = data.next_cursor ?? null;
+        console.log("Home: fetched", moments.length, "moments, next_cursor:", newNextCursor);
 
-      let blockedUserIds: string[] = [];
-      if (user) {
-        try {
-          const blocksData = await authenticatedApiCall<any[]>("/api/blocks", { method: "GET" });
-          blockedUserIds = blocksData.map((b: any) => (b.blockerId === user.id ? b.blockedId : b.blockerId));
-        } catch {}
-      }
+        const newInteractions = buildInteractions(moments);
 
-      let query = supabase
-        .from("posts")
-        .select(`*, profiles!posts_user_id_fkey (display_name, avatar_url)`)
-        .order("created_at", { ascending: false });
-
-      if (filterPlaceId) query = query.eq("place_id", filterPlaceId);
-      if (blockedUserIds.length > 0) query = query.not("user_id", "in", `(${blockedUserIds.join(",")})`);
-
-      const { data, error } = await query;
-      if (error) {
-        console.error("HomeScreen: Error fetching posts:", error);
-        setPosts([]);
-      } else {
-        let filtered = Array.isArray(data) ? data : [];
-        if (filterKeywords && filterKeywords.trim()) {
-          const kws = filterKeywords.toLowerCase().split(/[\s,]+/).filter((k) => k.length > 0);
-          filtered = filtered.filter((p) => {
-            const text = `${(p?.caption ?? "").toLowerCase()} ${(p?.place_name ?? "").toLowerCase()}`;
-            return kws.every((k) => text.includes(k));
+        if (isRefresh || !cursor) {
+          setFeed(moments);
+          setInteractions(newInteractions);
+        } else {
+          setFeed((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id));
+            const unique = moments.filter((m) => !existingIds.has(m.id));
+            return [...prev, ...unique];
+          });
+          setInteractions((prev) => {
+            const m = new Map(prev);
+            newInteractions.forEach((v, k) => {
+              if (!m.has(k)) m.set(k, v);
+            });
+            return m;
           });
         }
-        console.log("HomeScreen: Posts fetched:", filtered.length);
-        setPosts(filtered);
-        if (user && filtered[0]) {
-          await loadPostInteractions(filtered[0].id, user.id);
-        }
-      }
-    } catch (e) {
-      console.error("HomeScreen: fetchPosts error:", e);
-      setPosts([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [filterPlaceId, filterKeywords, loadPostInteractions]);
 
-  useEffect(() => {
-    const hasPlace = params.filterPlaceId && params.filterPlaceId !== "";
-    const hasKw = params.filterKeywords && params.filterKeywords !== "";
-    if (hasPlace || hasKw) {
-      if (hasPlace) { setFilterPlaceId(params.filterPlaceId as string); setFilterPlaceName(params.filterPlaceName as string); }
-      else { setFilterPlaceId(null); setFilterPlaceName(null); }
-      if (hasKw) setFilterKeywords(params.filterKeywords as string);
-      else setFilterKeywords(null);
-    } else if (params.filterPlaceId === "" && params.filterPlaceName === "" && params.filterKeywords === "") {
-      setFilterPlaceId(null); setFilterPlaceName(null); setFilterKeywords(null);
-    }
-  }, [params.filterPlaceId, params.filterPlaceName, params.filterKeywords]);
+        setNextCursor(newNextCursor);
+        setHasMore(!!newNextCursor);
+        setError(null);
+      } catch (e: any) {
+        console.error("Home: fetch moments error:", e);
+        setError("Couldn't load feed. Check your connection.");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+      }
+    },
+    [buildInteractions]
+  );
+
+  const fetchMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !nextCursor) return;
+    setLoadingMore(true);
+    console.log("Home: loading more moments, cursor:", nextCursor);
+    await fetchMoments(false, nextCursor);
+  }, [loadingMore, hasMore, nextCursor, fetchMoments]);
 
   useFocusEffect(
     useCallback(() => {
       isMountedRef.current = true;
-      console.log("HomeScreen focused - fetching posts");
-      fetchPosts();
-      return () => { isMountedRef.current = false; };
-    }, [fetchPosts])
+      console.log("HomeScreen focused - fetching moments from API");
+      setLoading(true);
+      setNextCursor(null);
+      setHasMore(true);
+      setCurrentIndex(0);
+      fetchMoments(false, null);
+      return () => {
+        isMountedRef.current = false;
+      };
+    }, [fetchMoments])
   );
 
-  const incrementViewCount = useCallback(
-    async (postId: string, postOwnerId: string) => {
-      if (viewedPostIds.has(postId) || !currentUserId || currentUserId === postOwnerId) return;
-      try {
-        await authenticatedPost<{ view_count: number | null }>("/api/rpc/increment-view", { postId });
-        setViewedPostIds((prev) => new Set(prev).add(postId));
-      } catch {}
-    },
-    [currentUserId, viewedPostIds]
-  );
+  const handleRefresh = useCallback(() => {
+    console.log("User pulled to refresh feed");
+    setRefreshing(true);
+    setNextCursor(null);
+    setHasMore(true);
+    setCurrentIndex(0);
+    fetchMoments(true, null);
+  }, [fetchMoments]);
 
   const handleViewableItemsChanged = useCallback(
     ({ viewableItems }: any) => {
       if (viewableItems.length > 0) {
-        const idx = viewableItems[0].index;
-        setCurrentIndex(idx);
-        const post = posts[idx];
-        if (post && currentUserId) {
-          loadPostInteractions(post.id, currentUserId);
-          checkBlockStatus(post.user_id);
-          incrementViewCount(post.id, post.user_id);
-          if (post.user_id !== currentUserId) {
-            supabase
-              .from("follows")
-              .select("*")
-              .eq("follower_id", currentUserId)
-              .eq("following_id", post.user_id)
-              .limit(1)
-              .then(({ data }) => setIsFollowing(!!(data && data.length > 0)));
-          } else {
-            setIsFollowing(false);
-          }
-        }
+        const newIndex = viewableItems[0].index ?? 0;
+        setCurrentIndex(newIndex);
+        console.log("Home: visible moment index:", newIndex);
       }
     },
-    [posts, currentUserId, loadPostInteractions, checkBlockStatus, incrementViewCount]
+    []
   );
 
-  const viewabilityConfig = { itemVisiblePercentThreshold: 50 };
+  const handleLike = useCallback(
+    async (moment: Moment) => {
+      console.log("User tapped like on moment:", moment.id);
+      const cur = interactions.get(moment.id);
+      if (!cur) return;
+      const wasLiked = cur.is_liked;
 
-  const handleFilterPress = () => {
-    console.log("User tapped filter button on home screen");
-    setShowFilterModal(true);
-  };
-
-  const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
-    console.log("User applied filters on home screen:", { placeId, placeName, keywords });
-    setFilterPlaceId(placeId);
-    setFilterPlaceName(placeName);
-    setFilterKeywords(keywords);
-    setShowFilterModal(false);
-  };
-
-  const handleClearFilters = () => {
-    console.log("User cleared filters on home screen");
-    setFilterPlaceId(null);
-    setFilterPlaceName(null);
-    setFilterKeywords(null);
-    setShowFilterModal(false);
-  };
-
-  const handleProfilePress = (post: Post) => {
-    if (post?.user_id) {
-      console.log("User tapped profile:", post.user_id);
-      router.push(`/user/${post.user_id}` as any);
-    }
-  };
-
-  const handleLocationPress = (post: Post) => {
-    if (post?.place_id) {
-      console.log("User tapped location:", post.place_id);
-      router.push(`/location/${post.place_id}` as any);
-    }
-  };
-
-  const handleFollowToggle = async (post: Post) => {
-    console.log("User tapped follow/unfollow");
-    if (followLoading || !post?.user_id || !currentUserId || post.user_id === currentUserId) return;
-    setFollowLoading(true);
-    try {
-      if (isFollowing) {
-        await supabase.from("follows").delete().eq("follower_id", currentUserId).eq("following_id", post.user_id);
-        setIsFollowing(false);
-      } else {
-        await supabase.from("follows").insert({ follower_id: currentUserId, following_id: post.user_id });
-        setIsFollowing(true);
-      }
-    } catch (e) {
-      console.error("Error toggling follow:", e);
-    } finally {
-      setFollowLoading(false);
-    }
-  };
-
-  const handleLike = async (post: Post) => {
-    console.log("User tapped like for post:", post.id);
-    if (likeLoading || !currentUserId) return;
-    const cur = postInteractions.get(post.id);
-    if (!cur) return;
-    setLikeLoading(true);
-    const wasLiked = cur.isLiked;
-    setPostInteractions((prev) => {
-      const m = new Map(prev);
-      const i = m.get(post.id);
-      if (i) m.set(post.id, { ...i, isLiked: !wasLiked, stats: { ...i.stats, like_count: wasLiked ? Math.max(0, i.stats.like_count - 1) : i.stats.like_count + 1 } });
-      return m;
-    });
-    try {
-      if (wasLiked) {
-        await supabase.from("post_likes").delete().eq("post_id", post.id).eq("user_id", currentUserId);
-      } else {
-        await supabase.from("post_likes").insert({ post_id: post.id, user_id: currentUserId });
-      }
-    } catch {
-      setPostInteractions((prev) => {
+      // Optimistic update
+      setInteractions((prev) => {
         const m = new Map(prev);
-        const i = m.get(post.id);
-        if (i) m.set(post.id, { ...i, isLiked: wasLiked, stats: { ...i.stats, like_count: wasLiked ? i.stats.like_count + 1 : Math.max(0, i.stats.like_count - 1) } });
+        m.set(moment.id, {
+          ...cur,
+          is_liked: !wasLiked,
+          likes_count: wasLiked
+            ? Math.max(0, cur.likes_count - 1)
+            : cur.likes_count + 1,
+        });
         return m;
       });
-    } finally {
-      setLikeLoading(false);
-    }
-  };
 
-  const handleComment = async (post: Post) => {
-    console.log("User tapped comment button");
-    setShowCommentsModal(true);
-    commentsSheetRef.current?.expand();
-    setCommentsLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("comments")
-        .select(`*, profiles!comments_user_id_fkey (display_name, avatar_url)`)
-        .eq("post_id", post.id)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      setComments(data || []);
-    } catch {
-      setComments([]);
-    } finally {
-      setCommentsLoading(false);
-    }
-  };
-
-  const handleSubmitComment = async () => {
-    const trimmed = newComment.trim();
-    if (!trimmed || commentSubmitting || !currentUserId) return;
-    const post = posts[currentIndex];
-    if (!post) return;
-    console.log("Submitting comment:", trimmed);
-    setCommentSubmitting(true);
-    try {
-      const { data, error } = await supabase
-        .from("comments")
-        .insert({ post_id: post.id, user_id: currentUserId, comment_text: trimmed })
-        .select(`*, profiles!comments_user_id_fkey (display_name, avatar_url)`)
-        .single();
-      if (error) throw error;
-      setComments((prev) => [...prev, data]);
-      setPostInteractions((prev) => {
-        const m = new Map(prev);
-        const i = m.get(post.id);
-        if (i) m.set(post.id, { ...i, stats: { ...i.stats, comment_count: i.stats.comment_count + 1 } });
-        return m;
-      });
-      setNewComment("");
-    } catch (e) {
-      console.error("Error submitting comment:", e);
-    } finally {
-      setCommentSubmitting(false);
-    }
-  };
-
-  const handleDeleteComment = (commentId: string, commentUserId: string) => {
-    if (commentUserId !== currentUserId) return;
-    setDeleteCommentId(commentId);
-    setShowDeleteCommentModal(true);
-  };
-
-  const confirmDeleteComment = async () => {
-    if (!deleteCommentId || !currentUserId) return;
-    try {
-      await supabase.from("comments").delete().eq("id", deleteCommentId).eq("user_id", currentUserId);
-      setComments((prev) => prev.filter((c) => c.id !== deleteCommentId));
-      const post = posts[currentIndex];
-      if (post) {
-        setPostInteractions((prev) => {
+      try {
+        console.log("Home: POST /api/moments/:id/like, moment:", moment.id);
+        const result = await apiCall<{ liked: boolean; likes_count: number }>(
+          `/api/moments/${moment.id}/like`,
+          { method: "POST" }
+        );
+        console.log("Home: like result:", result);
+        setInteractions((prev) => {
           const m = new Map(prev);
-          const i = m.get(post.id);
-          if (i) m.set(post.id, { ...i, stats: { ...i.stats, comment_count: Math.max(0, i.stats.comment_count - 1) } });
+          const existing = m.get(moment.id);
+          if (existing) {
+            m.set(moment.id, {
+              ...existing,
+              is_liked: result.liked,
+              likes_count: Number(result.likes_count) || existing.likes_count,
+            });
+          }
+          return m;
+        });
+      } catch (e) {
+        console.error("Home: like error:", e);
+        // Revert
+        setInteractions((prev) => {
+          const m = new Map(prev);
+          m.set(moment.id, cur);
           return m;
         });
       }
-    } catch {}
-    setShowDeleteCommentModal(false);
-    setDeleteCommentId(null);
-  };
-
-  const handleSave = (post: Post) => {
-    console.log("User tapped save for post:", post.id);
-    setSelectedPost(post);
-    setShowSaveModal(true);
-  };
-
-  const handleSaveModalClose = () => {
-    setShowSaveModal(false);
-    setSelectedPost(null);
-    const post = posts[currentIndex];
-    if (post && currentUserId) loadPostInteractions(post.id, currentUserId);
-  };
-
-  const handleShare = async (post: Post) => {
-    console.log("User tapped share for post:", post.id);
-    if (!post.video_url || isSharing) return;
-    setIsSharing(true);
-    try {
-      let msg = post.caption || "";
-      if (post.place_name) msg = msg ? `${msg} • ${post.place_name}` : post.place_name;
-      const result = await Share.share({ message: msg, url: post.video_url });
-      if (result.action === Share.sharedAction) {
-        console.log("User completed share");
-        if (currentUserId) {
-          await supabase.from("post_shares").insert({ post_id: post.id, user_id: currentUserId, share_target: "system" });
-          await loadPostInteractions(post.id, currentUserId);
-        }
-        showToast("Shared", "success");
-      }
-    } catch (e) {
-      console.error("Error sharing:", e);
-      showToast("Couldn't share", "error");
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  const handleMoreOptions = (post: Post) => {
-    console.log("User tapped more options");
-    if (post.user_id === currentUserId) return;
-    setShowMoreModal(true);
-  };
-
-  const handleBlockUser = async () => {
-    console.log("User tapped block user");
-    const post = posts[currentIndex];
-    if (!post || !currentUserId || post.user_id === currentUserId) return;
-    setShowMoreModal(false);
-    setBlockLoading(true);
-    try {
-      if (isBlocked) {
-        await authenticatedDelete<{ success: boolean }>(`/api/blocks/${post.user_id}`);
-        setIsBlocked(false);
-        showToast("User unblocked", "success");
-      } else {
-        await authenticatedPost<{ success: boolean }>("/api/blocks", { blocked_id: post.user_id });
-        await supabase.from("follows").delete().or(`and(follower_id.eq.${currentUserId},following_id.eq.${post.user_id}),and(follower_id.eq.${post.user_id},following_id.eq.${currentUserId})`);
-        setIsBlocked(true);
-        setIsFollowing(false);
-        showToast("User blocked", "success");
-        setTimeout(() => fetchPosts(), 1000);
-      }
-    } catch {
-      showToast("Failed to update block status", "error");
-    } finally {
-      setBlockLoading(false);
-    }
-  };
-
-  const handleReportUser = () => {
-    console.log("User tapped report user");
-    setShowMoreModal(false);
-    showToast("Report functionality coming soon", "info");
-  };
-
-  const getInitials = (name: string) => {
-    if (!name) return "??";
-    const parts = name.split(" ");
-    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    return name.substring(0, 2).toUpperCase();
-  };
-
-  const renderBackdrop = (props: any) => (
-    <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} pressBehavior="close" />
+    },
+    [interactions]
   );
 
-  const renderVideoItem = ({ item: post, index }: { item: Post; index: number }) => {
-    if (!post?.video_url) return null;
+  const handleBookmark = useCallback(
+    async (moment: Moment) => {
+      console.log("User tapped bookmark on moment:", moment.id);
+      const cur = interactions.get(moment.id);
+      if (!cur) return;
+      const wasBookmarked = cur.is_bookmarked;
 
-    const displayName = post?.profiles?.display_name || "Unknown User";
-    const avatarUrl = post?.profiles?.avatar_url || "";
-    const caption = post?.caption || "";
-    const placeName = post?.place_name || "";
-    const isOwnVideo = currentUserId === post?.user_id;
-    const initials = getInitials(displayName);
-    const interaction = postInteractions.get(post.id) || { isLiked: false, isSaved: false, stats: { like_count: 0, comment_count: 0, share_count: 0 } };
-    const likeCountText = String(interaction.stats.like_count);
-    const commentCountText = String(interaction.stats.comment_count);
-    const shareCountText = String(interaction.stats.share_count);
-    const shareDisabled = !post.video_url || isSharing;
-    const isActive = index === currentIndex;
-    const locations = postLocations.get(post.id) || [];
-    const followBg = isFollowing ? "rgba(255, 255, 255, 0.2)" : "#FF69B4";
-    const likeColor = interaction.isLiked ? "#FF69B4" : "#FFFFFF";
-    const likeIcon = interaction.isLiked ? "favorite" : "favorite-border";
-    const saveColor = interaction.isSaved ? "#FF69B4" : "#FFFFFF";
-    const saveIcon = interaction.isSaved ? "bookmark" : "bookmark-border";
-    return (
-      <View style={styles.videoSlide}>
-        <VideoPlayer
-          videoUrl={post.video_url}
-          postId={post.id}
+      // Optimistic update
+      setInteractions((prev) => {
+        const m = new Map(prev);
+        m.set(moment.id, {
+          ...cur,
+          is_bookmarked: !wasBookmarked,
+          bookmarks_count: wasBookmarked
+            ? Math.max(0, cur.bookmarks_count - 1)
+            : cur.bookmarks_count + 1,
+        });
+        return m;
+      });
+
+      try {
+        console.log("Home: POST /api/moments/:id/bookmark, moment:", moment.id);
+        const result = await apiCall<{ bookmarked: boolean; bookmarks_count: number }>(
+          `/api/moments/${moment.id}/bookmark`,
+          { method: "POST" }
+        );
+        console.log("Home: bookmark result:", result);
+        setInteractions((prev) => {
+          const m = new Map(prev);
+          const existing = m.get(moment.id);
+          if (existing) {
+            m.set(moment.id, {
+              ...existing,
+              is_bookmarked: result.bookmarked,
+              bookmarks_count: Number(result.bookmarks_count) || existing.bookmarks_count,
+            });
+          }
+          return m;
+        });
+      } catch (e) {
+        console.error("Home: bookmark error:", e);
+        // Revert
+        setInteractions((prev) => {
+          const m = new Map(prev);
+          m.set(moment.id, cur);
+          return m;
+        });
+      }
+    },
+    [interactions]
+  );
+
+  const handleShare = useCallback(async (moment: Moment) => {
+    console.log("User tapped share on moment:", moment.id);
+    try {
+      const text = moment.caption || "Check out this moment on Floomingo!";
+      await Share.share({ message: text, url: moment.video_url });
+    } catch (e) {
+      console.error("Home: share error:", e);
+    }
+  }, []);
+
+  const handleProfilePress = useCallback(
+    (userId: string) => {
+      console.log("User tapped profile, userId:", userId);
+      router.push(`/user/${userId}` as any);
+    },
+    [router]
+  );
+
+  const handlePlacePress = useCallback(
+    (placeId: string) => {
+      console.log("User tapped place pill, placeId:", placeId);
+      router.push(`/location/${placeId}` as any);
+    },
+    [router]
+  );
+
+  const handleFilterPress = useCallback(() => {
+    console.log("User tapped filter button");
+    setFilterVisible(true);
+  }, []);
+
+  const handleFilterClose = useCallback(() => {
+    console.log("User closed filter modal");
+    setFilterVisible(false);
+  }, []);
+
+  const handleFilterApply = useCallback(
+    (
+      placeId: string | null,
+      placeName: string | null,
+      keywords: string | null
+    ) => {
+      console.log(
+        "User applied filters — placeId:",
+        placeId,
+        "placeName:",
+        placeName,
+        "keywords:",
+        keywords
+      );
+      setFilterPlaceId(placeId);
+      setFilterPlaceName(placeName);
+      setFilterKeywords(keywords);
+      setFilterVisible(false);
+      setLoading(true);
+      setNextCursor(null);
+      setHasMore(true);
+      setCurrentIndex(0);
+      fetchMoments(false, null);
+    },
+    [fetchMoments]
+  );
+
+  const handleFilterClear = useCallback(() => {
+    console.log("User cleared filters");
+    setFilterPlaceId(null);
+    setFilterPlaceName(null);
+    setFilterKeywords(null);
+    setFilterVisible(false);
+    setLoading(true);
+    setNextCursor(null);
+    setHasMore(true);
+    setCurrentIndex(0);
+    fetchMoments(false, null);
+  }, [fetchMoments]);
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+  }).current;
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: Moment; index: number }) => {
+      if (!item?.video_url) return null;
+      const isActive = index === currentIndex;
+      const interaction = interactions.get(item.id) ?? {
+        is_liked: false,
+        is_bookmarked: false,
+        likes_count: 0,
+        bookmarks_count: 0,
+      };
+      return (
+        <FeedItem
+          item={item}
           isActive={isActive}
-          onPlayingChange={(playing) => {
-            setPlayingMap((prev) => { const m = new Map(prev); m.set(post.id, playing); return m; });
-          }}
-          onTogglePlayPause={(fn) => { toggleFnMap.current.set(post.id, fn); }}
+          screenHeight={height}
+          screenWidth={width}
+          insetTop={insets.top}
+          interaction={interaction}
+          onLike={handleLike}
+          onBookmark={handleBookmark}
+          onShare={handleShare}
+          onProfilePress={handleProfilePress}
+          onPlacePress={handlePlacePress}
+          onFilterPress={handleFilterPress}
         />
+      );
+    },
+    [
+      currentIndex,
+      interactions,
+      height,
+      width,
+      insets.top,
+      handleLike,
+      handleBookmark,
+      handleShare,
+      handleProfilePress,
+      handlePlacePress,
+      handleFilterPress,
+    ]
+  );
 
-        <View style={styles.overlay}>
-          <View style={styles.topControls}>
-            <TouchableOpacity style={styles.filterButton} onPress={handleFilterPress} accessibilityLabel="Filter videos">
-              <IconSymbol android_material_icon_name="filter-list" size={24} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.experiencesButton}
-              onPress={() => {
-                console.log("User tapped Experiences expand button for post:", post.id);
-                setShowExperiencesPanel(true);
-              }}
-              activeOpacity={0.7}
-              accessibilityLabel="View experiences"
-            >
-              <ChevronUp size={20} color="#FFFFFF" strokeWidth={2.5} />
-            </TouchableOpacity>
-          </View>
+  const hasActiveFilter = !!(filterPlaceId || filterKeywords);
 
-          <View style={styles.bottomInfo}>
-            <View style={styles.infoContent}>
-              <View style={styles.userRowContainer}>
-                <TouchableOpacity style={styles.userRow} onPress={() => handleProfilePress(post)} activeOpacity={0.7}>
-                  {avatarUrl ? (
-                    <Image source={resolveImageSource(avatarUrl)} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarInitials}>{initials}</Text>
-                    </View>
-                  )}
-                  <Text style={styles.displayName}>{displayName}</Text>
-                </TouchableOpacity>
-                {!isOwnVideo && (
-                  <TouchableOpacity
-                    style={[styles.followButtonSmall, { backgroundColor: followBg }]}
-                    onPress={() => handleFollowToggle(post)}
-                    disabled={followLoading}
-                    activeOpacity={0.7}
-                  >
-                    {followLoading ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.followButtonSmallText}>{isFollowing ? "Following" : "Follow"}</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {caption ? <Text style={styles.caption} numberOfLines={3}>{caption}</Text> : null}
-
-              {locations.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.locationsScroll} contentContainerStyle={styles.locationsScrollContent}>
-                  {locations.map((loc) => (
-                    <TouchableOpacity
-                      key={loc.id}
-                      style={styles.locationChipVideo}
-                      onPress={() => { console.log("User tapped location chip:", loc.place_name); router.push(`/location/${loc.place_id}` as any); }}
-                      activeOpacity={0.7}
-                    >
-                      <IconSymbol android_material_icon_name="location-on" size={14} color="#FF69B4" />
-                      <Text style={styles.locationChipVideoText}>{loc.place_name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              ) : placeName ? (
-                <TouchableOpacity style={styles.locationRow} onPress={() => handleLocationPress(post)} activeOpacity={0.7}>
-                  <IconSymbol android_material_icon_name="location-on" size={16} color="#FF69B4" />
-                  <Text style={styles.placeName}>{placeName}</Text>
-                </TouchableOpacity>
-              ) : null}
-
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionButton} onPress={() => handleLike(post)} disabled={likeLoading} activeOpacity={0.7}>
-                  <IconSymbol android_material_icon_name={likeIcon} size={28} color={likeColor} />
-                  <Text style={styles.actionButtonText}>{likeCountText}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} onPress={() => handleComment(post)} activeOpacity={0.7}>
-                  <IconSymbol android_material_icon_name="chat-bubble-outline" size={28} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>{commentCountText}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} onPress={() => handleSave(post)} activeOpacity={0.7}>
-                  <IconSymbol android_material_icon_name={saveIcon} size={28} color={saveColor} />
-                  <Text style={styles.actionButtonText}>Save</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionButton, { opacity: shareDisabled ? 0.5 : 1 }]} onPress={() => handleShare(post)} disabled={shareDisabled} activeOpacity={0.7}>
-                  <IconSymbol android_material_icon_name="share" size={28} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>{shareCountText}</Text>
-                </TouchableOpacity>
-                {!isOwnVideo && (
-                  <TouchableOpacity style={styles.actionButton} onPress={() => handleMoreOptions(post)} activeOpacity={0.7}>
-                    <IconSymbol android_material_icon_name="more-horiz" size={28} color="#FFFFFF" />
-                    <Text style={styles.actionButtonText}>More</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const blockButtonText = isBlocked ? "Unblock User" : "Block User";
-  const blockIconName = isBlocked ? "check-circle" : "block";
-  const blockTextColor = isBlocked ? colors.primary : "#FF3B30";
-
+  // ── Loading state ──
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.center}>
         <StatusBar hidden />
-        <ActivityIndicator size="large" color="#FF69B4" />
+        <ActivityIndicator size="large" color={PINK} />
+        <Text style={styles.loadingText}>Loading feed…</Text>
       </View>
     );
   }
 
-  if (posts.length === 0) {
-    const emptyText = filterPlaceId || filterKeywords ? "No moments found. Try clearing filters." : "No moments yet";
+  // ── Error state ──
+  if (error) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.center}>
         <StatusBar hidden />
-        <TouchableOpacity style={styles.filterButtonEmpty} onPress={handleFilterPress}>
-          <IconSymbol android_material_icon_name="filter-list" size={24} color="#FFFFFF" />
+        <Film size={48} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
+        <Text style={styles.emptyTitle}>Couldn't load feed</Text>
+        <Text style={styles.emptySubtitle}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => {
+            console.log("User tapped retry on feed");
+            setLoading(true);
+            setNextCursor(null);
+            fetchMoments(false, null);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.retryBtnText}>Try again</Text>
         </TouchableOpacity>
-        <Text style={styles.emptyText}>{emptyText}</Text>
-        <Text style={styles.emptySubtext}>Check back soon for travel moments</Text>
+      </View>
+    );
+  }
+
+  // ── Empty state ──
+  if (feed.length === 0) {
+    return (
+      <View style={styles.center}>
+        <StatusBar hidden />
+        <Film size={48} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
+        <Text style={styles.emptyTitle}>Nothing here yet</Text>
+        <Text style={styles.emptySubtitle}>
+          Be the first to share a moment on Floomingo
+        </Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => {
+            console.log("User tapped refresh on empty feed");
+            setLoading(true);
+            setNextCursor(null);
+            fetchMoments(false, null);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.retryBtnText}>Refresh</Text>
+        </TouchableOpacity>
         <FilterModal
-          visible={showFilterModal}
-          onClose={() => setShowFilterModal(false)}
-          onApply={handleApplyFilters}
-          onClear={handleClearFilters}
+          visible={filterVisible}
+          onClose={handleFilterClose}
+          onApply={handleFilterApply}
+          onClear={handleFilterClear}
           initialPlaceId={filterPlaceId}
           initialPlaceName={filterPlaceName}
           initialKeywords={filterKeywords}
@@ -1179,13 +777,12 @@ export default function HomeScreen() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar hidden />
-
       <FlatList
         ref={flatListRef}
-        data={posts}
-        renderItem={renderVideoItem}
+        data={feed}
+        renderItem={renderItem}
         keyExtractor={(item) => item.id}
         pagingEnabled
         showsVerticalScrollIndicator={false}
@@ -1194,449 +791,201 @@ export default function HomeScreen() {
         decelerationRate="fast"
         onViewableItemsChanged={handleViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
+        onEndReached={fetchMore}
+        onEndReachedThreshold={0.5}
         removeClippedSubviews
         maxToRenderPerBatch={2}
         windowSize={3}
-      />
-
-      <Modal visible={showMoreModal} onClose={() => setShowMoreModal(false)} title="More Options">
-        <View style={{ gap: 12, marginBottom: 20 }}>
-          <TouchableOpacity style={styles.modalOptionButton} onPress={handleBlockUser} disabled={blockLoading} activeOpacity={0.7}>
-            {blockLoading ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <IconSymbol android_material_icon_name={blockIconName} size={24} color={blockTextColor} />
-                <Text style={[styles.modalOptionText, { color: blockTextColor }]}>{blockButtonText}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.modalOptionButton} onPress={handleReportUser} activeOpacity={0.7}>
-            <IconSymbol android_material_icon_name="flag" size={24} color="#FFFFFF" />
-            <Text style={[styles.modalOptionText, { color: "#FFFFFF" }]}>Report User</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      {showCommentsModal && (
-        <BottomSheet
-          ref={commentsSheetRef}
-          index={0}
-          snapPoints={["75%"]}
-          enablePanDownToClose
-          onClose={() => setShowCommentsModal(false)}
-          backdropComponent={renderBackdrop}
-          backgroundStyle={{ backgroundColor: "#1C1C1E" }}
-          handleIndicatorStyle={{ backgroundColor: "rgba(255,255,255,0.4)" }}
-        >
-          <View style={styles.commentsContainer}>
-            <Text style={styles.commentsTitle}>Comments</Text>
-            <BottomSheetScrollView style={styles.commentsList}>
-              {commentsLoading ? (
-                <ActivityIndicator size="large" color="#FF69B4" style={{ marginTop: 20 }} />
-              ) : comments.length === 0 ? (
-                <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
-              ) : (
-                comments.map((comment) => {
-                  const cName = comment.profiles?.display_name || "Unknown User";
-                  const cAvatar = comment.profiles?.avatar_url || "";
-                  const cInitials = getInitials(cName);
-                  const cText = comment.comment_text || "";
-                  const isOwn = comment.user_id === currentUserId;
-                  return (
-                    <TouchableOpacity
-                      key={comment.id}
-                      style={styles.commentItem}
-                      onLongPress={() => isOwn ? handleDeleteComment(comment.id, comment.user_id) : null}
-                      activeOpacity={isOwn ? 0.7 : 1}
-                    >
-                      <View style={styles.commentHeader}>
-                        {cAvatar ? (
-                          <Image source={resolveImageSource(cAvatar)} style={styles.commentAvatar} />
-                        ) : (
-                          <View style={styles.commentAvatarPlaceholder}>
-                            <Text style={styles.commentAvatarInitials}>{cInitials}</Text>
-                          </View>
-                        )}
-                        <View style={styles.commentContent}>
-                          <View style={styles.commentAuthorRow}>
-                            <Text style={styles.commentAuthor}>{cName}</Text>
-                            {isOwn && <Text style={styles.commentYouBadge}>You</Text>}
-                          </View>
-                          <Text style={styles.commentText}>{cText}</Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </BottomSheetScrollView>
-            <View style={styles.commentInputContainer}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment..."
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={newComment}
-                onChangeText={setNewComment}
-                multiline
-              />
-              <TouchableOpacity
-                style={[styles.commentSendButton, { opacity: !newComment.trim() || commentSubmitting ? 0.5 : 1 }]}
-                onPress={handleSubmitComment}
-                disabled={commentSubmitting || !newComment.trim()}
-              >
-                {commentSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <IconSymbol android_material_icon_name="send" size={20} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={PINK}
+          />
+        }
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={[styles.footerLoader, { height }]}>
+              <ActivityIndicator size="large" color={PINK} />
             </View>
-          </View>
-        </BottomSheet>
-      )}
-
-      <Modal
-        visible={showDeleteCommentModal}
-        onClose={() => { setShowDeleteCommentModal(false); setDeleteCommentId(null); }}
-        title="Delete Comment?"
-        message="This will permanently delete your comment."
-        confirmText="Delete"
-        cancelText="Cancel"
-        onConfirm={confirmDeleteComment}
-        confirmColor="#FF3B30"
+          ) : null
+        }
       />
 
-      {selectedPost && (
-        <SaveToTripsModal isVisible={showSaveModal} onClose={handleSaveModalClose} post={selectedPost} />
-      )}
-
-      <Toast message={toastMessage} visible={toastVisible} onHide={() => setToastVisible(false)} type={toastType} />
+      {/* Active filter indicator */}
+      {hasActiveFilter ? (
+        <View style={[styles.activeFilterBadge, { top: insets.top + 12 }]} />
+      ) : null}
 
       <FilterModal
-        visible={showFilterModal}
-        onClose={() => setShowFilterModal(false)}
-        onApply={handleApplyFilters}
-        onClear={handleClearFilters}
+        visible={filterVisible}
+        onClose={handleFilterClose}
+        onApply={handleFilterApply}
+        onClear={handleFilterClear}
         initialPlaceId={filterPlaceId}
         initialPlaceName={filterPlaceName}
         initialKeywords={filterKeywords}
       />
-
-      <OnboardingTooltip visible={showOnboardingTooltip} onDismiss={() => setShowOnboardingTooltip(false)} />
-
-      <ExperiencesPanel
-        visible={showExperiencesPanel}
-        onClose={() => {
-          console.log("User closed Experiences panel");
-          setShowExperiencesPanel(false);
-        }}
-        post={posts[currentIndex] || null}
-        locations={postLocations.get(posts[currentIndex]?.id || "") || []}
-      />
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: "#000" },
+  center: {
     flex: 1,
-    backgroundColor: "#000000",
-  },
-  loadingContainer: {
-    flex: 1,
+    backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#000000",
+    paddingHorizontal: 32,
   },
-  emptyText: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "600",
-    textAlign: "center",
-    marginTop: 16,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "rgba(255,255,255,0.5)",
   },
-  emptySubtext: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 15,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  filterButtonEmpty: {
+  slide: { backgroundColor: "#000" },
+  videoContainer: { width: "100%", position: "absolute" },
+  video: { width: "100%", position: "absolute" },
+  gradient: {
     position: "absolute",
-    top: 60,
-    left: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 20,
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "50%",
   },
-  videoSlide: {
-    width,
-    height,
-    backgroundColor: "#000000",
-  },
-  video: {
-    width,
-    height,
-  },
-  playPauseIndicator: {
+  filterBtn: {
     position: "absolute",
-    top: "50%",
-    left: "50%",
-    transform: [{ translateX: -32 }, { translateY: -32 }],
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 40,
-    padding: 12,
-  },
-
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "space-between",
-  },
-  topControls: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  filterButton: {
+    left: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  experiencesButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,105,180,0.4)",
+    borderColor: "rgba(255,255,255,0.15)",
   },
-  bottomInfo: {
-    paddingBottom: 100,
+  playPauseBtn: {
+    position: "absolute",
+    right: 16,
+    top: "50%",
+    transform: [{ translateY: -28 }],
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: PINK,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: PINK,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  bottomSection: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "flex-end",
     paddingHorizontal: 16,
+    gap: 12,
   },
-  infoContent: {
-    gap: 8,
-  },
-  userRowContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  userRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#333",
-  },
-  avatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FF69B4",
+  leftContent: { flex: 1, gap: 8 },
+  userRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#333" },
+  avatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: PINK,
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarInitials: {
-    color: "#FFFFFF",
+  avatarInitials: { fontSize: 13, fontWeight: "700", color: "#FFF" },
+  username: {
     fontSize: 14,
     fontWeight: "700",
-  },
-  displayName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  followButtonSmall: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    minWidth: 72,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  followButtonSmallText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "600",
+    color: "#FFF",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   caption: {
     fontSize: 14,
-    color: "#FFFFFF",
+    color: "rgba(255,255,255,0.92)",
     lineHeight: 20,
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  locationRow: {
+  placesRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  placeName: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  locationsScroll: {
-    maxHeight: 36,
-  },
-  locationsScrollContent: {
-    gap: 8,
-    paddingRight: 16,
-  },
-  locationChipVideo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255,105,180,0.4)",
-  },
-  locationChipVideoText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  actionButtons: {
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    paddingTop: 4,
-    paddingBottom: 4,
-    gap: 20,
-  },
-  actionButton: {
-    alignItems: "center",
-    gap: 2,
-  },
-  actionButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  commentsContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  commentsTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#FFFFFF",
-  },
-  commentsList: {
-    flex: 1,
-  },
-  noCommentsText: {
-    textAlign: "center",
-    marginTop: 20,
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 14,
-  },
-  commentItem: {
-    marginBottom: 16,
-  },
-  commentHeader: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#333",
-  },
-  commentAvatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FF69B4",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  commentAvatarInitials: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  commentContent: {
-    flex: 1,
-  },
-  commentAuthorRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexWrap: "wrap",
     gap: 6,
-    marginBottom: 2,
   },
-  commentAuthor: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF",
+  placePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: PINK,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  commentYouBadge: {
+  placePillText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#FF69B4",
+    color: "#FFF",
+    maxWidth: 120,
   },
-  commentText: {
+  rightActions: { gap: 22, alignItems: "center", paddingBottom: 4 },
+  actionBtn: { alignItems: "center", gap: 4 },
+  actionCount: {
+    fontSize: 12,
+    color: "#FFF",
+    fontWeight: "600",
+    textShadowColor: "rgba(0,0,0,0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FFF",
+    marginTop: 16,
+    textAlign: "center",
+  },
+  emptySubtitle: {
     fontSize: 14,
+    color: "rgba(255,255,255,0.5)",
+    marginTop: 8,
+    textAlign: "center",
     lineHeight: 20,
-    color: "#FFFFFF",
   },
-  commentInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 12,
-    paddingBottom: 24,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
+  retryBtn: {
+    marginTop: 20,
+    backgroundColor: PINK,
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
   },
-  commentInput: {
-    flex: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    maxHeight: 80,
-    backgroundColor: "#333",
-    color: "#FFFFFF",
-  },
-  commentSendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FF69B4",
+  retryBtnText: { fontSize: 15, fontWeight: "700", color: "#FFF" },
+  footerLoader: {
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#000",
   },
-  modalOptionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  modalOptionText: {
-    fontSize: 16,
-    fontWeight: "600",
+  activeFilterBadge: {
+    position: "absolute",
+    left: 44,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: PINK,
+    borderWidth: 1.5,
+    borderColor: "#000",
   },
 });
