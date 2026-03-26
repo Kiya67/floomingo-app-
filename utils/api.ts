@@ -11,6 +11,9 @@ import { supabase } from "@/lib/supabase";
  */
 export const BACKEND_URL = Constants.expoConfig?.extra?.backendUrl || "";
 
+// Log resolved backend URL once at module load so it's visible in every build's logs
+console.log('[API] BACKEND_URL resolved to:', BACKEND_URL || '⚠️ MISSING — backend calls will fail');
+
 /**
  * Check if backend is properly configured
  */
@@ -524,7 +527,7 @@ export const removePostLocation = async (postId: string, locationId: string): Pr
  */
 export const incrementPostView = async (postId: string): Promise<{ view_count: number | null }> => {
   console.log('[API] Incrementing view count for post:', postId);
-  return authenticatedPost<{ view_count: number | null }>('/api/rpc/increment-view', { postId });
+  return authenticatedPost<{ view_count: number | null }>('/api/rpc/increment-view', { post_id: postId });
 };
 
 // ============================================

@@ -21,7 +21,7 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import { supabase } from "@/lib/supabase";
 import { uploadFileToSupabase } from "@/utils/supabaseHelpers";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { authenticatedPost } from "@/utils/api";
+import { authenticatedPost, BACKEND_URL } from "@/utils/api";
 import BottomSheet, {
   BottomSheetView,
   BottomSheetBackdrop,
@@ -319,6 +319,9 @@ export default function AddScreen() {
         location_type: loc.location_type,
       }));
 
+      console.log("[Post] Locations array formatted for payload:", JSON.stringify(locationsPayload, null, 2));
+      console.log("[Post] First location (top-level fields):", firstLocation ? JSON.stringify(firstLocation) : "none");
+
       const postPayload: any = {
         caption: caption.trim() || "",
         video_url: videoPublicUrl,
@@ -335,15 +338,23 @@ export default function AddScreen() {
         postPayload.locations = locationsPayload;
       }
 
-      console.log("[API] POST /api/posts payload:", JSON.stringify(postPayload, null, 2));
+      console.log("[API] POST /api/posts — full payload:", JSON.stringify(postPayload, null, 2));
+      console.log("[API] POST endpoint URL:", `${BACKEND_URL}/api/posts`);
 
       let createdPost: any;
       try {
         createdPost = await authenticatedPost("/api/posts", postPayload);
-        console.log("[API] POST /api/posts response:", JSON.stringify(createdPost, null, 2));
+        console.log("[API] POST /api/posts — response status: 2xx OK");
+        console.log("[API] POST /api/posts — response body:", JSON.stringify(createdPost, null, 2));
       } catch (apiErr: any) {
-        console.error("❌ Step 4 FAILED — API error:", apiErr, JSON.stringify(apiErr));
-        throw new Error(`API error: ${apiErr?.message || String(apiErr)}`);
+        console.error("❌ Step 4 FAILED — API error:", apiErr?.message || String(apiErr));
+        // Extract a clean message — strip any HTML that may come from a non-JSON error response
+        const rawMsg: string = apiErr?.message || String(apiErr);
+        const isHtml = rawMsg.includes("<html") || rawMsg.includes("<!DOCTYPE");
+        const cleanMsg = isHtml
+          ? `Server error (${rawMsg.match(/API error: (\d+)/)?.[1] || "unknown status"}) — please try again`
+          : rawMsg;
+        throw new Error(cleanMsg);
       }
 
       if (!createdPost || !createdPost.id) {
