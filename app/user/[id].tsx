@@ -49,7 +49,8 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 export default function UserProfileScreen() {
-  const { id: profileUserId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const profileUserId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -101,6 +102,7 @@ export default function UserProfileScreen() {
   }, []);
 
   const fetchProfile = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching user profile for ID:', profileUserId);
     try {
       const { data, error } = await supabase
@@ -121,6 +123,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchUserPosts = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching posts for user:', profileUserId);
     try {
       const { data, error } = await supabase
@@ -141,6 +144,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchStats = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching profile stats using Supabase client:', profileUserId);
     try {
       // Use Supabase client to fetch follow counts
@@ -153,8 +157,8 @@ export default function UserProfileScreen() {
         .eq('user_id', profileUserId);
 
       setStats({
-        follower_count: followCounts.followers,
-        following_count: followCounts.following,
+        follower_count: followCounts.followerCount,
+        following_count: followCounts.followingCount,
         post_count: postCount ?? 0,
       });
       
@@ -169,6 +173,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const checkFollowStatus = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Checking follow status for user:', profileUserId);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -190,7 +195,7 @@ export default function UserProfileScreen() {
       await checkBlockStatus(profileUserId as string, user.id);
 
       // Use Supabase client to check follow status
-      const following = await getIsFollowing(user.id, profileUserId as string);
+      const following = await getIsFollowing(profileUserId as string);
       console.log('Follow status from Supabase:', following);
       setIsFollowing(following);
     } catch (error) {
@@ -240,7 +245,7 @@ export default function UserProfileScreen() {
       if (isFollowing) {
         console.log('Unfollowing user:', profileUserId);
         // Use Supabase client to unfollow
-        await supabaseUnfollowUser(currentUserId, profileUserId as string);
+        await supabaseUnfollowUser(profileUserId as string);
         
         setIsFollowing(false);
         // Refresh stats to get updated follower count
@@ -249,7 +254,7 @@ export default function UserProfileScreen() {
       } else {
         console.log('Following user:', profileUserId);
         // Use Supabase client to follow
-        await supabaseFollowUser(currentUserId, profileUserId as string);
+        await supabaseFollowUser(profileUserId as string);
         
         setIsFollowing(true);
         // Refresh stats to get updated follower count
@@ -387,6 +392,17 @@ export default function UserProfileScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
           <Text style={[styles.loadingText, { color: textColor }]}>Loading profile...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!profileUserId) {
+    return (
+      <View style={[styles.container, { backgroundColor: bgColor }]}>
+        <Stack.Screen options={{ headerShown: true, title: 'Profile' }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={primaryColor} />
         </View>
       </View>
     );

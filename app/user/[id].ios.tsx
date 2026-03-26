@@ -46,7 +46,8 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 }
 
 export default function UserProfileScreen() {
-  const { id: profileUserId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const profileUserId = Array.isArray(params.id) ? params.id[0] : params.id;
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -67,6 +68,7 @@ export default function UserProfileScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching user profile for ID:', profileUserId);
     try {
       const { data, error } = await supabase
@@ -87,6 +89,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchUserPosts = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching posts for user:', profileUserId);
     try {
       const { data, error } = await supabase
@@ -107,6 +110,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const fetchStats = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Fetching profile stats for user from backend API:', profileUserId);
     try {
       // Use backend API to fetch stats
@@ -140,6 +144,7 @@ export default function UserProfileScreen() {
   }, [profileUserId]);
 
   const checkFollowStatus = useCallback(async () => {
+    if (!profileUserId) return;
     console.log('Checking follow status for user:', profileUserId);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -290,6 +295,17 @@ export default function UserProfileScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={primaryColor} />
           <Text style={[styles.loadingText, { color: textColor }]}>Loading profile...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!profileUserId) {
+    return (
+      <View style={[styles.container, { backgroundColor: bgColor }]}>
+        <Stack.Screen options={{ headerShown: true, title: 'Profile' }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={primaryColor} />
         </View>
       </View>
     );

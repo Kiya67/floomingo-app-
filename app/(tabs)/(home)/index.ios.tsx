@@ -17,7 +17,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
-import { authenticatedApiCall } from "@/utils/api";
+import { authenticatedApiCall, authenticatedPost } from "@/utils/api";
 import { followUser as supabaseFollowUser, unfollowUser as supabaseUnfollowUser } from "@/utils/supabaseHelpers";
 import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -101,10 +101,8 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, curren
     setLiked(newLiked);
     setLikeCount(newCount);
     // Note: toggle-like endpoint kept as-is (separate from follow)
-    import('@/utils/api').then(({ authenticatedPost }) => {
-      authenticatedPost('/api/rpc/toggle-like', { post_id: item.id }).catch((err) => {
-        console.error('Error toggling like (iOS):', err);
-      });
+    authenticatedPost('/api/rpc/toggle-like', { post_id: item.id }).catch((err) => {
+      console.error('Error toggling like (iOS):', err);
     });
   };
 
