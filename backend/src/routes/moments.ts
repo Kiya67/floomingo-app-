@@ -42,6 +42,21 @@ interface MomentResponse {
   created_at: string;
 }
 
+interface PostMomentResponse {
+  id: string;
+  user_id: string;
+  video_url: string;
+  thumbnail_url: string | null;
+  caption: string;
+  likes_count: number;
+  bookmarks_count: number;
+  is_liked: boolean;
+  is_bookmarked: boolean;
+  places: Array<{ id: string; place_id: string; place_name: string | null }>;
+  user: { id: string; username: string; display_name: string | null; avatar_url: string | null };
+  created_at: string;
+}
+
 export function registerMomentRoutes(app: App) {
   const requireAuth = app.requireAuth();
 
@@ -55,7 +70,8 @@ export function registerMomentRoutes(app: App) {
         properties: {
           cursor: { type: 'string', description: 'Base64-encoded ISO timestamp for cursor pagination' },
           limit: { type: 'integer', default: 20, description: 'Number of results to return' },
-          user_id: { type: 'string', description: 'Filter moments by user ID' },
+          place_id: { type: 'string', description: 'Filter moments by place ID' },
+          keywords: { type: 'string', description: 'Search keywords in caption' },
         },
       },
       response: {
@@ -72,8 +88,6 @@ export function registerMomentRoutes(app: App) {
                   video_url: { type: 'string' },
                   thumbnail_url: { type: ['string', 'null'] },
                   caption: { type: ['string', 'null'] },
-                  linked_experience_id: { type: ['string', 'null'] },
-                  linked_experience: { type: ['object', 'null'] },
                   likes_count: { type: 'integer' },
                   bookmarks_count: { type: 'integer' },
                   is_liked: { type: 'boolean' },
@@ -90,9 +104,9 @@ export function registerMomentRoutes(app: App) {
       },
     },
   }, async (
-    request: FastifyRequest<{ Querystring: { cursor?: string; limit?: string; user_id?: string } }>,
+    request: FastifyRequest<{ Querystring: { cursor?: string; limit?: string; place_id?: string; keywords?: string } }>,
     reply: FastifyReply
-  ): Promise<{ moments: MomentResponse[]; next_cursor: string | null }> => {
+  ): Promise<{ moments: PostMomentResponse[]; next_cursor: string | null }> => {
     const limit = Math.min(parseInt(request.query.limit || '20'), 100);
     let cursorDate: Date | null = null;
 
@@ -107,141 +121,75 @@ export function registerMomentRoutes(app: App) {
 
     let query = app.db
       .select({
-        moment: schema.moments,
+        post: schema.posts,
         profile: schema.profiles,
-        likeCount: countDistinct(schema.momentLikes.id),
-        bookmarkCount: countDistinct(schema.momentBookmarks.id),
       })
-      .from(schema.moments)
-      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.moments.userId))
-      .leftJoin(schema.momentLikes, eq(schema.momentLikes.momentId, schema.moments.id))
-      .leftJoin(schema.momentBookmarks, eq(schema.momentBookmarks.momentId, schema.moments.id));
+      .from(schema.posts)
+      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.posts.userId));
 
     // Apply filters
     const conditions = [];
     if (cursorDate) {
-      conditions.push(lt(schema.moments.createdAt, cursorDate));
+      conditions.push(lt(schema.posts.createdAt, cursorDate));
     }
-    if (request.query.user_id) {
-      conditions.push(eq(schema.moments.userId, request.query.user_id));
+    if (request.query.place_id) {
+      conditions.push(eq(schema.posts.placeId, request.query.place_id));
+    }
+    if (request.query.keywords) {
+      conditions.push(sql`${schema.posts.caption} ILIKE ${'%' + request.query.keywords + '%'}`);
     }
 
     if (conditions.length > 0) {
       query = query.where(and(...conditions)) as any;
     }
 
-    const momentsData = await query
-      .groupBy(schema.moments.id, schema.profiles.id)
-      .orderBy(desc(schema.moments.createdAt))
+    const postsData = await query
+      .orderBy(desc(schema.posts.createdAt))
       .limit(limit + 1);
 
     app.logger.info(
-      { count: momentsData.length, limit, cursor: request.query.cursor, userId: request.query.user_id },
+      { count: postsData.length, limit },
       'Fetched moments'
     );
 
-    const hasMore = momentsData.length > limit;
-    const moments = momentsData.slice(0, limit);
+    const hasMore = postsData.length > limit;
+    const posts = postsData.slice(0, limit);
 
-    // Get current user session if authenticated
-    let currentUserId: string | null = null;
-    try {
-      const authApi = (app as any).auth?.api;
-      if (authApi && request.headers.authorization) {
-        const headers = new Headers();
-        if (typeof request.headers.authorization === 'string') {
-          headers.set('authorization', request.headers.authorization);
-        }
-        const session = await authApi.getSession({ headers });
-        currentUserId = session?.user?.id || null;
-      }
-    } catch {
-      currentUserId = null;
-    }
+    // Build response
+    const momentResponses: PostMomentResponse[] = posts.map((p) => {
+      // Build places array from post's own place_id and place_name
+      const places = p.post.placeId
+        ? [
+            {
+              id: p.post.id,
+              place_id: p.post.placeId,
+              place_name: p.post.placeName,
+            },
+          ]
+        : [];
 
-    // Fetch full details for each moment
-    const momentResponses: MomentResponse[] = [];
-
-    for (const m of moments) {
-      // Get places
-      const places = await app.db
-        .select()
-        .from(schema.momentPlaces)
-        .where(eq(schema.momentPlaces.momentId, m.moment.id));
-
-      // Get likes and bookmarks for current user if authenticated
-      let isLiked = false;
-      let isBookmarked = false;
-
-      if (currentUserId) {
-        const userLike = await app.db
-          .select()
-          .from(schema.momentLikes)
-          .where(and(eq(schema.momentLikes.momentId, m.moment.id), eq(schema.momentLikes.userId, currentUserId)))
-          .limit(1);
-
-        const userBookmark = await app.db
-          .select()
-          .from(schema.momentBookmarks)
-          .where(and(eq(schema.momentBookmarks.momentId, m.moment.id), eq(schema.momentBookmarks.userId, currentUserId)))
-          .limit(1);
-
-        isLiked = userLike.length > 0;
-        isBookmarked = userBookmark.length > 0;
-      }
-
-      // Get linked experience
-      let linkedExperience: LinkedExperience | null = null;
-      if (m.moment.linkedExperienceId) {
-        const exp = await app.db
-          .select({
-            id: schema.experiences.id,
-            videoUrl: schema.experiences.videoUrl,
-            thumbnailUrl: schema.experiences.thumbnailUrl,
-            title: schema.experiences.title,
-          })
-          .from(schema.experiences)
-          .where(eq(schema.experiences.id, m.moment.linkedExperienceId))
-          .limit(1);
-
-        if (exp.length > 0) {
-          linkedExperience = {
-            id: exp[0].id,
-            video_url: exp[0].videoUrl,
-            thumbnail_url: exp[0].thumbnailUrl,
-            title: exp[0].title,
-          };
-        }
-      }
-
-      momentResponses.push({
-        id: m.moment.id,
-        user_id: m.moment.userId,
-        video_url: m.moment.videoUrl,
-        thumbnail_url: m.moment.thumbnailUrl,
-        caption: m.moment.caption,
-        linked_experience_id: m.moment.linkedExperienceId,
-        linked_experience: linkedExperience,
-        likes_count: Number(m.likeCount) || 0,
-        bookmarks_count: Number(m.bookmarkCount) || 0,
-        is_liked: isLiked,
-        is_bookmarked: isBookmarked,
-        places: places.map((p) => ({
-          id: p.id,
-          place_id: p.placeId,
-          place_name: p.placeName,
-          place_address: p.placeAddress,
-        })),
+      return {
+        id: p.post.id,
+        user_id: p.post.userId,
+        video_url: p.post.videoUrl,
+        thumbnail_url: p.post.thumbnailUrl,
+        caption: p.post.caption,
+        likes_count: 0,
+        bookmarks_count: 0,
+        is_liked: false,
+        is_bookmarked: false,
+        places,
         user: {
-          id: m.profile?.id || m.moment.userId,
-          username: m.profile?.username || 'unknown',
-          avatar_url: m.profile?.avatarUrl || null,
+          id: p.profile?.id || p.post.userId,
+          username: p.profile?.username || 'unknown',
+          display_name: p.profile?.displayName || null,
+          avatar_url: p.profile?.avatarUrl || null,
         },
-        created_at: m.moment.createdAt.toISOString(),
-      });
-    }
+        created_at: p.post.createdAt.toISOString(),
+      };
+    });
 
-    const nextCursor = hasMore ? Buffer.from(moments[moments.length - 1].moment.createdAt.toISOString()).toString('base64') : null;
+    const nextCursor = hasMore ? Buffer.from(posts[posts.length - 1].post.createdAt.toISOString()).toString('base64') : null;
 
     return {
       moments: momentResponses,

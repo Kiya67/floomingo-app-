@@ -699,12 +699,20 @@ describe('Posts Feature', () => {
 
 describe('Post Locations Feature', () => {
   let authToken: string;
+  let userId: string;
+  let otherUserToken: string;
+  let otherUserId: string;
   let postId: string;
   let locationId: string;
 
-  it('should set up test user and create a post', async () => {
-    const user = await signUpTestUser();
-    authToken = user.token;
+  it('should set up test users and create a post', async () => {
+    const user1 = await signUpTestUser();
+    authToken = user1.token;
+    userId = user1.user.id;
+
+    const user2 = await signUpTestUser();
+    otherUserToken = user2.token;
+    otherUserId = user2.user.id;
 
     const postRes = await authenticatedApi('/api/posts', authToken, {
       method: 'POST',
@@ -784,6 +792,23 @@ describe('Post Locations Feature', () => {
     locationId = data.id;
   });
 
+  it('should return 403 when adding location to other user post', async () => {
+    const res = await authenticatedApi(
+      `/api/posts/${postId}/locations`,
+      otherUserToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          place_id: 'place-456',
+          place_name: 'Other Location',
+          location_type: 'landmark',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    await expectStatus(res, 403);
+  });
+
   it('should remove location from own post', async () => {
     const res = await authenticatedApi(
       `/api/posts/${postId}/locations/${locationId}`,
@@ -812,6 +837,34 @@ describe('Post Locations Feature', () => {
       { method: 'DELETE' }
     );
     await expectStatus(res, 401);
+  });
+
+  it('should return 403 when removing location from other user post', async () => {
+    // Add a location as owner first
+    const addRes = await authenticatedApi(
+      `/api/posts/${postId}/locations`,
+      authToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          place_id: 'place-789',
+          place_name: 'Temp Location',
+          location_type: 'area',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    await expectStatus(addRes, 201);
+    const addData = await addRes.json();
+    const tempLocationId = addData.id;
+
+    // Try to delete as other user
+    const res = await authenticatedApi(
+      `/api/posts/${postId}/locations/${tempLocationId}`,
+      otherUserToken,
+      { method: 'DELETE' }
+    );
+    await expectStatus(res, 403);
   });
 });
 
@@ -1160,6 +1213,22 @@ describe('Moments Feature', () => {
     expect(Array.isArray(data.moments)).toBe(true);
   });
 
+  it('should list moments with place_id filter', async () => {
+    const res = await api('/api/moments?place_id=test-place-123');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('moments');
+    expect(Array.isArray(data.moments)).toBe(true);
+  });
+
+  it('should list moments with keywords filter', async () => {
+    const res = await api('/api/moments?keywords=adventure');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('moments');
+    expect(Array.isArray(data.moments)).toBe(true);
+  });
+
   it('should return 401 when creating moment without authentication', async () => {
     const res = await api('/api/moments', {
       method: 'POST',
@@ -1309,6 +1378,14 @@ describe('Experiences Feature', () => {
     const res = await api('/api/experiences?limit=10');
     await expectStatus(res, 200);
     const data = await res.json();
+    expect(Array.isArray(data.experiences)).toBe(true);
+  });
+
+  it('should list experiences with user_id filter', async () => {
+    const res = await api(`/api/experiences?user_id=${userId}`);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('experiences');
     expect(Array.isArray(data.experiences)).toBe(true);
   });
 
