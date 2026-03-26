@@ -17,11 +17,21 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { Heart, Bookmark, Share2, MapPin, Film, Zap } from "lucide-react-native";
+import {
+  Heart,
+  Bookmark,
+  Share2,
+  MapPin,
+  Film,
+  SlidersHorizontal,
+  Play,
+  Pause,
+} from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiGet, authenticatedPost } from "@/utils/api";
 import { supabase } from "@/lib/supabase";
+import { FilterModal } from "@/components/FilterModal";
 
 const PINK = "#FF3B7A";
 const TAB_BAR_HEIGHT = 83;
@@ -113,6 +123,7 @@ interface FeedItemProps {
   onShare: (post: FeedPost) => void;
   onProfilePress: (userId: string) => void;
   onPlacePress: (place: Place) => void;
+  onFilterPress: () => void;
 }
 
 function FeedItem({
@@ -127,16 +138,12 @@ function FeedItem({
   onShare,
   onProfilePress,
   onPlacePress,
+  onFilterPress,
 }: FeedItemProps) {
   const isMountedRef = useRef(true);
-  const [displayPost, setDisplayPost] = useState<FeedPost>(item);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  // Reset display post when item changes (e.g. feed refresh)
-  useEffect(() => {
-    setDisplayPost(item);
-  }, [item.id]);
-
-  const player = useVideoPlayer(displayPost.video_url || "", (p) => {
+  const player = useVideoPlayer(item.video_url || "", (p) => {
     p.loop = true;
     p.muted = false;
   });
@@ -158,7 +165,8 @@ function FeedItem({
         if (isMountedRef.current) {
           try {
             player.play();
-            console.log("FeedItem: playing video for post:", displayPost.id, "type:", displayPost.type);
+            setIsPlaying(true);
+            console.log("FeedItem: playing video for post:", item.id, "type:", item.type);
           } catch (e) {
             console.error("FeedItem: error playing video:", e);
           }
@@ -168,66 +176,56 @@ function FeedItem({
     } else {
       try {
         player.pause();
+        setIsPlaying(false);
       } catch {}
     }
-  }, [isActive, player, displayPost.id]);
+  }, [isActive, player, item.id]);
 
   const handleTap = useCallback(() => {
-    console.log("User tapped video - toggling play/pause, post:", displayPost.id);
+    console.log("User tapped video - toggling play/pause, post:", item.id);
     if (!player) return;
     try {
-      if (player.playing) player.pause();
-      else player.play();
+      if (player.playing) {
+        player.pause();
+        setIsPlaying(false);
+      } else {
+        player.play();
+        setIsPlaying(true);
+      }
     } catch {}
-  }, [player, displayPost.id]);
+  }, [player, item.id]);
 
-  // Switcher logic
-  const hasLinked =
-    item.type === "moment"
-      ? !!item.linked_experience_id
-      : !!item.linked_moment_id;
+  const handlePlayPauseBtn = useCallback(() => {
+    console.log("User tapped pink play/pause button, post:", item.id, "currently playing:", isPlaying);
+    if (!player) return;
+    try {
+      if (player.playing) {
+        player.pause();
+        setIsPlaying(false);
+      } else {
+        player.play();
+        setIsPlaying(true);
+      }
+    } catch {}
+  }, [player, item.id, isPlaying]);
 
-  const handleSwitch = useCallback(() => {
-    if (displayPost.type === "moment" && displayPost.linked_experience) {
-      console.log("User tapped switcher - switching to Experience:", displayPost.linked_experience.id);
-      setDisplayPost({
-        ...displayPost,
-        type: "experience",
-        video_url: displayPost.linked_experience.video_url,
-        thumbnail_url: displayPost.linked_experience.thumbnail_url,
-        title: displayPost.linked_experience.title,
-      });
-    } else if (displayPost.type === "experience" && displayPost.linked_moment) {
-      console.log("User tapped switcher - switching to Moment:", displayPost.linked_moment.id);
-      setDisplayPost({
-        ...displayPost,
-        type: "moment",
-        video_url: displayPost.linked_moment.video_url,
-        thumbnail_url: displayPost.linked_moment.thumbnail_url,
-        caption: displayPost.linked_moment.caption,
-      });
-    } else if (displayPost.type === "moment" && item.linked_experience_id) {
-      // linked_experience object not populated, just show indicator
-      console.log("User tapped switcher - linked experience not loaded yet");
-    }
-  }, [displayPost, item]);
-
-  const username = displayPost.user?.username || "unknown";
-  const avatarUrl = displayPost.user?.avatar_url || "";
+  const username = item.user?.username || "unknown";
+  const avatarUrl = item.user?.avatar_url || "";
   const initials = getInitials(username);
   const likeColor = interaction.is_liked ? PINK : "#FFFFFF";
   const bookmarkColor = interaction.is_bookmarked ? PINK : "#FFFFFF";
   const likesText = String(Number(interaction.likes_count) || 0);
   const bookmarksText = String(Number(interaction.bookmarks_count) || 0);
 
-  const isMoment = displayPost.type === "moment";
-  const captionText = isMoment ? (displayPost.caption || "") : (displayPost.title || "");
-  const descriptionText = isMoment ? "" : (displayPost.description || "");
+  const isMoment = item.type === "moment";
+  const captionText = isMoment ? (item.caption || "") : (item.title || "");
+  const descriptionText = isMoment ? "" : (item.description || "");
   const typeLabel = isMoment ? "Moment" : "Experience";
-  const switcherLabel = isMoment ? "Experience" : "Moment";
-  const SwitcherIcon = isMoment ? Film : Zap;
 
-  if (!displayPost.video_url) return null;
+  const PlayPauseIcon = isPlaying ? Pause : Play;
+  const filterBtnTop = insetTop + 12;
+
+  if (!item.video_url) return null;
 
   return (
     <View style={[styles.slide, { width: screenWidth, height: screenHeight }]}>
@@ -254,22 +252,30 @@ function FeedItem({
         pointerEvents="none"
       />
 
-      {/* Top bar: type label + switcher */}
+      {/* TOP-LEFT: Filter button */}
+      <TouchableOpacity
+        style={[styles.filterBtn, { top: filterBtnTop }]}
+        onPress={onFilterPress}
+        activeOpacity={0.8}
+      >
+        <SlidersHorizontal size={20} color="#FFFFFF" strokeWidth={2} />
+      </TouchableOpacity>
+
+      {/* TOP: type label pill (centered-ish) */}
       <View style={[styles.topBar, { paddingTop: insetTop + 12 }]}>
         <View style={styles.typeLabelPill}>
           <Text style={styles.typeLabelText}>{typeLabel}</Text>
         </View>
-        {hasLinked ? (
-          <TouchableOpacity
-            style={styles.switcherBtn}
-            onPress={handleSwitch}
-            activeOpacity={0.85}
-          >
-            <SwitcherIcon size={13} color="#FFFFFF" strokeWidth={2} />
-            <Text style={styles.switcherBtnText}>{switcherLabel}</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
+
+      {/* RIGHT-CENTER: Pink play/pause button */}
+      <TouchableOpacity
+        style={styles.playPauseBtn}
+        onPress={handlePlayPauseBtn}
+        activeOpacity={0.85}
+      >
+        <PlayPauseIcon size={24} color="#FFFFFF" fill="#FFFFFF" strokeWidth={0} />
+      </TouchableOpacity>
 
       {/* Bottom overlay */}
       <View style={[styles.bottomSection, { paddingBottom: TAB_BAR_HEIGHT + 16 }]}>
@@ -277,7 +283,7 @@ function FeedItem({
         <View style={styles.leftContent}>
           <TouchableOpacity
             style={styles.userRow}
-            onPress={() => onProfilePress(displayPost.user_id)}
+            onPress={() => onProfilePress(item.user_id)}
             activeOpacity={0.8}
           >
             {avatarUrl ? (
@@ -305,14 +311,14 @@ function FeedItem({
             </Text>
           ) : null}
 
-          {displayPost.places && displayPost.places.length > 0 ? (
+          {item.places && item.places.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={styles.placesScroll}
               contentContainerStyle={styles.placesScrollContent}
             >
-              {displayPost.places.map((place) => (
+              {item.places.map((place) => (
                 <TouchableOpacity
                   key={place.id}
                   style={styles.placePill}
@@ -386,6 +392,10 @@ export default function HomeScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [interactions, setInteractions] = useState<Map<string, InteractionState>>(new Map());
+  const [filterVisible, setFilterVisible] = useState(false);
+  const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
+  const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
+  const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const isMountedRef = useRef(true);
@@ -462,18 +472,29 @@ export default function HomeScreen() {
     });
   }, []);
 
+  const buildQuery = useCallback(
+    (base: string, cursor?: string | null) => {
+      const params = new URLSearchParams({ limit: "20" });
+      if (cursor) params.set("cursor", cursor);
+      if (filterPlaceId) params.set("place_id", filterPlaceId);
+      if (filterKeywords) params.set("keywords", filterKeywords);
+      return `${base}?${params.toString()}`;
+    },
+    [filterPlaceId, filterKeywords]
+  );
+
   const fetchFeed = useCallback(async (isRefresh = false) => {
-    console.log("Home: fetching unified feed, isRefresh:", isRefresh);
+    console.log("Home: fetching unified feed, isRefresh:", isRefresh, "placeId:", filterPlaceId, "keywords:", filterKeywords);
     try {
       const [momentsData, experiencesData] = await Promise.all([
         apiGet<{ moments: any[]; next_cursor: string | null }>(
-          "/api/moments?limit=20"
+          buildQuery("/api/moments")
         ).catch((e) => {
           console.error("Home: fetch moments error:", e);
           return { moments: [], next_cursor: null };
         }),
         apiGet<{ experiences: any[]; next_cursor: string | null }>(
-          "/api/experiences?limit=20"
+          buildQuery("/api/experiences")
         ).catch((e) => {
           console.error("Home: fetch experiences error:", e);
           return { experiences: [], next_cursor: null };
@@ -499,7 +520,7 @@ export default function HomeScreen() {
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [mergeFeed, initInteractions]);
+  }, [mergeFeed, initInteractions, buildQuery, filterPlaceId, filterKeywords]);
 
   const fetchMore = useCallback(async () => {
     if (loadingMore || (!momentsCursor && !experiencesCursor)) return;
@@ -509,12 +530,12 @@ export default function HomeScreen() {
       const [momentsData, experiencesData] = await Promise.all([
         momentsCursor
           ? apiGet<{ moments: any[]; next_cursor: string | null }>(
-              `/api/moments?limit=20&cursor=${momentsCursor}`
+              buildQuery("/api/moments", momentsCursor)
             ).catch(() => ({ moments: [], next_cursor: null }))
           : Promise.resolve({ moments: [], next_cursor: null }),
         experiencesCursor
           ? apiGet<{ experiences: any[]; next_cursor: string | null }>(
-              `/api/experiences?limit=20&cursor=${experiencesCursor}`
+              buildQuery("/api/experiences", experiencesCursor)
             ).catch(() => ({ experiences: [], next_cursor: null }))
           : Promise.resolve({ experiences: [], next_cursor: null }),
       ]);
@@ -536,7 +557,7 @@ export default function HomeScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, momentsCursor, experiencesCursor, mergeFeed, initInteractions]);
+  }, [loadingMore, momentsCursor, experiencesCursor, mergeFeed, initInteractions, buildQuery]);
 
   useFocusEffect(
     useCallback(() => {
@@ -583,7 +604,6 @@ export default function HomeScreen() {
         bookmarks_count: post.bookmarks_count,
       };
       const wasLiked = cur.is_liked;
-      // Optimistic update
       setInteractions((prev) => {
         const m = new Map(prev);
         m.set(post.id, {
@@ -705,6 +725,45 @@ export default function HomeScreen() {
     [router]
   );
 
+  const handleFilterPress = useCallback(() => {
+    console.log("User tapped filter button");
+    setFilterVisible(true);
+  }, []);
+
+  const handleFilterClose = useCallback(() => {
+    console.log("User closed filter modal");
+    setFilterVisible(false);
+  }, []);
+
+  const handleFilterApply = useCallback(
+    (placeId: string | null, placeName: string | null, keywords: string | null) => {
+      console.log("User applied filters — placeId:", placeId, "placeName:", placeName, "keywords:", keywords);
+      setFilterPlaceId(placeId);
+      setFilterPlaceName(placeName);
+      setFilterKeywords(keywords);
+      setFilterVisible(false);
+      setLoading(true);
+      setCurrentIndex(0);
+    },
+    []
+  );
+
+  const handleFilterClear = useCallback(() => {
+    console.log("User cleared filters");
+    setFilterPlaceId(null);
+    setFilterPlaceName(null);
+    setFilterKeywords(null);
+    setFilterVisible(false);
+    setLoading(true);
+    setCurrentIndex(0);
+  }, []);
+
+  // Re-fetch when filters change
+  useEffect(() => {
+    if (!loading) return;
+    fetchFeed(false);
+  }, [filterPlaceId, filterKeywords]);
+
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
   }).current;
@@ -732,6 +791,7 @@ export default function HomeScreen() {
           onShare={handleShare}
           onProfilePress={handleProfilePress}
           onPlacePress={handlePlacePress}
+          onFilterPress={handleFilterPress}
         />
       );
     },
@@ -746,8 +806,11 @@ export default function HomeScreen() {
       handleShare,
       handleProfilePress,
       handlePlacePress,
+      handleFilterPress,
     ]
   );
+
+  const hasActiveFilter = !!(filterPlaceId || filterKeywords);
 
   // ── Loading state ──
   if (loading) {
@@ -804,6 +867,15 @@ export default function HomeScreen() {
         >
           <Text style={styles.retryBtnText}>Refresh</Text>
         </TouchableOpacity>
+        <FilterModal
+          visible={filterVisible}
+          onClose={handleFilterClose}
+          onApply={handleFilterApply}
+          onClear={handleFilterClear}
+          initialPlaceId={filterPlaceId}
+          initialPlaceName={filterPlaceName}
+          initialKeywords={filterKeywords}
+        />
       </View>
     );
   }
@@ -843,6 +915,23 @@ export default function HomeScreen() {
           ) : null
         }
       />
+
+      {/* Active filter indicator — shown above the feed when filters are on */}
+      {hasActiveFilter ? (
+        <View style={[styles.activeFilterBadge, { top: insets.top + 12 }]}>
+          <View style={styles.activeFilterDot} />
+        </View>
+      ) : null}
+
+      <FilterModal
+        visible={filterVisible}
+        onClose={handleFilterClose}
+        onApply={handleFilterApply}
+        onClear={handleFilterClear}
+        initialPlaceId={filterPlaceId}
+        initialPlaceName={filterPlaceName}
+        initialKeywords={filterKeywords}
+      />
     </View>
   );
 }
@@ -871,6 +960,20 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: "50%",
   },
+  // TOP-LEFT filter button
+  filterBtn: {
+    position: "absolute",
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  // Top bar — only type label pill now (no switcher)
   topBar: {
     position: "absolute",
     top: 0,
@@ -878,7 +981,7 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
     paddingHorizontal: 16,
   },
   typeLabelPill: {
@@ -895,24 +998,23 @@ const styles = StyleSheet.create({
     color: "#FFF",
     letterSpacing: 0.5,
   },
-  switcherBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  // RIGHT-CENTER pink play/pause button
+  playPauseBtn: {
+    position: "absolute",
+    right: 16,
+    top: "50%",
+    transform: [{ translateY: -28 }],
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: PINK,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    justifyContent: "center",
+    alignItems: "center",
     shadowColor: PINK,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  switcherBtnText: {
-    fontSize: 13,
-    color: "#FFF",
-    fontWeight: "700",
+    shadowRadius: 8,
+    elevation: 6,
   },
   bottomSection: {
     position: "absolute",
@@ -1010,5 +1112,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#000",
+  },
+  activeFilterBadge: {
+    position: "absolute",
+    left: 44,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: PINK,
+    borderWidth: 1.5,
+    borderColor: "#000",
+  },
+  activeFilterDot: {
+    flex: 1,
   },
 });
