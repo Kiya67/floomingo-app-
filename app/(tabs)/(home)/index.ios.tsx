@@ -16,7 +16,10 @@ import {
   ScrollView,
   Modal,
   Alert,
+  Animated,
 } from "react-native";
+import { ChevronUp, X, MapPin, Calendar, BookOpen, Layers, Star } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -78,6 +81,339 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   if (typeof source === "string") return { uri: source };
   return source as ImageSourcePropType;
 }
+
+// ─── Experiences Panel ───────────────────────────────────────────────────────
+
+const PANEL_HEIGHT = Dimensions.get("window").height * 0.72;
+
+interface ExperiencesPanelProps {
+  visible: boolean;
+  onClose: () => void;
+  post: { caption: string; place_name: string | null; profiles?: { display_name: string } } | null;
+  locations: { id: string; place_name: string; place_id: string }[];
+}
+
+function ExperiencesPanel({ visible, onClose, post, locations }: ExperiencesPanelProps) {
+  const translateY = useRef(new Animated.Value(PANEL_HEIGHT)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 22, stiffness: 200 }),
+        Animated.timing(backdropOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: PANEL_HEIGHT, duration: 260, useNativeDriver: true }),
+        Animated.timing(backdropOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible && !post) return null;
+
+  const title = post?.caption || "Untitled Experience";
+  const creator = post?.profiles?.display_name || "Unknown";
+
+  return (
+    <>
+      <Animated.View style={[expStyles.backdrop, { opacity: backdropOpacity }]} pointerEvents={visible ? "auto" : "none"}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+      </Animated.View>
+      <Animated.View style={[expStyles.panel, { transform: [{ translateY }] }]} pointerEvents={visible ? "auto" : "none"}>
+        <View style={expStyles.handle} />
+        <View style={expStyles.panelHeader}>
+          <View style={expStyles.panelTitleRow}>
+            <Layers size={18} color="#FF69B4" strokeWidth={2} />
+            <Text style={expStyles.panelLabel}>Experience</Text>
+          </View>
+          <TouchableOpacity style={expStyles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+            <X size={20} color="rgba(255,255,255,0.8)" strokeWidth={2} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={expStyles.scrollView} contentContainerStyle={expStyles.scrollContent} showsVerticalScrollIndicator={false}>
+          <Text style={expStyles.experienceTitle} numberOfLines={3}>{title}</Text>
+          <Text style={expStyles.creatorText}>by {creator}</Text>
+
+          <View style={expStyles.ratingRow}>
+            {[1,2,3,4,5].map((i) => (
+              <Star key={i} size={14} color="#F59E0B" fill={i <= 4 ? "#F59E0B" : "transparent"} strokeWidth={1.5} />
+            ))}
+            <Text style={expStyles.ratingText}>4.8 · 124 reviews</Text>
+          </View>
+
+          {locations.length > 0 && (
+            <View style={expStyles.section}>
+              <View style={expStyles.sectionHeader}>
+                <MapPin size={16} color="#FF69B4" strokeWidth={2} />
+                <Text style={expStyles.sectionTitle}>Linked Places</Text>
+              </View>
+              {locations.map((loc) => (
+                <View key={loc.id} style={expStyles.placeRow}>
+                  <View style={expStyles.placeDot} />
+                  <Text style={expStyles.placeText}>{loc.place_name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={expStyles.section}>
+            <View style={expStyles.sectionHeader}>
+              <Calendar size={16} color="#FF69B4" strokeWidth={2} />
+              <Text style={expStyles.sectionTitle}>Itinerary</Text>
+            </View>
+            {[
+              { day: "Day 1", items: ["Arrive & check in", "Sunset walk along the waterfront", "Dinner at local restaurant"] },
+              { day: "Day 2", items: ["Morning market visit", "Guided cultural tour", "Free afternoon exploration"] },
+              { day: "Day 3", items: ["Scenic hike or boat trip", "Souvenir shopping", "Farewell dinner"] },
+            ].map((d) => (
+              <View key={d.day} style={expStyles.dayBlock}>
+                <Text style={expStyles.dayLabel}>{d.day}</Text>
+                {d.items.map((item, i) => (
+                  <View key={i} style={expStyles.itineraryItem}>
+                    <View style={expStyles.itineraryDot} />
+                    <Text style={expStyles.itineraryText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+
+          <View style={expStyles.section}>
+            <View style={expStyles.sectionHeader}>
+              <BookOpen size={16} color="#FF69B4" strokeWidth={2} />
+              <Text style={expStyles.sectionTitle}>Booking</Text>
+            </View>
+            <View style={expStyles.bookingCard}>
+              <View style={expStyles.bookingPriceRow}>
+                <Text style={expStyles.bookingPrice}>From $299</Text>
+                <Text style={expStyles.bookingPer}>/ person</Text>
+              </View>
+              <Text style={expStyles.bookingNote}>Includes accommodation, guided tours & select meals</Text>
+              <TouchableOpacity style={expStyles.bookButton} activeOpacity={0.85} onPress={() => console.log("User tapped Book this experience")}>
+                <Text style={expStyles.bookButtonText}>Book this experience</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={expStyles.section}>
+            <Text style={expStyles.sectionTitle}>Related Experiences</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+              {["Hidden Gems Tour", "Coastal Adventure", "Food & Culture Walk"].map((name) => (
+                <TouchableOpacity key={name} style={expStyles.relatedCard} activeOpacity={0.8} onPress={() => console.log("User tapped related experience:", name)}>
+                  <View style={expStyles.relatedThumb} />
+                  <Text style={expStyles.relatedName} numberOfLines={2}>{name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </ScrollView>
+      </Animated.View>
+    </>
+  );
+}
+
+const expStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    zIndex: 10,
+  },
+  panel: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: PANEL_HEIGHT,
+    backgroundColor: "#0F0F14",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    zIndex: 11,
+    borderTopWidth: 1,
+    borderColor: "rgba(255,105,180,0.15)",
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "center",
+    marginTop: 10,
+  },
+  panelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  panelTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  panelLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF69B4",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 48 },
+  experienceTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+    marginTop: 4,
+    lineHeight: 30,
+  },
+  creatorText: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.5)",
+    marginTop: 4,
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  ratingText: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.6)",
+    marginLeft: 4,
+  },
+  section: { marginTop: 24 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  placeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  placeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#FF69B4",
+  },
+  placeText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.85)",
+  },
+  dayBlock: { marginBottom: 16 },
+  dayLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF69B4",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  itineraryItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 4,
+  },
+  itineraryDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "rgba(255,255,255,0.4)",
+    marginTop: 7,
+  },
+  itineraryText: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.75)",
+    lineHeight: 20,
+    flex: 1,
+  },
+  bookingCard: {
+    backgroundColor: "rgba(255,105,180,0.08)",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,105,180,0.2)",
+  },
+  bookingPriceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 4,
+  },
+  bookingPrice: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  bookingPer: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.5)",
+  },
+  bookingNote: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.5)",
+    marginTop: 6,
+    marginBottom: 14,
+    lineHeight: 17,
+  },
+  bookButton: {
+    backgroundColor: "#FF69B4",
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  bookButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  relatedCard: {
+    width: 120,
+    marginRight: 12,
+  },
+  relatedThumb: {
+    width: 120,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginBottom: 6,
+  },
+  relatedName: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+    lineHeight: 16,
+  },
+});
+
+// ─── VideoPlayer ──────────────────────────────────────────────────────────────
 
 function VideoPlayer({
   videoUrl,
@@ -221,6 +557,7 @@ export default function HomeScreen() {
   const [showDeleteCommentModal, setShowDeleteCommentModal] = useState(false);
 
   const [showOnboardingTooltip, setShowOnboardingTooltip] = useState(false);
+  const [showExperiencesPanel, setShowExperiencesPanel] = useState(false);
 
   const commentsSheetRef = useRef<BottomSheet>(null);
   const flatListRef = useRef<FlatList>(null);
@@ -674,10 +1011,6 @@ export default function HomeScreen() {
     const likeIconIos = interaction.isLiked ? "heart.fill" : "heart";
     const saveColor = interaction.isSaved ? "#FF69B4" : "#FFFFFF";
     const saveIconIos = interaction.isSaved ? "bookmark.fill" : "bookmark";
-    const isVideoPlaying = playingMap.get(post.id) ?? false;
-    const playPauseIconIos = isVideoPlaying ? "pause.fill" : "play.fill";
-    const playPauseIconAndroid = isVideoPlaying ? "pause" : "play-arrow";
-
     return (
       <View style={styles.videoSlide}>
         <VideoPlayer
@@ -701,11 +1034,15 @@ export default function HomeScreen() {
               />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.playPauseButton}
-              onPress={() => { console.log("User tapped play/pause overlay button"); toggleFnMap.current.get(post.id)?.(); }}
+              style={styles.experiencesButton}
+              onPress={() => {
+                console.log("User tapped Experiences expand button for post:", post.id);
+                setShowExperiencesPanel(true);
+              }}
               activeOpacity={0.7}
+              accessibilityLabel="View experiences"
             >
-              <IconSymbol ios_icon_name={playPauseIconIos} android_material_icon_name={playPauseIconAndroid} size={24} color="#FFFFFF" />
+              <ChevronUp size={20} color="#FFFFFF" strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
 
@@ -984,6 +1321,16 @@ export default function HomeScreen() {
       />
 
       <OnboardingTooltip visible={showOnboardingTooltip} onDismiss={() => setShowOnboardingTooltip(false)} />
+
+      <ExperiencesPanel
+        visible={showExperiencesPanel}
+        onClose={() => {
+          console.log("User closed Experiences panel (iOS)");
+          setShowExperiencesPanel(false);
+        }}
+        post={posts[currentIndex] || null}
+        locations={postLocations.get(posts[currentIndex]?.id || "") || []}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -1062,13 +1409,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  playPauseButton: {
+  experiencesButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,105,180,0.4)",
   },
   bottomInfo: {
     paddingBottom: 100,
