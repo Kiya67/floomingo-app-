@@ -12,11 +12,13 @@ import {
   Image,
   ImageSourcePropType,
   Share,
+  Alert,
 } from "react-native";
 import { supabase } from "@/lib/supabase";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { FilterModal } from "@/components/FilterModal";
-import { authenticatedApiCall, authenticatedPost, authenticatedDelete } from "@/utils/api";
+import { authenticatedApiCall } from "@/utils/api";
+import { followUser as supabaseFollowUser, unfollowUser as supabaseUnfollowUser } from "@/utils/supabaseHelpers";
 import { OnboardingTooltip, shouldShowOnboardingTooltip } from "@/components/OnboardingTooltip";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { LinearGradient } from "expo-linear-gradient";
@@ -52,9 +54,10 @@ interface MomentItemProps {
   screenWidth: number;
   insets: { top: number; bottom: number };
   onFilterPress: () => void;
+  currentUserId: string | null;
 }
 
-function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: MomentItemProps) {
+function MomentItem({ item, isVisible, screenHeight, screenWidth, insets, currentUserId }: MomentItemProps) {
   const router = useRouter();
   const player = useVideoPlayer(item.video_url || '', (p) => {
     p.loop = true;
@@ -83,8 +86,10 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: Mome
   const followPillStyle = following ? styles.followPillActive : styles.followPill;
   const followTextStyle = following ? styles.followTextActive : styles.followText;
   const followLabel = following ? 'Following' : 'Follow';
+  const isOwnPost = item.user_id === currentUserId;
 
   const handleUserPress = () => {
+    if (!item.user_id) return;
     console.log('User tapped avatar/username, navigating to user:', item.user_id);
     router.push(`/user/${item.user_id}`);
   };
@@ -95,19 +100,22 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: Mome
     console.log('User tapped like on moment:', item.id, '— liked:', newLiked);
     setLiked(newLiked);
     setLikeCount(newCount);
-    authenticatedPost('/api/rpc/toggle-like', { post_id: item.id }).catch((err) => {
-      console.error('Error toggling like:', err);
+    // Note: toggle-like endpoint kept as-is (separate from follow)
+    import('@/utils/api').then(({ authenticatedPost }) => {
+      authenticatedPost('/api/rpc/toggle-like', { post_id: item.id }).catch((err) => {
+        console.error('Error toggling like:', err);
+      });
     });
   };
 
   const handleCommentPress = () => {
     console.log('User tapped comment on moment:', item.id);
-    router.push(`/video/${item.id}`);
+    router.push({ pathname: `/video/${item.id}`, params: { openComments: 'true' } });
   };
 
   const handleBookmarkPress = () => {
     console.log('User tapped bookmark on moment:', item.id);
-    router.push(`/video/${item.id}`);
+    router.push({ pathname: `/video/${item.id}`, params: { openSave: 'true' } });
   };
 
   const handleSharePress = async () => {
@@ -124,23 +132,26 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: Mome
 
   const handleMorePress = () => {
     console.log('User tapped more on moment:', item.id);
-    router.push(`/video/${item.id}`);
+    Alert.alert('More Options', '', [
+      { text: 'Report', style: 'destructive', onPress: () => console.log('Report moment:', item.id) },
+      { text: 'Not Interested', onPress: () => console.log('Not interested:', item.id) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
-  const handleFollowPress = () => {
+  const handleFollowPress = async () => {
     const newFollowing = !following;
     console.log('User tapped follow on moment:', item.id, 'user:', item.user_id, '— following:', newFollowing);
     setFollowing(newFollowing);
-    if (newFollowing) {
-      authenticatedPost('/api/follows', { followingId: item.user_id }).catch((err) => {
-        console.error('Error following user:', err);
-        setFollowing(false);
-      });
-    } else {
-      authenticatedDelete(`/api/follows/${item.user_id}`).catch((err) => {
-        console.error('Error unfollowing user:', err);
-        setFollowing(true);
-      });
+    try {
+      if (newFollowing) {
+        await supabaseFollowUser(item.user_id);
+      } else {
+        await supabaseUnfollowUser(item.user_id);
+      }
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+      setFollowing(!newFollowing);
     }
   };
 
@@ -177,20 +188,21 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: Mome
         pointerEvents="none"
       />
 
-      {/* Location pill — absolutely positioned top-right of bottom overlay */}
-      {placeName ? (
-        <TouchableOpacity
-          style={[styles.locationPill, { bottom: bottomPadding + 80 }]}
-          onPress={handleLocationPress}
-          activeOpacity={0.7}
-        >
-          <MapPin size={13} color="#FF6B8A" />
-          <Text style={styles.locationText}>{placeName}</Text>
-        </TouchableOpacity>
-      ) : null}
-
       {/* Bottom overlay */}
       <View style={[styles.bottomOverlay, { bottom: bottomPadding }]}>
+        {/* Location row — right aligned */}
+        {placeName ? (
+          <TouchableOpacity
+            style={styles.locationRow}
+            onPress={handleLocationPress}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MapPin size={13} color="#FF6B8A" />
+            <Text style={styles.locationText}>{placeName}</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Row 1: user info */}
         <View style={styles.userRow}>
           <TouchableOpacity onPress={handleUserPress} activeOpacity={0.8}>
@@ -207,9 +219,11 @@ function MomentItem({ item, isVisible, screenHeight, screenWidth, insets }: Mome
             <Text style={styles.username}>{displayName}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={followPillStyle} onPress={handleFollowPress} activeOpacity={0.7}>
-            <Text style={followTextStyle}>{followLabel}</Text>
-          </TouchableOpacity>
+          {!isOwnPost ? (
+            <TouchableOpacity style={followPillStyle} onPress={handleFollowPress} activeOpacity={0.7}>
+              <Text style={followTextStyle}>{followLabel}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Row 2: caption */}
@@ -257,6 +271,7 @@ export default function HomeScreen() {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [showOnboardingTooltip, setShowOnboardingTooltip] = useState(false);
   const [visibleIndex, setVisibleIndex] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Filter state
   const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
@@ -293,6 +308,7 @@ export default function HomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        setCurrentUserId(user.id);
         try {
           const blocksData = await authenticatedApiCall<any[]>('/api/blocks', { method: 'GET' });
           console.log('[API] Blocked users fetched for feed filtering:', blocksData.length);
@@ -463,6 +479,7 @@ export default function HomeScreen() {
             screenWidth={screenWidth}
             insets={insets}
             onFilterPress={handleFilterPress}
+            currentUserId={currentUserId}
           />
         )}
         pagingEnabled
@@ -540,6 +557,12 @@ const styles = StyleSheet.create({
     right: 12,
     gap: 8,
   },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-end',
+  },
   userRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -611,7 +634,7 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: 28,
     marginTop: 4,
   },
   actionBtn: {
@@ -626,13 +649,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  locationPill: {
-    position: 'absolute',
-    right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
   locationText: {
     color: '#FF6B8A',
