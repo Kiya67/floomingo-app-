@@ -42,20 +42,6 @@ interface MomentResponse {
   created_at: string;
 }
 
-interface PostMomentResponse {
-  id: string;
-  user_id: string;
-  video_url: string;
-  thumbnail_url: string | null;
-  caption: string;
-  likes_count: number;
-  bookmarks_count: number;
-  is_liked: boolean;
-  is_bookmarked: boolean;
-  places: Array<{ id: string; place_id: string; place_name: string | null }>;
-  user: { id: string; username: string; display_name: string | null; avatar_url: string | null };
-  created_at: string;
-}
 
 export function registerMomentRoutes(app: App) {
   const requireAuth = app.requireAuth();
@@ -63,13 +49,13 @@ export function registerMomentRoutes(app: App) {
   // GET /api/moments - List moments with cursor pagination
   app.fastify.get('/api/moments', {
     schema: {
-      description: 'List moments with cursor pagination',
+      description: 'List moments with cursor pagination (reads from posts table)',
       tags: ['moments'],
       querystring: {
         type: 'object',
         properties: {
-          cursor: { type: 'string', description: 'Base64-encoded ISO timestamp for cursor pagination' },
           limit: { type: 'integer', default: 20, description: 'Number of results to return' },
+          cursor: { type: 'string', description: 'ISO timestamp for cursor-based pagination' },
           place_id: { type: 'string', description: 'Filter moments by place ID' },
           keywords: { type: 'string', description: 'Search keywords in caption' },
         },
@@ -78,54 +64,39 @@ export function registerMomentRoutes(app: App) {
         200: {
           type: 'object',
           properties: {
-            moments: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  user_id: { type: 'string' },
-                  video_url: { type: 'string' },
-                  thumbnail_url: { type: ['string', 'null'] },
-                  caption: { type: ['string', 'null'] },
-                  likes_count: { type: 'integer' },
-                  bookmarks_count: { type: 'integer' },
-                  is_liked: { type: 'boolean' },
-                  is_bookmarked: { type: 'boolean' },
-                  places: { type: 'array' },
-                  user: { type: 'object' },
-                  created_at: { type: 'string', format: 'date-time' },
-                },
-              },
-            },
+            data: { type: 'array' },
             next_cursor: { type: ['string', 'null'] },
+            has_more: { type: 'boolean' },
           },
         },
       },
     },
   }, async (
-    request: FastifyRequest<{ Querystring: { cursor?: string; limit?: string; place_id?: string; keywords?: string } }>,
+    request: FastifyRequest<{ Querystring: { limit?: string; cursor?: string; place_id?: string; keywords?: string } }>,
     reply: FastifyReply
-  ): Promise<{ moments: PostMomentResponse[]; next_cursor: string | null }> => {
+  ): Promise<{ data: any[]; next_cursor: string | null; has_more: boolean }> => {
     const limit = Math.min(parseInt(request.query.limit || '20'), 100);
     let cursorDate: Date | null = null;
 
     if (request.query.cursor) {
       try {
-        const decoded = Buffer.from(request.query.cursor, 'base64').toString('utf-8');
-        cursorDate = new Date(decoded);
+        cursorDate = new Date(request.query.cursor);
       } catch {
         app.logger.warn({ cursor: request.query.cursor }, 'Invalid cursor');
       }
     }
 
+    app.logger.info({ limit, cursor: request.query.cursor, placeId: request.query.place_id, keywords: request.query.keywords }, 'Fetched moments');
+
     let query = app.db
       .select({
         post: schema.posts,
         profile: schema.profiles,
+        stats: schema.postStats,
       })
       .from(schema.posts)
-      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.posts.userId));
+      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.posts.userId))
+      .leftJoin(schema.postStats, eq(schema.postStats.postId, schema.posts.id));
 
     // Apply filters
     const conditions = [];
@@ -147,23 +118,18 @@ export function registerMomentRoutes(app: App) {
       .orderBy(desc(schema.posts.createdAt))
       .limit(limit + 1);
 
-    app.logger.info(
-      { count: postsData.length, limit },
-      'Fetched moments'
-    );
-
     const hasMore = postsData.length > limit;
     const posts = postsData.slice(0, limit);
 
     // Build response
-    const momentResponses: PostMomentResponse[] = posts.map((p) => {
+    const data = posts.map((p) => {
       // Build places array from post's own place_id and place_name
       const places = p.post.placeId
         ? [
             {
-              id: p.post.id,
               place_id: p.post.placeId,
               place_name: p.post.placeName,
+              location_type: p.post.locationType,
             },
           ]
         : [];
@@ -171,29 +137,36 @@ export function registerMomentRoutes(app: App) {
       return {
         id: p.post.id,
         user_id: p.post.userId,
+        caption: p.post.caption,
         video_url: p.post.videoUrl,
         thumbnail_url: p.post.thumbnailUrl,
-        caption: p.post.caption,
-        likes_count: 0,
-        bookmarks_count: 0,
-        is_liked: false,
-        is_bookmarked: false,
-        places,
+        place_id: p.post.placeId,
+        place_name: p.post.placeName,
+        location_type: p.post.locationType,
+        created_at: p.post.createdAt.toISOString(),
         user: {
           id: p.profile?.id || p.post.userId,
-          username: p.profile?.username || 'unknown',
           display_name: p.profile?.displayName || null,
           avatar_url: p.profile?.avatarUrl || null,
+          username: p.profile?.username || null,
         },
-        created_at: p.post.createdAt.toISOString(),
+        places,
+        stats: {
+          likes_count: 0,
+          comments_count: 0,
+          views_count: p.stats?.viewCount || 0,
+        },
+        is_liked: false,
+        is_bookmarked: false,
       };
     });
 
-    const nextCursor = hasMore ? Buffer.from(posts[posts.length - 1].post.createdAt.toISOString()).toString('base64') : null;
+    const nextCursor = hasMore ? posts[posts.length - 1].post.createdAt.toISOString() : null;
 
     return {
-      moments: momentResponses,
+      data,
       next_cursor: nextCursor,
+      has_more: hasMore,
     };
   });
 

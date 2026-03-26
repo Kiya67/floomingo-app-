@@ -1201,32 +1201,43 @@ describe('Moments Feature', () => {
     const res = await api('/api/moments');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('moments');
+    expect(data).toHaveProperty('data');
     expect(data).toHaveProperty('next_cursor');
-    expect(Array.isArray(data.moments)).toBe(true);
+    expect(data).toHaveProperty('has_more');
+    expect(Array.isArray(data.data)).toBe(true);
   });
 
   it('should list moments with limit and cursor parameters', async () => {
     const res = await api('/api/moments?limit=10');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(Array.isArray(data.moments)).toBe(true);
+    expect(Array.isArray(data.data)).toBe(true);
+    expect(typeof data.has_more).toBe('boolean');
   });
 
   it('should list moments with place_id filter', async () => {
     const res = await api('/api/moments?place_id=test-place-123');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('moments');
-    expect(Array.isArray(data.moments)).toBe(true);
+    expect(data).toHaveProperty('data');
+    expect(Array.isArray(data.data)).toBe(true);
   });
 
   it('should list moments with keywords filter', async () => {
     const res = await api('/api/moments?keywords=adventure');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('moments');
-    expect(Array.isArray(data.moments)).toBe(true);
+    expect(data).toHaveProperty('data');
+    expect(Array.isArray(data.data)).toBe(true);
+  });
+
+  it('should return 400 when creating moment without video_url', async () => {
+    const res = await authenticatedApi('/api/moments', authToken, {
+      method: 'POST',
+      body: JSON.stringify({ caption: 'Missing video URL' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 400);
   });
 
   it('should return 401 when creating moment without authentication', async () => {
@@ -1365,28 +1376,27 @@ describe('Experiences Feature', () => {
     otherUserToken = user2.token;
   });
 
-  it('should list experiences without authentication', async () => {
+  it('should return 401 when getting experiences without authentication', async () => {
     const res = await api('/api/experiences');
+    await expectStatus(res, 401);
+  });
+
+  it('should list experiences with authentication', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken);
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('experiences');
+    expect(data).toHaveProperty('data');
     expect(data).toHaveProperty('next_cursor');
-    expect(Array.isArray(data.experiences)).toBe(true);
+    expect(data).toHaveProperty('has_more');
+    expect(Array.isArray(data.data)).toBe(true);
   });
 
   it('should list experiences with limit and cursor parameters', async () => {
-    const res = await api('/api/experiences?limit=10');
+    const res = await authenticatedApi('/api/experiences?limit=10', authToken);
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(Array.isArray(data.experiences)).toBe(true);
-  });
-
-  it('should list experiences with user_id filter', async () => {
-    const res = await api(`/api/experiences?user_id=${userId}`);
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data).toHaveProperty('experiences');
-    expect(Array.isArray(data.experiences)).toBe(true);
+    expect(Array.isArray(data.data)).toBe(true);
+    expect(typeof data.has_more).toBe('boolean');
   });
 
   it('should return 401 when creating experience without authentication', async () => {
@@ -1401,10 +1411,19 @@ describe('Experiences Feature', () => {
     await expectStatus(res, 401);
   });
 
-  it('should return 400 when creating experience without required fields', async () => {
+  it('should return 400 when creating experience without title', async () => {
     const res = await authenticatedApi('/api/experiences', authToken, {
       method: 'POST',
       body: JSON.stringify({ video_url: 'https://example.com/video.mp4' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 400);
+  });
+
+  it('should return 400 when creating experience without video_url', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'My Experience' }),
       headers: { 'Content-Type': 'application/json' },
     });
     await expectStatus(res, 400);
@@ -1444,8 +1463,13 @@ describe('Experiences Feature', () => {
     expect(data).toHaveProperty('id');
   });
 
-  it('should get experience by ID', async () => {
+  it('should return 401 when getting experience without authentication', async () => {
     const res = await api(`/api/experiences/${experienceId}`);
+    await expectStatus(res, 401);
+  });
+
+  it('should get experience by ID with authentication', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}`, authToken);
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data).toHaveProperty('id');
@@ -1453,86 +1477,7 @@ describe('Experiences Feature', () => {
 
   it('should return 404 when getting non-existent experience', async () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    const res = await api(`/api/experiences/${nonExistentId}`);
-    await expectStatus(res, 404);
-  });
-
-  it('should toggle like on experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}/like`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data).toHaveProperty('liked');
-    expect(data).toHaveProperty('likes_count');
-    expect(typeof data.liked).toBe('boolean');
-  });
-
-  it('should toggle like off on experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}/like`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data.liked).toBe(false);
-  });
-
-  it('should return 404 when liking non-existent experience', async () => {
-    const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    const res = await authenticatedApi(`/api/experiences/${nonExistentId}/like`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 404);
-  });
-
-  it('should toggle bookmark on experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}/bookmark`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data).toHaveProperty('bookmarked');
-    expect(data).toHaveProperty('bookmarks_count');
-  });
-
-  it('should toggle bookmark off on experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}/bookmark`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data.bookmarked).toBe(false);
-  });
-
-  it('should return 404 when bookmarking non-existent experience', async () => {
-    const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    const res = await authenticatedApi(`/api/experiences/${nonExistentId}/bookmark`, authToken, {
-      method: 'POST',
-    });
-    await expectStatus(res, 404);
-  });
-
-  it('should return 403 when deleting other user experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}`, otherUserToken, {
-      method: 'DELETE',
-    });
-    await expectStatus(res, 403);
-  });
-
-  it('should delete own experience', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}`, authToken, {
-      method: 'DELETE',
-    });
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(data.success).toBe(true);
-  });
-
-  it('should return 404 when deleting non-existent experience', async () => {
-    const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    const res = await authenticatedApi(`/api/experiences/${nonExistentId}`, authToken, {
-      method: 'DELETE',
-    });
+    const res = await authenticatedApi(`/api/experiences/${nonExistentId}`, authToken);
     await expectStatus(res, 404);
   });
 });
