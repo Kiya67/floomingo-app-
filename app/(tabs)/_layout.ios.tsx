@@ -1,51 +1,14 @@
 
 import React from 'react';
-import { Tabs, useRouter } from 'expo-router';
-import { useColorScheme, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Home, Map, User, Plus } from 'lucide-react-native';
+import { Tabs } from 'expo-router';
+import { useColorScheme, StyleSheet } from 'react-native';
+import { Home, Compass, Plus, Map, User } from 'lucide-react-native';
 
 const PINK = '#FF3B7A';
-
-function CreateTabButton({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      accessibilityLabel="Create"
-      style={createBtnStyles.wrapper}
-    >
-      <View style={createBtnStyles.circle}>
-        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-const createBtnStyles = StyleSheet.create({
-  wrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  circle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: PINK,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: PINK,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-});
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const router = useRouter();
 
   const tabBarActiveTintColor = PINK;
   const tabBarInactiveTintColor = isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.4)';
@@ -78,17 +41,22 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Explore',
+          tabBarIcon: ({ color, size }) => (
+            <Compass size={size} color={color} strokeWidth={2} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="add"
         options={{
-          title: '',
-          tabBarButton: () => (
-            <CreateTabButton
-              onPress={() => {
-                console.log('User tapped Create tab button (iOS)');
-                router.push('/(tabs)/add' as any);
-              }}
-            />
-          ),
+          title: 'Add',
+          tabBarIcon: ({ color, size }) => {
+            console.log('User tapped Add tab (iOS)');
+            return <Plus size={size} color={color} strokeWidth={2} />;
+          },
         }}
       />
       <Tabs.Screen

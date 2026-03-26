@@ -281,12 +281,21 @@ export default function AddScreen() {
     console.log("Step 1: Uploading video to Supabase Storage (iOS), uri:", videoUri);
     let videoPublicUrl: string;
     try {
-      const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "video_public", "video/mp4");
+      console.log("Trying bucket 'videos' for video upload (iOS)");
+      const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "videos", "video/mp4");
       videoPublicUrl = videoUploadResult.publicUrl;
-      console.log("✅ Step 1 complete — video uploaded:", videoPublicUrl);
+      console.log("✅ Step 1 complete — video uploaded to 'videos' bucket:", videoPublicUrl);
     } catch (uploadErr: any) {
-      console.error("❌ Step 1 FAILED — video upload error:", uploadErr, JSON.stringify(uploadErr));
-      throw new Error(`Video upload failed: ${uploadErr?.message || String(uploadErr)}`);
+      console.error("❌ 'videos' bucket failed (iOS):", uploadErr?.message || String(uploadErr), JSON.stringify(uploadErr));
+      console.log("Retrying with 'public' bucket (iOS)");
+      try {
+        const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "public", "video/mp4");
+        videoPublicUrl = videoUploadResult.publicUrl;
+        console.log("✅ Step 1 complete — video uploaded to 'public' bucket:", videoPublicUrl);
+      } catch (fallbackErr: any) {
+        console.error("❌ Step 1 FAILED — both buckets failed (iOS):", fallbackErr?.message || String(fallbackErr), JSON.stringify(fallbackErr));
+        throw new Error(`Video upload failed: ${fallbackErr?.message || String(fallbackErr)}`);
+      }
     }
 
     console.log("Step 2: Generating thumbnail from video uri (iOS):", videoUri);
@@ -295,11 +304,19 @@ export default function AddScreen() {
       const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri!, { time: 0 });
       console.log("Thumbnail generated at:", thumbResult.uri);
       console.log("Step 3: Uploading thumbnail to Supabase Storage (iOS)");
-      const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "video_public", "image/jpeg");
-      thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
-      console.log("✅ Step 3 complete — thumbnail uploaded:", thumbnailPublicUrl);
+      try {
+        console.log("Trying bucket 'videos' for thumbnail upload (iOS)");
+        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "videos", "image/jpeg");
+        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
+        console.log("✅ Step 3 complete — thumbnail uploaded to 'videos' bucket:", thumbnailPublicUrl);
+      } catch (thumbBucketErr: any) {
+        console.warn("⚠️ 'videos' bucket failed for thumbnail (iOS), trying 'public':", thumbBucketErr?.message);
+        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "public", "image/jpeg");
+        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
+        console.log("✅ Step 3 complete — thumbnail uploaded to 'public' bucket:", thumbnailPublicUrl);
+      }
     } catch (thumbErr: any) {
-      console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail):", thumbErr);
+      console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail) (iOS):", thumbErr?.message || String(thumbErr));
       thumbnailPublicUrl = null;
     }
 
@@ -479,7 +496,7 @@ export default function AddScreen() {
   const isMoment = uploadType === "moment";
   const headerTitle = isMoment ? "New Moment" : "New Experience";
   const isPostEnabled = isMoment
-    ? !!videoUri
+    ? !!videoUri && caption.trim().length > 0
     : !!videoUri && title.trim().length > 0;
   const postButtonBg = isPostEnabled ? primaryColor : "#999";
 
