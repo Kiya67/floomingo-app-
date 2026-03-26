@@ -22,13 +22,11 @@ import {
   Share2,
   MapPin,
   Film,
-  SlidersHorizontal,
   Play,
   Pause,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { FilterModal } from "@/components/FilterModal";
 import { apiGet, apiCall, BACKEND_URL } from "@/utils/api";
 
 const PINK = "#FF3B7A";
@@ -100,14 +98,12 @@ interface FeedItemProps {
   isActive: boolean;
   screenHeight: number;
   screenWidth: number;
-  insetTop: number;
   interaction: InteractionState;
   onLike: (moment: Moment) => void;
   onBookmark: (moment: Moment) => void;
   onShare: (moment: Moment) => void;
   onProfilePress: (userId: string) => void;
   onPlacePress: (placeId: string) => void;
-  onFilterPress: () => void;
 }
 
 function FeedItem({
@@ -115,14 +111,12 @@ function FeedItem({
   isActive,
   screenHeight,
   screenWidth,
-  insetTop,
   interaction,
   onLike,
   onBookmark,
   onShare,
   onProfilePress,
   onPlacePress,
-  onFilterPress,
 }: FeedItemProps) {
   const isMountedRef = useRef(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -207,7 +201,6 @@ function FeedItem({
   const bookmarksText = String(Number(interaction.bookmarks_count) || 0);
   const captionText = item.caption || "";
   const PlayPauseIcon = isPlaying ? Pause : Play;
-  const filterBtnTop = insetTop + 12;
   const places = item.places || [];
 
   if (!item.video_url) return null;
@@ -236,15 +229,6 @@ function FeedItem({
         style={styles.gradient}
         pointerEvents="none"
       />
-
-      {/* TOP-LEFT: Filter button */}
-      <TouchableOpacity
-        style={[styles.filterBtn, { top: filterBtnTop }]}
-        onPress={onFilterPress}
-        activeOpacity={0.8}
-      >
-        <SlidersHorizontal size={20} color="#FFFFFF" strokeWidth={2} />
-      </TouchableOpacity>
 
       {/* RIGHT-CENTER: Pink play/pause button */}
       <TouchableOpacity
@@ -360,10 +344,6 @@ export default function HomeScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [interactions, setInteractions] = useState<Map<string, InteractionState>>(new Map());
-  const [filterVisible, setFilterVisible] = useState(false);
-  const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
-  const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
-  const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const isMountedRef = useRef(true);
@@ -608,56 +588,6 @@ export default function HomeScreen() {
     [router]
   );
 
-  const handleFilterPress = useCallback(() => {
-    console.log("User tapped filter button");
-    setFilterVisible(true);
-  }, []);
-
-  const handleFilterClose = useCallback(() => {
-    console.log("User closed filter modal");
-    setFilterVisible(false);
-  }, []);
-
-  const handleFilterApply = useCallback(
-    (
-      placeId: string | null,
-      placeName: string | null,
-      keywords: string | null
-    ) => {
-      console.log(
-        "User applied filters — placeId:",
-        placeId,
-        "placeName:",
-        placeName,
-        "keywords:",
-        keywords
-      );
-      setFilterPlaceId(placeId);
-      setFilterPlaceName(placeName);
-      setFilterKeywords(keywords);
-      setFilterVisible(false);
-      setLoading(true);
-      setNextCursor(null);
-      setHasMore(true);
-      setCurrentIndex(0);
-      fetchMoments(false, null);
-    },
-    [fetchMoments]
-  );
-
-  const handleFilterClear = useCallback(() => {
-    console.log("User cleared filters");
-    setFilterPlaceId(null);
-    setFilterPlaceName(null);
-    setFilterKeywords(null);
-    setFilterVisible(false);
-    setLoading(true);
-    setNextCursor(null);
-    setHasMore(true);
-    setCurrentIndex(0);
-    fetchMoments(false, null);
-  }, [fetchMoments]);
-
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 50,
   }).current;
@@ -678,14 +608,12 @@ export default function HomeScreen() {
           isActive={isActive}
           screenHeight={height}
           screenWidth={width}
-          insetTop={insets.top}
           interaction={interaction}
           onLike={handleLike}
           onBookmark={handleBookmark}
           onShare={handleShare}
           onProfilePress={handleProfilePress}
           onPlacePress={handlePlacePress}
-          onFilterPress={handleFilterPress}
         />
       );
     },
@@ -694,17 +622,14 @@ export default function HomeScreen() {
       interactions,
       height,
       width,
-      insets.top,
       handleLike,
       handleBookmark,
       handleShare,
       handleProfilePress,
       handlePlacePress,
-      handleFilterPress,
     ]
   );
 
-  const hasActiveFilter = !!(filterPlaceId || filterKeywords);
 
   // ── Loading state ──
   if (loading) {
@@ -763,15 +688,6 @@ export default function HomeScreen() {
         >
           <Text style={styles.retryBtnText}>Refresh</Text>
         </TouchableOpacity>
-        <FilterModal
-          visible={filterVisible}
-          onClose={handleFilterClose}
-          onApply={handleFilterApply}
-          onClear={handleFilterClear}
-          initialPlaceId={filterPlaceId}
-          initialPlaceName={filterPlaceName}
-          initialKeywords={filterKeywords}
-        />
       </View>
     );
   }
@@ -812,20 +728,6 @@ export default function HomeScreen() {
         }
       />
 
-      {/* Active filter indicator */}
-      {hasActiveFilter ? (
-        <View style={[styles.activeFilterBadge, { top: insets.top + 12 }]} />
-      ) : null}
-
-      <FilterModal
-        visible={filterVisible}
-        onClose={handleFilterClose}
-        onApply={handleFilterApply}
-        onClear={handleFilterClear}
-        initialPlaceId={filterPlaceId}
-        initialPlaceName={filterPlaceName}
-        initialKeywords={filterKeywords}
-      />
     </View>
   );
 }
@@ -853,18 +755,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: "50%",
-  },
-  filterBtn: {
-    position: "absolute",
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
   },
   playPauseBtn: {
     position: "absolute",
@@ -977,15 +867,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#000",
-  },
-  activeFilterBadge: {
-    position: "absolute",
-    left: 44,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: PINK,
-    borderWidth: 1.5,
-    borderColor: "#000",
   },
 });
