@@ -1050,17 +1050,19 @@ export default function VideoFullScreenScreen() {
                 color="#FFFFFF"
               />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.closeButton}
-              onPress={handleClose}
-            >
-              <IconSymbol 
-                ios_icon_name="xmark"
-                android_material_icon_name="close" 
-                size={28} 
-                color="#FFFFFF"
-              />
-            </TouchableOpacity>
+            <View style={styles.topControlsRight}>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={handleClose}
+              >
+                <IconSymbol 
+                  ios_icon_name="xmark"
+                  android_material_icon_name="close" 
+                  size={28} 
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.bottomInfo}>
@@ -1583,6 +1585,10 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
+  },
+  topControlsRight: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   topControls: {
     paddingTop: 50,
