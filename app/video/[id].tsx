@@ -9,6 +9,7 @@ import { IconSymbol } from '@/components/IconSymbol';
 import { SaveToTripsModal } from '@/components/SaveToTripsModal';
 import { Modal } from '@/components/ui/Modal';
 import { Toast } from '@/components/ui/Toast';
+import { FilterModal } from '@/components/FilterModal';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { authenticatedGet, authenticatedPost, authenticatedDelete, apiGet } from '@/utils/api';
@@ -218,6 +219,11 @@ export default function VideoFullScreenScreen() {
   const [isSharing, setIsSharing] = useState(false);
   const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
   
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterPlaceId, setFilterPlaceId] = useState<string | null>(null);
+  const [filterPlaceName, setFilterPlaceName] = useState<string | null>(null);
+  const [filterKeywords, setFilterKeywords] = useState<string | null>(null);
+
   const [showMoreModal, setShowMoreModal] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
@@ -538,6 +544,43 @@ export default function VideoFullScreenScreen() {
   const handleClose = () => {
     console.log('User tapped close button');
     router.back();
+  };
+
+  const handleFilterPress = () => {
+    console.log('User tapped filter button in video screen');
+    setShowFilterModal(true);
+  };
+
+  const handleApplyFilters = (placeId: string | null, placeName: string | null, keywords: string | null) => {
+    console.log('User applied filters from video screen:', { placeId, placeName, keywords });
+    setFilterPlaceId(placeId);
+    setFilterPlaceName(placeName);
+    setFilterKeywords(keywords);
+    setShowFilterModal(false);
+    router.navigate({
+      pathname: '/(tabs)/(home)',
+      params: {
+        filterPlaceId: placeId || '',
+        filterPlaceName: placeName || '',
+        filterKeywords: keywords || '',
+      },
+    } as any);
+  };
+
+  const handleClearFilters = () => {
+    console.log('User cleared filters from video screen');
+    setFilterPlaceId(null);
+    setFilterPlaceName(null);
+    setFilterKeywords(null);
+    setShowFilterModal(false);
+    router.navigate({
+      pathname: '/(tabs)/(home)',
+      params: {
+        filterPlaceId: '',
+        filterPlaceName: '',
+        filterKeywords: '',
+      },
+    } as any);
   };
 
   const handleLocationPress = (post: Post) => {
@@ -1031,6 +1074,17 @@ export default function VideoFullScreenScreen() {
         <View style={styles.overlay}>
           <View style={styles.topControls}>
             <TouchableOpacity 
+              style={styles.filterButton}
+              onPress={handleFilterPress}
+              accessibilityLabel="Filter videos"
+            >
+              <IconSymbol 
+                android_material_icon_name="filter-list" 
+                size={24} 
+                color="#FFFFFF"
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
               style={styles.closeButton}
               onPress={handleClose}
             >
@@ -1441,6 +1495,16 @@ export default function VideoFullScreenScreen() {
         onHide={() => setToastVisible(false)}
         type={toastType}
       />
+
+      <FilterModal
+        visible={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        initialPlaceId={filterPlaceId}
+        initialPlaceName={filterPlaceName}
+        initialKeywords={filterKeywords}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -1520,6 +1584,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: 10,
+  },
+  filterButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   closeButton: {
     width: 44,

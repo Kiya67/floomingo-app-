@@ -143,13 +143,29 @@ export default function HomeScreen() {
   }, [filterPlaceId, filterKeywords]);
 
   useEffect(() => {
-    if (params.filterPlaceId) {
-      console.log('Received filter location from search (iOS):', params.filterPlaceName);
-      setFilterPlaceId(params.filterPlaceId as string);
-      setFilterPlaceName(params.filterPlaceName as string);
-      setFilterModalVisible(true);
+    const hasPlaceFilter = params.filterPlaceId && params.filterPlaceId !== '';
+    const hasKeywordsFilter = params.filterKeywords && params.filterKeywords !== '';
+    if (hasPlaceFilter || hasKeywordsFilter) {
+      console.log('Received filters from navigation (iOS):', { filterPlaceId: params.filterPlaceId, filterPlaceName: params.filterPlaceName, filterKeywords: params.filterKeywords });
+      if (hasPlaceFilter) {
+        setFilterPlaceId(params.filterPlaceId as string);
+        setFilterPlaceName(params.filterPlaceName as string);
+      } else {
+        setFilterPlaceId(null);
+        setFilterPlaceName(null);
+      }
+      if (hasKeywordsFilter) {
+        setFilterKeywords(params.filterKeywords as string);
+      } else {
+        setFilterKeywords(null);
+      }
+    } else if (params.filterPlaceId === '' && params.filterPlaceName === '' && params.filterKeywords === '') {
+      console.log('Received clear filters signal from navigation (iOS)');
+      setFilterPlaceId(null);
+      setFilterPlaceName(null);
+      setFilterKeywords(null);
     }
-  }, [params.filterPlaceId, params.filterPlaceName]);
+  }, [params.filterPlaceId, params.filterPlaceName, params.filterKeywords]);
 
   useFocusEffect(
     useCallback(() => {
