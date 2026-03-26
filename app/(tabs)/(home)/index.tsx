@@ -253,25 +253,68 @@ export default function HomeScreen() {
   // ── Fetch feed ──
   const fetchMoments = useCallback(
     async (isRefresh = false, cursor: string | null = null) => {
-      let endpoint = `/api/moments?limit=20`;
-      if (cursor) endpoint += `&cursor=${encodeURIComponent(cursor)}`;
-      if (filterPlaceId) endpoint += `&place_id=${encodeURIComponent(filterPlaceId)}`;
-      if (filterKeywords) endpoint += `&keywords=${encodeURIComponent(filterKeywords)}`;
-
-      console.log("Home feed: fetching moments, isRefresh:", isRefresh, "cursor:", cursor);
+      console.log("Home feed: fetching from Supabase posts, isRefresh:", isRefresh, "cursor:", cursor);
       try {
-        const data = await apiGet<{ moments: Moment[]; next_cursor: string | null }>(endpoint);
-        const moments = data.moments || [];
-        const newNextCursor = data.next_cursor ?? null;
-        console.log("Home feed: fetched", moments.length, "moments");
+        let query = supabase
+          .from("posts")
+          .select(`
+            *,
+            profiles:user_id (
+              id,
+              username,
+              display_name,
+              avatar_url
+            )
+          `)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (cursor) {
+          query = query.lt("created_at", cursor);
+        }
+        if (filterPlaceId) {
+          query = query.eq("place_id", filterPlaceId);
+        }
+        if (filterKeywords) {
+          query = query.ilike("caption", `%${filterKeywords}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        const posts = (data || []).map((p: any) => ({
+          id: p.id,
+          user_id: p.user_id,
+          video_url: p.video_url,
+          thumbnail_url: p.thumbnail_url,
+          caption: p.caption,
+          created_at: p.created_at,
+          likes_count: 0,
+          bookmarks_count: 0,
+          is_liked: false,
+          is_bookmarked: false,
+          places: p.place_id ? [{ id: p.id, place_id: p.place_id, place_name: p.place_name }] : [],
+          user: p.profiles ? {
+            id: p.profiles.id,
+            username: p.profiles.username || "",
+            display_name: p.profiles.display_name,
+            avatar_url: p.profiles.avatar_url,
+          } : { id: p.user_id, username: "", display_name: null, avatar_url: null },
+          view_count: 0,
+        }));
+
+        console.log("Home feed: fetched", posts.length, "posts from Supabase");
+
+        const newNextCursor = posts.length === 20 ? posts[posts.length - 1].created_at : null;
 
         if (isRefresh || !cursor) {
-          setFeed(moments);
+          setFeed(posts);
           setCurrentIndex(0);
         } else {
           setFeed((prev) => {
             const existingIds = new Set(prev.map((m) => m.id));
-            return [...prev, ...moments.filter((m) => !existingIds.has(m.id))];
+            return [...prev, ...posts.filter((m) => !existingIds.has(m.id))];
           });
         }
 
@@ -279,9 +322,8 @@ export default function HomeScreen() {
         setHasMore(!!newNextCursor);
         setError(null);
 
-        // Load interactions for first item
-        if ((isRefresh || !cursor) && moments[0] && currentUserId) {
-          loadPostInteractions(moments[0].id, currentUserId);
+        if ((isRefresh || !cursor) && posts[0] && currentUserId) {
+          loadPostInteractions(posts[0].id, currentUserId);
         }
       } catch (e: any) {
         console.error("Home feed: fetch error:", e);
@@ -307,27 +349,48 @@ export default function HomeScreen() {
 
   // ── Interactions ──
   const loadPostInteractions = useCallback(async (postId: string, userId: string) => {
+    let isLiked = false;
+    let isSaved = false;
+    let stats: PostStats = { like_count: 0, comment_count: 0, share_count: 0 };
+
     try {
-      const [likeRes, statsRes, savedRes] = await Promise.all([
-        supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).limit(1),
-        supabase.from("post_stats").select("*").eq("post_id", postId).single(),
-        supabase.from("board_posts").select("id, board_id, boards!inner(user_id)").eq("post_id", postId).eq("boards.user_id", userId).limit(1),
-      ]);
-
-      const isLiked = !!(likeRes.data && likeRes.data.length > 0);
-      const isSaved = !!(savedRes.data && savedRes.data.length > 0);
-      const stats = statsRes.data
-        ? { like_count: statsRes.data.like_count || 0, comment_count: statsRes.data.comment_count || 0, share_count: statsRes.data.share_count || 0 }
-        : { like_count: 0, comment_count: 0, share_count: 0 };
-
-      setPostInteractions((prev) => {
-        const m = new Map(prev);
-        m.set(postId, { isLiked, isSaved, stats });
-        return m;
-      });
+      const likeRes = await supabase.from("post_likes").select("*").eq("post_id", postId).eq("user_id", userId).limit(1);
+      if (likeRes.error) {
+        console.log("Home feed: post_likes query error (table may not exist yet):", likeRes.error.message);
+      } else {
+        isLiked = !!(likeRes.data && likeRes.data.length > 0);
+      }
     } catch (e) {
-      console.error("Error loading post interactions:", e);
+      console.log("Home feed: post_likes unavailable, skipping:", e);
     }
+
+    try {
+      const statsRes = await supabase.from("post_stats").select("*").eq("post_id", postId).single();
+      if (statsRes.error) {
+        console.log("Home feed: post_stats query error (table may not exist yet):", statsRes.error.message);
+      } else if (statsRes.data) {
+        stats = { like_count: statsRes.data.like_count || 0, comment_count: statsRes.data.comment_count || 0, share_count: statsRes.data.share_count || 0 };
+      }
+    } catch (e) {
+      console.log("Home feed: post_stats unavailable, skipping:", e);
+    }
+
+    try {
+      const savedRes = await supabase.from("board_posts").select("id, board_id, boards!inner(user_id)").eq("post_id", postId).eq("boards.user_id", userId).limit(1);
+      if (savedRes.error) {
+        console.log("Home feed: board_posts query error:", savedRes.error.message);
+      } else {
+        isSaved = !!(savedRes.data && savedRes.data.length > 0);
+      }
+    } catch (e) {
+      console.log("Home feed: board_posts unavailable, skipping:", e);
+    }
+
+    setPostInteractions((prev) => {
+      const m = new Map(prev);
+      m.set(postId, { isLiked, isSaved, stats });
+      return m;
+    });
   }, []);
 
   const handleViewableItemsChanged = useCallback(

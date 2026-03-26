@@ -279,24 +279,21 @@ export default function AddScreen() {
     const thumbPath = `thumbs/${userId}/${timestamp}.jpg`;
 
     console.log("Step 1: Uploading video to Supabase Storage (iOS), uri:", videoUri);
-    let videoPublicUrl: string;
-    try {
-      console.log("Trying bucket 'videos' for video upload (iOS)");
-      const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "videos", "video/mp4");
-      videoPublicUrl = videoUploadResult.publicUrl;
-      console.log("✅ Step 1 complete — video uploaded to 'videos' bucket:", videoPublicUrl);
-    } catch (uploadErr: any) {
-      console.error("❌ 'videos' bucket failed (iOS):", uploadErr?.message || String(uploadErr), JSON.stringify(uploadErr));
-      console.log("Retrying with 'public' bucket (iOS)");
+    let videoPublicUrl: string | null = null;
+    let lastVideoErr: any;
+    for (const bucket of ["videos", "video_public", "public", "media"]) {
       try {
-        const videoUploadResult = await uploadFileToSupabase(videoUri!, videoPath, "public", "video/mp4");
-        videoPublicUrl = videoUploadResult.publicUrl;
-        console.log("✅ Step 1 complete — video uploaded to 'public' bucket:", videoPublicUrl);
-      } catch (fallbackErr: any) {
-        console.error("❌ Step 1 FAILED — both buckets failed (iOS):", fallbackErr?.message || String(fallbackErr), JSON.stringify(fallbackErr));
-        throw new Error(`Video upload failed: ${fallbackErr?.message || String(fallbackErr)}`);
+        console.log(`Trying video upload to bucket "${bucket}"...`);
+        const result = await uploadFileToSupabase(videoUri!, videoPath, bucket, "video/mp4");
+        videoPublicUrl = result.publicUrl;
+        console.log(`✅ Video uploaded to bucket "${bucket}"`);
+        break;
+      } catch (err: any) {
+        console.error(`Bucket "${bucket}" failed:`, err.message);
+        lastVideoErr = err;
       }
     }
+    if (!videoPublicUrl) throw new Error("Video upload failed on all buckets: " + lastVideoErr?.message);
 
     console.log("Step 2: Generating thumbnail from video uri (iOS):", videoUri);
     let thumbnailPublicUrl: string | null = null;
@@ -304,16 +301,21 @@ export default function AddScreen() {
       const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri!, { time: 0 });
       console.log("Thumbnail generated at:", thumbResult.uri);
       console.log("Step 3: Uploading thumbnail to Supabase Storage (iOS)");
-      try {
-        console.log("Trying bucket 'videos' for thumbnail upload (iOS)");
-        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "videos", "image/jpeg");
-        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
-        console.log("✅ Step 3 complete — thumbnail uploaded to 'videos' bucket:", thumbnailPublicUrl);
-      } catch (thumbBucketErr: any) {
-        console.warn("⚠️ 'videos' bucket failed for thumbnail (iOS), trying 'public':", thumbBucketErr?.message);
-        const thumbnailUploadResult = await uploadFileToSupabase(thumbResult.uri, thumbPath, "public", "image/jpeg");
-        thumbnailPublicUrl = thumbnailUploadResult.publicUrl;
-        console.log("✅ Step 3 complete — thumbnail uploaded to 'public' bucket:", thumbnailPublicUrl);
+      let lastThumbErr: any;
+      for (const bucket of ["videos", "video_public", "public", "media"]) {
+        try {
+          console.log(`Trying thumbnail upload to bucket "${bucket}"...`);
+          const result = await uploadFileToSupabase(thumbResult.uri, thumbPath, bucket, "image/jpeg");
+          thumbnailPublicUrl = result.publicUrl;
+          console.log(`✅ Thumbnail uploaded to bucket "${bucket}"`);
+          break;
+        } catch (err: any) {
+          console.error(`Bucket "${bucket}" failed for thumbnail:`, err.message);
+          lastThumbErr = err;
+        }
+      }
+      if (!thumbnailPublicUrl) {
+        console.warn("⚠️ Thumbnail upload failed on all buckets (continuing without thumbnail):", lastThumbErr?.message);
       }
     } catch (thumbErr: any) {
       console.warn("⚠️ Thumbnail generation/upload failed (continuing without thumbnail) (iOS):", thumbErr?.message || String(thumbErr));
@@ -325,83 +327,46 @@ export default function AddScreen() {
 
   // --- Post Moment ---
   const handlePostMoment = async () => {
-    console.log("User tapped Share button — Moment (iOS)", {
-      hasVideo: !!videoUri,
-      captionLength: caption.length,
-      locationsCount: selectedLocations.length,
-    });
-
-    if (!videoUri) {
-      Alert.alert("No Video", "Please select a video first.");
-      return;
-    }
+    console.log("User tapped Share button — Moment (iOS)", { hasVideo: !!videoUri, captionLength: caption.length, locationsCount: selectedLocations.length });
+    if (!videoUri) { Alert.alert("No video", "Please select a video first."); return; }
 
     setIsPosting(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error("No authenticated user found");
-        Alert.alert("Error", "You must be logged in to post");
-        return;
-      }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Not authenticated");
       console.log("Authenticated user ID:", user.id);
 
       const { videoPublicUrl, thumbnailPublicUrl } = await uploadVideoAndThumbnail(user.id);
+      console.log("Upload complete. videoPublicUrl:", videoPublicUrl);
 
-      console.log("Step 4: Creating moment (post) via backend API (iOS)");
       const firstLocation = selectedLocations[0] || null;
-      const locationsPayload = selectedLocations.map((loc) => ({
-        place_id: loc.place_id,
-        place_name: loc.main_text,
-        location_type: loc.location_type,
-      }));
-
-      const postPayload: any = {
-        caption: caption.trim() || "",
+      const insertData: any = {
+        user_id: user.id,
+        caption: caption || "",
         video_url: videoPublicUrl,
         thumbnail_url: thumbnailPublicUrl,
+        place_id: firstLocation?.place_id || null,
+        place_name: firstLocation?.main_text || null,
+        location_type: firstLocation?.location_type || null,
       };
 
-      if (firstLocation) {
-        postPayload.place_id = firstLocation.place_id;
-        postPayload.place_name = firstLocation.main_text;
-        postPayload.location_type = firstLocation.location_type;
-      }
-      if (locationsPayload.length > 0) {
-        postPayload.locations = locationsPayload;
-      }
+      console.log("Inserting into Supabase posts:", JSON.stringify(insertData));
 
-      console.log("[API iOS] POST /api/posts — full payload:", JSON.stringify(postPayload, null, 2));
-      console.log("[API iOS] POST endpoint URL:", `${BACKEND_URL}/api/posts`);
+      const { data: createdPost, error: insertError } = await supabase
+        .from("posts")
+        .insert(insertData)
+        .select()
+        .single();
 
-      let createdPost: any;
-      try {
-        createdPost = await authenticatedPost("/api/posts", postPayload);
-        console.log("[API iOS] POST /api/posts — response status: 2xx OK");
-        console.log("[API iOS] POST /api/posts — response body:", JSON.stringify(createdPost, null, 2));
-      } catch (apiErr: any) {
-        console.error("❌ Step 4 FAILED — API error:", apiErr?.message || String(apiErr));
-        const rawMsg: string = apiErr?.message || String(apiErr);
-        const isHtml = rawMsg.includes("<html") || rawMsg.includes("<!DOCTYPE");
-        const cleanMsg = isHtml
-          ? `Server error (${rawMsg.match(/API error: (\d+)/)?.[1] || "unknown status"}) — please try again`
-          : rawMsg;
-        throw new Error(cleanMsg);
-      }
+      if (insertError) throw insertError;
+      console.log("✅ Post created successfully, ID:", createdPost.id);
 
-      if (!createdPost || !createdPost.id) {
-        console.error("❌ API returned unexpected response:", JSON.stringify(createdPost));
-        throw new Error("Failed to create post via API — no post ID returned");
-      }
-
-      console.log("✅ Moment created successfully (iOS), post ID:", createdPost.id);
-      Alert.alert("Posted!", "Your moment has been posted successfully");
+      Alert.alert("Posted!", "Your moment has been shared.");
       resetForm();
-      console.log("Navigating to Home tab");
       router.replace("/(tabs)/(home)");
-    } catch (error: any) {
-      console.error("❌ handlePostMoment FAILED (iOS):", error, JSON.stringify(error));
-      Alert.alert("Post Failed", error?.message || "Failed to post video. Please try again.");
+    } catch (err: any) {
+      console.error("handlePostMoment error:", err);
+      Alert.alert("Upload Failed", String(err?.message || err));
     } finally {
       setIsPosting(false);
     }
@@ -409,74 +374,42 @@ export default function AddScreen() {
 
   // --- Post Experience ---
   const handlePostExperience = async () => {
-    console.log("User tapped Share button — Experience (iOS)", {
-      hasVideo: !!videoUri,
-      titleLength: title.length,
-      descriptionLength: description.length,
-      locationsCount: selectedLocations.length,
-    });
-
-    if (!videoUri) {
-      Alert.alert("No Video", "Please select a video first.");
-      return;
-    }
-    if (!title.trim()) {
-      Alert.alert("Title Required", "Please add a title for your experience.");
-      return;
-    }
+    console.log("User tapped Share button — Experience (iOS)", { hasVideo: !!videoUri, titleLength: title.length });
+    if (!videoUri) { Alert.alert("No video", "Please select a video first."); return; }
+    if (!title.trim()) { Alert.alert("Title required", "Please add a title for your experience."); return; }
 
     setIsPosting(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error("No authenticated user found");
-        Alert.alert("Error", "You must be logged in to post");
-        return;
-      }
-      console.log("Authenticated user ID:", user.id);
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Not authenticated");
 
       const { videoPublicUrl, thumbnailPublicUrl } = await uploadVideoAndThumbnail(user.id);
 
-      console.log("Step 4: Creating experience via backend API (iOS)");
-
-      const experiencePayload: any = {
+      const insertData = {
+        user_id: user.id,
         title: title.trim(),
-        description: description.trim() || undefined,
+        description: description.trim() || null,
         video_url: videoPublicUrl,
         thumbnail_url: thumbnailPublicUrl,
       };
 
-      console.log("[API iOS] POST /api/experiences — full payload:", JSON.stringify(experiencePayload, null, 2));
-      console.log("[API iOS] POST endpoint URL:", `${BACKEND_URL}/api/experiences`);
+      console.log("Inserting into Supabase experiences:", JSON.stringify(insertData));
 
-      let createdExperience: any;
-      try {
-        createdExperience = await authenticatedPost("/api/experiences", experiencePayload);
-        console.log("[API iOS] POST /api/experiences — response status: 2xx OK");
-        console.log("[API iOS] POST /api/experiences — response body:", JSON.stringify(createdExperience, null, 2));
-      } catch (apiErr: any) {
-        console.error("❌ Step 4 FAILED — API error:", apiErr?.message || String(apiErr));
-        const rawMsg: string = apiErr?.message || String(apiErr);
-        const isHtml = rawMsg.includes("<html") || rawMsg.includes("<!DOCTYPE");
-        const cleanMsg = isHtml
-          ? `Server error (${rawMsg.match(/API error: (\d+)/)?.[1] || "unknown status"}) — please try again`
-          : rawMsg;
-        throw new Error(cleanMsg);
-      }
+      const { data: createdExp, error: insertError } = await supabase
+        .from("experiences")
+        .insert(insertData)
+        .select()
+        .single();
 
-      if (!createdExperience || !createdExperience.id) {
-        console.error("❌ API returned unexpected response:", JSON.stringify(createdExperience));
-        throw new Error("Failed to create experience via API — no ID returned");
-      }
+      if (insertError) throw insertError;
+      console.log("✅ Experience created successfully, ID:", createdExp.id);
 
-      console.log("✅ Experience created successfully (iOS), experience ID:", createdExperience.id);
-      Alert.alert("Posted!", "Your experience has been posted successfully");
+      Alert.alert("Posted!", "Your experience has been shared.");
       resetForm();
-      console.log("Navigating to Home tab");
       router.replace("/(tabs)/(home)");
-    } catch (error: any) {
-      console.error("❌ handlePostExperience FAILED (iOS):", error, JSON.stringify(error));
-      Alert.alert("Post Failed", error?.message || "Failed to post experience. Please try again.");
+    } catch (err: any) {
+      console.error("handlePostExperience error:", err);
+      Alert.alert("Upload Failed", String(err?.message || err));
     } finally {
       setIsPosting(false);
     }
@@ -496,7 +429,7 @@ export default function AddScreen() {
   const isMoment = uploadType === "moment";
   const headerTitle = isMoment ? "New Moment" : "New Experience";
   const isPostEnabled = isMoment
-    ? !!videoUri && caption.trim().length > 0
+    ? !!videoUri
     : !!videoUri && title.trim().length > 0;
   const postButtonBg = isPostEnabled ? primaryColor : "#999";
 

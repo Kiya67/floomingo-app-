@@ -22,41 +22,55 @@ export const isBackendConfigured = (): boolean => {
 };
 
 /**
- * Get Supabase access token from active session
- * CRITICAL: All backend API calls MUST use this token
- * 
- * @returns Supabase access_token or null if no session
+ * Get the best available auth token for backend API calls.
+ * Prefers the Better Auth bearer token stored in SecureStore.
+ * Falls back to the Supabase session access_token if Better Auth token is absent.
+ *
+ * @returns Bearer token string or null if no auth is available
  */
-export const getSupabaseAccessToken = async (): Promise<string | null> => {
+export const getBearerToken = async (): Promise<string | null> => {
   try {
-    console.log('[API] Fetching Supabase session for access token');
+    // 1. Try Better Auth token from SecureStore first
+    const betterAuthToken = await SecureStore.getItemAsync(BEARER_TOKEN_KEY);
+    if (betterAuthToken && betterAuthToken.length > 0) {
+      console.log('Using Better Auth token');
+      return betterAuthToken;
+    }
+
+    // 2. Fall back to Supabase session token
+    console.log('[API] Better Auth token not found, falling back to Supabase session');
     const { data: { session }, error } = await supabase.auth.getSession();
-    
+
     if (error) {
       console.error('[API] Error getting Supabase session:', error);
       return null;
     }
-    
+
     if (!session) {
       console.warn('[API] No active Supabase session found');
       return null;
     }
-    
+
     if (!session.access_token) {
       console.error('[API] Session exists but no access_token found');
       return null;
     }
-    
-    console.log('[API] Retrieved Supabase access token from session');
+
+    console.log('Using Supabase token (fallback)');
     console.log('[API] Token expires at:', new Date(session.expires_at! * 1000).toISOString());
     console.log('[API] User ID from session:', session.user?.id);
-    
+
     return session.access_token;
   } catch (error) {
-    console.error('[API] Error retrieving Supabase access token:', error);
+    console.error('[API] Error retrieving bearer token:', error);
     return null;
   }
 };
+
+/**
+ * @deprecated Use getBearerToken() instead.
+ */
+export const getSupabaseAccessToken = getBearerToken;
 
 /**
  * Generic API call helper with Supabase auth token
@@ -90,16 +104,16 @@ export const apiCall = async <T = any>(
       },
     };
 
-    // CRITICAL: Always get fresh Supabase access token
-    const token = await getSupabaseAccessToken();
+    // CRITICAL: Always get fresh bearer token (prefers Better Auth, falls back to Supabase)
+    const token = await getBearerToken();
     if (token) {
       fetchOptions.headers = {
         ...fetchOptions.headers,
         Authorization: `Bearer ${token}`,
       };
-      console.log('[API] ✓ Authorization header added with Supabase access token');
+      console.log('[API] ✓ Authorization header added with bearer token');
     } else {
-      console.warn('[API] ⚠️ No Supabase access token available - request may fail if endpoint requires auth');
+      console.warn('[API] ⚠️ No bearer token available - request may fail if endpoint requires auth');
     }
 
     console.log("[API] Request headers:", JSON.stringify(fetchOptions.headers, null, 2));
@@ -203,7 +217,7 @@ export const authenticatedApiCall = async <T = any>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> => {
-  const token = await getSupabaseAccessToken();
+  const token = await getBearerToken();
 
   if (!token) {
     console.error('[API] Authentication token not found. User must sign in.');

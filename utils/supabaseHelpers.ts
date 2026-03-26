@@ -43,13 +43,13 @@ export async function uploadFileToSupabase(
     console.log(`[uploadFileToSupabase] Converted to ArrayBuffer, size: ${bytes.length} bytes`);
 
     // Step 4: Upload to Supabase Storage
-    console.log(`[uploadFileToSupabase] Uploading to Supabase...`);
+    console.log(`Attempting upload to bucket "${bucket}", path: ${path}`);
     const { data, error } = await supabase.storage
       .from(bucket)
       .upload(path, bytes.buffer, {
         contentType,
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
 
     if (error) {
@@ -68,11 +68,12 @@ export async function uploadFileToSupabase(
       throw new Error('Failed to get public URL');
     }
 
-    console.log(`[uploadFileToSupabase] ✅ SUCCESS - Public URL: ${publicUrlData.publicUrl}`);
+    const publicUrl = publicUrlData.publicUrl;
+    console.log(`Upload succeeded to bucket "${bucket}", publicUrl: ${publicUrl}`);
 
     return {
       path: data.path,
-      publicUrl: publicUrlData.publicUrl,
+      publicUrl,
     };
   } catch (error: any) {
     console.error(`[uploadFileToSupabase] ❌ FAILED:`, error);
