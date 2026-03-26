@@ -1,7 +1,7 @@
 
-import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Image, Text, ImageSourcePropType } from 'react-native';
-import { IconSymbol } from '@/components/IconSymbol';
+import React, { useEffect } from 'react';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
 interface Post {
   id: string;
@@ -25,56 +25,59 @@ interface VideoGridItemProps {
   showViewCount?: boolean;
 }
 
-function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
-  if (!source) return { uri: '' };
-  if (typeof source === 'string') return { uri: source };
-  return source as ImageSourcePropType;
+function InlineVideoPreview({ videoUrl, width, height }: { videoUrl: string; width: number; height: number }) {
+  const player = useVideoPlayer(videoUrl, (p) => {
+    p.loop = true;
+    p.muted = true;
+  });
+
+  useEffect(() => {
+    console.log('VideoGridItem (iOS): starting inline video preview for', videoUrl);
+    player.play();
+    return () => {
+      player.pause();
+    };
+  }, [player, videoUrl]);
+
+  return (
+    <VideoView
+      player={player}
+      style={{ width, height }}
+      nativeControls={false}
+      contentFit="cover"
+      allowsFullscreen={false}
+      allowsPictureInPicture={false}
+    />
+  );
 }
 
-export function VideoGridItem({ post, size, shouldPlay = false, onPress, onLongPress, showViewCount = false }: VideoGridItemProps) {
-  // CRITICAL: Guard against undefined post
+export function VideoGridItem({ post, size, onPress, onLongPress, showViewCount = false }: VideoGridItemProps) {
   if (!post) return null;
-  
-  // CRITICAL: Safe access to view_count with default
+
   const viewCount = post?.view_count ?? 0;
   const viewCountText = viewCount >= 1000 ? `${(viewCount / 1000).toFixed(1)}K` : viewCount.toString();
-
-  // Make grid items longer (1.8x aspect ratio instead of 1:1)
   const itemHeight = size * 1.8;
+  const hasVideo = !!post.video_url;
 
   return (
     <TouchableOpacity
       style={[styles.container, { width: size, height: itemHeight }]}
-      onPress={onPress}
+      onPress={() => {
+        console.log('User tapped video grid item (iOS), post id:', post.id);
+        onPress?.();
+      }}
       onLongPress={onLongPress}
       activeOpacity={0.9}
     >
-      <Image
-        source={resolveImageSource(post.thumbnail_url)}
-        style={styles.thumbnail}
-        resizeMode="cover"
-      />
-      
+      {hasVideo ? (
+        <InlineVideoPreview videoUrl={post.video_url} width={size} height={itemHeight} />
+      ) : null}
+
       {showViewCount && viewCount > 0 ? (
         <View style={styles.viewCountBadge}>
-          <IconSymbol
-            ios_icon_name="eye.fill"
-            android_material_icon_name="visibility"
-            size={14}
-            color="#FFFFFF"
-          />
           <Text style={styles.viewCountText}>{viewCountText}</Text>
         </View>
       ) : null}
-      
-      <View style={styles.playIconContainer}>
-        <IconSymbol
-          ios_icon_name="play.fill"
-          android_material_icon_name="play-arrow"
-          size={32}
-          color="rgba(255, 255, 255, 0.9)"
-        />
-      </View>
     </TouchableOpacity>
   );
 }
@@ -83,23 +86,8 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 0,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: '#111',
     position: 'relative',
-  },
-  thumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  playIconContainer: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   viewCountBadge: {
     position: 'absolute',
