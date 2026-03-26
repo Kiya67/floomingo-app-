@@ -15,7 +15,7 @@ function CreateTabButton({ onPress }: { onPress: () => void }) {
       style={createBtnStyles.wrapper}
     >
       <View style={createBtnStyles.circle}>
-        <Plus size={26} color="#FFFFFF" strokeWidth={2.5} />
+        <Plus size={20} color="#FFFFFF" strokeWidth={2.5} />
       </View>
     </TouchableOpacity>
   );
@@ -28,17 +28,17 @@ const createBtnStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   circle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: PINK,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: PINK,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
 
