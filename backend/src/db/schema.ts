@@ -112,3 +112,76 @@ export const follows = pgTable('follows', {
   index('follows_follower_idx').on(table.followerId),
   index('follows_following_idx').on(table.followingId),
 ]);
+
+export const moments = pgTable('moments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  videoUrl: text('video_url').notNull(),
+  thumbnailUrl: text('thumbnail_url'),
+  caption: text('caption'),
+  linkedExperienceId: uuid('linked_experience_id').references(() => experiences.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const experiences = pgTable('experiences', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  videoUrl: text('video_url').notNull(),
+  thumbnailUrl: text('thumbnail_url'),
+  title: text('title').notNull(),
+  description: text('description'),
+  linkedMomentId: uuid('linked_moment_id').references(() => moments.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const momentPlaces = pgTable('moment_places', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  momentId: uuid('moment_id').notNull().references(() => moments.id, { onDelete: 'cascade' }),
+  placeId: text('place_id').notNull(),
+  placeName: text('place_name').notNull(),
+  placeAddress: text('place_address'),
+});
+
+export const experiencePlaces = pgTable('experience_places', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experienceId: uuid('experience_id').notNull().references(() => experiences.id, { onDelete: 'cascade' }),
+  placeId: text('place_id').notNull(),
+  placeName: text('place_name').notNull(),
+  placeAddress: text('place_address'),
+});
+
+export const momentLikes = pgTable('moment_likes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  momentId: uuid('moment_id').notNull().references(() => moments.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('moment_likes_unique').on(table.momentId, table.userId),
+]);
+
+export const experienceLikes = pgTable('experience_likes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experienceId: uuid('experience_id').notNull().references(() => experiences.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('experience_likes_unique').on(table.experienceId, table.userId),
+]);
+
+export const momentBookmarks = pgTable('moment_bookmarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  momentId: uuid('moment_id').notNull().references(() => moments.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('moment_bookmarks_unique').on(table.momentId, table.userId),
+]);
+
+export const experienceBookmarks = pgTable('experience_bookmarks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  experienceId: uuid('experience_id').notNull().references(() => experiences.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('experience_bookmarks_unique').on(table.experienceId, table.userId),
+]);

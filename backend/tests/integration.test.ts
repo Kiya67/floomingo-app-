@@ -1128,3 +1128,334 @@ describe('Profile Feature', () => {
     await expectStatus(res, 409);
   });
 });
+
+describe('Moments Feature', () => {
+  let authToken: string;
+  let userId: string;
+  let otherUserToken: string;
+  let momentId: string;
+
+  it('should set up test users', async () => {
+    const user1 = await signUpTestUser();
+    authToken = user1.token;
+    userId = user1.user.id;
+
+    const user2 = await signUpTestUser();
+    otherUserToken = user2.token;
+  });
+
+  it('should list moments without authentication', async () => {
+    const res = await api('/api/moments');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('moments');
+    expect(data).toHaveProperty('next_cursor');
+    expect(Array.isArray(data.moments)).toBe(true);
+  });
+
+  it('should list moments with limit and cursor parameters', async () => {
+    const res = await api('/api/moments?limit=10');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data.moments)).toBe(true);
+  });
+
+  it('should return 401 when creating moment without authentication', async () => {
+    const res = await api('/api/moments', {
+      method: 'POST',
+      body: JSON.stringify({ video_url: 'https://example.com/video.mp4' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 401);
+  });
+
+  it('should create moment with authentication', async () => {
+    const res = await authenticatedApi('/api/moments', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/moment.mp4',
+        caption: 'My awesome moment',
+        thumbnail_url: 'https://example.com/thumb.jpg',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('user_id');
+    expect(data).toHaveProperty('video_url');
+    expect(data).toHaveProperty('created_at');
+    momentId = data.id;
+  });
+
+  it('should get moment by ID', async () => {
+    const res = await api(`/api/moments/${momentId}`);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+  });
+
+  it('should return 404 when getting non-existent moment', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await api(`/api/moments/${nonExistentId}`);
+    await expectStatus(res, 404);
+  });
+
+  it('should toggle like on moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('liked');
+    expect(data).toHaveProperty('likes_count');
+    expect(typeof data.liked).toBe('boolean');
+  });
+
+  it('should toggle like off on moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.liked).toBe(false);
+  });
+
+  it('should return 404 when liking non-existent moment', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/moments/${nonExistentId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 404);
+  });
+
+  it('should toggle bookmark on moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('bookmarked');
+    expect(data).toHaveProperty('bookmarks_count');
+  });
+
+  it('should toggle bookmark off on moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.bookmarked).toBe(false);
+  });
+
+  it('should return 404 when bookmarking non-existent moment', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/moments/${nonExistentId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 404);
+  });
+
+  it('should return 403 when deleting other user moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}`, otherUserToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 403);
+  });
+
+  it('should delete own moment', async () => {
+    const res = await authenticatedApi(`/api/moments/${momentId}`, authToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
+
+  it('should return 404 when deleting non-existent moment', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/moments/${nonExistentId}`, authToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 404);
+  });
+});
+
+describe('Experiences Feature', () => {
+  let authToken: string;
+  let userId: string;
+  let otherUserToken: string;
+  let experienceId: string;
+
+  it('should set up test users', async () => {
+    const user1 = await signUpTestUser();
+    authToken = user1.token;
+    userId = user1.user.id;
+
+    const user2 = await signUpTestUser();
+    otherUserToken = user2.token;
+  });
+
+  it('should list experiences without authentication', async () => {
+    const res = await api('/api/experiences');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('experiences');
+    expect(data).toHaveProperty('next_cursor');
+    expect(Array.isArray(data.experiences)).toBe(true);
+  });
+
+  it('should list experiences with limit and cursor parameters', async () => {
+    const res = await api('/api/experiences?limit=10');
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data.experiences)).toBe(true);
+  });
+
+  it('should return 401 when creating experience without authentication', async () => {
+    const res = await api('/api/experiences', {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/video.mp4',
+        title: 'My Experience',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 401);
+  });
+
+  it('should return 400 when creating experience without required fields', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken, {
+      method: 'POST',
+      body: JSON.stringify({ video_url: 'https://example.com/video.mp4' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 400);
+  });
+
+  it('should create experience with required fields only', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/experience.mp4',
+        title: 'My Experience',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+    expect(data).toHaveProperty('user_id');
+    expect(data).toHaveProperty('video_url');
+    expect(data).toHaveProperty('created_at');
+    experienceId = data.id;
+  });
+
+  it('should create experience with all optional fields', async () => {
+    const res = await authenticatedApi('/api/experiences', authToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        video_url: 'https://example.com/exp2.mp4',
+        title: 'Complete Experience',
+        description: 'A detailed experience description',
+        thumbnail_url: 'https://example.com/thumb.jpg',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await expectStatus(res, 201);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+  });
+
+  it('should get experience by ID', async () => {
+    const res = await api(`/api/experiences/${experienceId}`);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('id');
+  });
+
+  it('should return 404 when getting non-existent experience', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await api(`/api/experiences/${nonExistentId}`);
+    await expectStatus(res, 404);
+  });
+
+  it('should toggle like on experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('liked');
+    expect(data).toHaveProperty('likes_count');
+    expect(typeof data.liked).toBe('boolean');
+  });
+
+  it('should toggle like off on experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.liked).toBe(false);
+  });
+
+  it('should return 404 when liking non-existent experience', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/experiences/${nonExistentId}/like`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 404);
+  });
+
+  it('should toggle bookmark on experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data).toHaveProperty('bookmarked');
+    expect(data).toHaveProperty('bookmarks_count');
+  });
+
+  it('should toggle bookmark off on experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.bookmarked).toBe(false);
+  });
+
+  it('should return 404 when bookmarking non-existent experience', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/experiences/${nonExistentId}/bookmark`, authToken, {
+      method: 'POST',
+    });
+    await expectStatus(res, 404);
+  });
+
+  it('should return 403 when deleting other user experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}`, otherUserToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 403);
+  });
+
+  it('should delete own experience', async () => {
+    const res = await authenticatedApi(`/api/experiences/${experienceId}`, authToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+  });
+
+  it('should return 404 when deleting non-existent experience', async () => {
+    const nonExistentId = '00000000-0000-0000-0000-000000000000';
+    const res = await authenticatedApi(`/api/experiences/${nonExistentId}`, authToken, {
+      method: 'DELETE',
+    });
+    await expectStatus(res, 404);
+  });
+});

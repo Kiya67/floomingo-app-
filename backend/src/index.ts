@@ -8,6 +8,8 @@ import { registerProfileStatsRoutes } from './routes/profile-stats.js';
 import { registerPostRoutes } from './routes/posts.js';
 import { registerFollowRoutes } from './routes/follows.js';
 import { registerProfileRoutes } from './routes/profiles.js';
+import { registerMomentRoutes } from './routes/moments.js';
+import { registerExperienceRoutes } from './routes/experiences.js';
 
 const schema = { ...appSchema, ...authSchema };
 
@@ -29,6 +31,8 @@ registerProfileStatsRoutes(app);
 registerPostRoutes(app);
 registerFollowRoutes(app);
 registerProfileRoutes(app);
+registerMomentRoutes(app);
+registerExperienceRoutes(app);
 
 await app.run();
 app.logger.info('Application running');
