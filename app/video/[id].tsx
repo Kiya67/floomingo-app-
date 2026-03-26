@@ -64,26 +64,16 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-// Video Player Component - uses public URLs directly with tap to play/pause and mute toggle
-function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { videoUrl: string; postId: string; isMuted: boolean; onToggleMute: () => void; isActive: boolean }) {
+function VideoPlayer({ videoUrl, postId, isActive, onPlayingChange, onTogglePlayPause }: { videoUrl: string; postId: string; isActive: boolean; onPlayingChange: (playing: boolean) => void; onTogglePlayPause: (toggle: () => void) => void; }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(videoUrl, (player) => {
     player.loop = true;
-    player.muted = isMuted;
   });
 
   useEffect(() => {
-    if (player) {
-      player.muted = isMuted;
-      console.log('Video mute state changed:', isMuted ? 'muted' : 'unmuted');
-    }
-  }, [isMuted, player]);
-
-  useEffect(() => {
     isMountedRef.current = true;
-    
     return () => {
       isMountedRef.current = false;
       try {
@@ -96,10 +86,8 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { vi
     };
   }, [player]);
 
-  // Auto-play when video becomes active
   useEffect(() => {
     if (!player) return;
-    
     if (isActive) {
       console.log('Video is now active, attempting to play:', postId);
       const playTimeout = setTimeout(() => {
@@ -107,45 +95,53 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { vi
           try {
             player.play();
             setIsPlaying(true);
+            onPlayingChange(true);
             console.log('Video playing for post:', postId);
           } catch (error) {
             console.error('Error playing video:', error);
           }
         }
       }, 300);
-
-      return () => {
-        clearTimeout(playTimeout);
-      };
+      return () => { clearTimeout(playTimeout); };
     } else {
-      // Pause when not active
       console.log('Video is no longer active, pausing:', postId);
       try {
         player.pause();
         setIsPlaying(false);
+        onPlayingChange(false);
       } catch (error) {
         console.error('Error pausing video:', error);
       }
     }
   }, [player, postId, isActive]);
 
-  const handleTap = () => {
-    console.log('User tapped video center - toggling play/pause');
+  const toggle = useCallback(() => {
+    console.log('User tapped play/pause button');
     if (!player) return;
-
     try {
       if (isPlaying) {
         player.pause();
         setIsPlaying(false);
+        onPlayingChange(false);
         console.log('Video paused');
       } else {
         player.play();
         setIsPlaying(true);
+        onPlayingChange(true);
         console.log('Video playing');
       }
     } catch (error) {
       console.error('Error toggling play/pause:', error);
     }
+  }, [player, isPlaying, onPlayingChange]);
+
+  useEffect(() => {
+    onTogglePlayPause(toggle);
+  }, [toggle]);
+
+  const handleTap = () => {
+    console.log('User tapped video center - toggling play/pause');
+    toggle();
   };
 
   if (!videoUrl) {
@@ -154,44 +150,29 @@ function VideoPlayer({ videoUrl, postId, isMuted, onToggleMute, isActive }: { vi
   }
 
   return (
-    <>
-      <TouchableOpacity 
-        style={styles.video} 
-        activeOpacity={1} 
-        onPress={handleTap}
-      >
-        <VideoView
-          style={styles.video}
-          player={player}
-          nativeControls={false}
-          contentFit="cover"
-          allowsFullscreen={true}
-          allowsPictureInPicture={false}
-        />
-        {!isPlaying && (
-          <View style={styles.playPauseIndicator}>
-            <IconSymbol 
-              android_material_icon_name="play-arrow" 
-              size={64} 
-              color="#FFFFFF"
-            />
-          </View>
-        )}
-      </TouchableOpacity>
-      
-      {/* Mute/Unmute button - positioned at top right, below close button */}
-      <TouchableOpacity 
-        style={styles.muteButton}
-        onPress={onToggleMute}
-        activeOpacity={0.7}
-      >
-        <IconSymbol 
-          android_material_icon_name={isMuted ? "volume-off" : "volume-up"} 
-          size={24} 
-          color="#FFFFFF"
-        />
-      </TouchableOpacity>
-    </>
+    <TouchableOpacity 
+      style={styles.video} 
+      activeOpacity={1} 
+      onPress={handleTap}
+    >
+      <VideoView
+        style={styles.video}
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        allowsFullscreen={true}
+        allowsPictureInPicture={false}
+      />
+      {!isPlaying && (
+        <View style={styles.playPauseIndicator}>
+          <IconSymbol 
+            android_material_icon_name="play-arrow" 
+            size={64} 
+            color="#FFFFFF"
+          />
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -215,8 +196,9 @@ export default function VideoFullScreenScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [playingMap, setPlayingMap] = useState<Map<string, boolean>>(new Map());
+  const toggleFnMap = useRef<Map<string, () => void>>(new Map());
   const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
   
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -852,11 +834,6 @@ export default function VideoFullScreenScreen() {
     }
   };
 
-  const handleToggleMute = () => {
-    console.log('User toggled mute/unmute');
-    setIsMuted(prev => !prev);
-  };
-
   const handleSave = (post: Post) => {
     console.log('User tapped save button for post:', post.id, '- setting post first, then opening modal');
     // MUST set selectedPost FIRST, then open modal
@@ -1060,15 +1037,19 @@ export default function VideoFullScreenScreen() {
     
     const shareDisabled = !post.video_url || isSharing;
     const isActive = index === currentIndex;
+    const isVideoPlaying = playingMap.get(post.id) ?? false;
+    const playPauseIcon = isVideoPlaying ? 'pause' : 'play-arrow';
 
     return (
       <View style={styles.videoSlide}>
         <VideoPlayer 
           videoUrl={post.video_url} 
           postId={post.id} 
-          isMuted={isMuted}
-          onToggleMute={handleToggleMute}
           isActive={isActive}
+          onPlayingChange={(playing) => {
+            setPlayingMap((prev) => { const m = new Map(prev); m.set(post.id, playing); return m; });
+          }}
+          onTogglePlayPause={(fn) => { toggleFnMap.current.set(post.id, fn); }}
         />
         
         <View style={styles.overlay}>
@@ -1085,6 +1066,13 @@ export default function VideoFullScreenScreen() {
               />
             </TouchableOpacity>
             <View style={styles.topControlsRight}>
+              <TouchableOpacity
+                style={styles.playPauseButton}
+                onPress={() => { console.log('User tapped play/pause overlay button'); toggleFnMap.current.get(post.id)?.(); }}
+                activeOpacity={0.7}
+              >
+                <IconSymbol android_material_icon_name={playPauseIcon} size={24} color="#FFFFFF" />
+              </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.closeButton}
                 onPress={handleClose}
@@ -1564,17 +1552,15 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     padding: 12,
   },
-  muteButton: {
-    position: 'absolute',
-    top: 110,
-    right: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 8,
+  playPauseButton: {
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  _deadStyle: {
     zIndex: 10,
   },
   overlay: {
@@ -1582,6 +1568,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   topControlsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  _deadStyle: {
     flex: 1,
     alignItems: 'flex-end',
   },

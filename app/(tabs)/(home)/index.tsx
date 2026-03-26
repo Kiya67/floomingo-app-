@@ -82,29 +82,22 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
 function VideoPlayer({
   videoUrl,
   postId,
-  isMuted,
-  onToggleMute,
   isActive,
+  onPlayingChange,
+  onTogglePlayPause,
 }: {
   videoUrl: string;
   postId: string;
-  isMuted: boolean;
-  onToggleMute: () => void;
   isActive: boolean;
+  onPlayingChange: (playing: boolean) => void;
+  onTogglePlayPause: (toggle: () => void) => void;
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
 
   const player = useVideoPlayer(videoUrl, (p) => {
     p.loop = true;
-    p.muted = isMuted;
   });
-
-  useEffect(() => {
-    if (player) {
-      player.muted = isMuted;
-    }
-  }, [isMuted, player]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -124,6 +117,7 @@ function VideoPlayer({
           try {
             player.play();
             setIsPlaying(true);
+            onPlayingChange(true);
             console.log("Video playing for post:", postId);
           } catch (e) {
             console.error("Error playing video:", e);
@@ -135,51 +129,54 @@ function VideoPlayer({
       try {
         player.pause();
         setIsPlaying(false);
+        onPlayingChange(false);
       } catch {}
     }
   }, [player, postId, isActive]);
 
-  const handleTap = () => {
-    console.log("User tapped video - toggling play/pause");
+  const toggle = useCallback(() => {
+    console.log("User tapped play/pause button");
     if (!player) return;
     try {
       if (isPlaying) {
         player.pause();
         setIsPlaying(false);
+        onPlayingChange(false);
       } else {
         player.play();
         setIsPlaying(true);
+        onPlayingChange(true);
       }
     } catch {}
+  }, [player, isPlaying, onPlayingChange]);
+
+  useEffect(() => {
+    onTogglePlayPause(toggle);
+  }, [toggle]);
+
+  const handleTap = () => {
+    console.log("User tapped video - toggling play/pause");
+    toggle();
   };
 
   if (!videoUrl) return null;
 
   return (
-    <>
-      <TouchableOpacity style={styles.video} activeOpacity={1} onPress={handleTap}>
-        <VideoView
-          style={styles.video}
-          player={player}
-          nativeControls={false}
-          contentFit="cover"
-          allowsFullscreen={false}
-          allowsPictureInPicture={false}
-        />
-        {!isPlaying && (
-          <View style={styles.playPauseIndicator}>
-            <IconSymbol android_material_icon_name="play-arrow" size={64} color="#FFFFFF" />
-          </View>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.muteButton} onPress={onToggleMute} activeOpacity={0.7}>
-        <IconSymbol
-          android_material_icon_name={isMuted ? "volume-off" : "volume-up"}
-          size={24}
-          color="#FFFFFF"
-        />
-      </TouchableOpacity>
-    </>
+    <TouchableOpacity style={styles.video} activeOpacity={1} onPress={handleTap}>
+      <VideoView
+        style={styles.video}
+        player={player}
+        nativeControls={false}
+        contentFit="cover"
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+      />
+      {!isPlaying && (
+        <View style={styles.playPauseIndicator}>
+          <IconSymbol android_material_icon_name="play-arrow" size={64} color="#FFFFFF" />
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -195,8 +192,9 @@ export default function HomeScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [isMuted, setIsMuted] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
+  const [playingMap, setPlayingMap] = useState<Map<string, boolean>>(new Map());
+  const toggleFnMap = useRef<Map<string, () => void>>(new Map());
   const [viewedPostIds, setViewedPostIds] = useState<Set<string>>(new Set());
 
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -686,21 +684,32 @@ export default function HomeScreen() {
     const likeIcon = interaction.isLiked ? "favorite" : "favorite-border";
     const saveColor = interaction.isSaved ? "#FF69B4" : "#FFFFFF";
     const saveIcon = interaction.isSaved ? "bookmark" : "bookmark-border";
+    const isVideoPlaying = playingMap.get(post.id) ?? false;
+    const playPauseIcon = isVideoPlaying ? "pause" : "play-arrow";
 
     return (
       <View style={styles.videoSlide}>
         <VideoPlayer
           videoUrl={post.video_url}
           postId={post.id}
-          isMuted={isMuted}
-          onToggleMute={() => { console.log("User toggled mute"); setIsMuted((p) => !p); }}
           isActive={isActive}
+          onPlayingChange={(playing) => {
+            setPlayingMap((prev) => { const m = new Map(prev); m.set(post.id, playing); return m; });
+          }}
+          onTogglePlayPause={(fn) => { toggleFnMap.current.set(post.id, fn); }}
         />
 
         <View style={styles.overlay}>
           <View style={styles.topControls}>
             <TouchableOpacity style={styles.filterButton} onPress={handleFilterPress} accessibilityLabel="Filter videos">
               <IconSymbol android_material_icon_name="filter-list" size={24} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.playPauseButton}
+              onPress={() => { console.log("User tapped play/pause overlay button"); toggleFnMap.current.get(post.id)?.(); }}
+              activeOpacity={0.7}
+            >
+              <IconSymbol android_material_icon_name={playPauseIcon} size={24} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
@@ -1027,19 +1036,7 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     padding: 12,
   },
-  muteButton: {
-    position: "absolute",
-    top: 110,
-    right: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 20,
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
-  },
+
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "space-between",
@@ -1048,9 +1045,18 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     flexDirection: "row",
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playPauseButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
