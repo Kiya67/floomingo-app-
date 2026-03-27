@@ -13,6 +13,7 @@ import {
   ImageSourcePropType,
   ScrollView,
   Share,
+  Animated,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Film } from "lucide-react-native";
@@ -98,6 +99,22 @@ function VideoPlayer({
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const overlayIconRef = useRef<"play" | "pause">("play");
+  const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showOverlay = (icon: "play" | "pause") => {
+    overlayIconRef.current = icon;
+    if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current);
+    overlayOpacity.setValue(1);
+    fadeOutTimerRef.current = setTimeout(() => {
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, 800);
+  };
 
   const player = useVideoPlayer(videoUrl, (p) => {
     p.loop = true;
@@ -107,6 +124,7 @@ function VideoPlayer({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current);
       try {
         if (player && player.playing) player.pause();
       } catch {}
@@ -146,10 +164,12 @@ function VideoPlayer({
         player.pause();
         setIsPlaying(false);
         onPlayingChange(false);
+        showOverlay("pause");
       } else {
         player.play();
         setIsPlaying(true);
         onPlayingChange(true);
+        showOverlay("play");
       }
     } catch (e) {
       console.error("Error toggling play/pause:", e);
@@ -162,6 +182,8 @@ function VideoPlayer({
 
   if (!videoUrl) return null;
 
+  const overlayIcon = overlayIconRef.current === "pause" ? "⏸" : "▶";
+
   return (
     <TouchableOpacity style={styles.video} activeOpacity={1} onPress={toggle}>
       <VideoView
@@ -172,11 +194,11 @@ function VideoPlayer({
         allowsFullscreen={false}
         allowsPictureInPicture={false}
       />
-      {!isPlaying && (
-        <View style={styles.playPauseIndicator}>
-          <IconSymbol android_material_icon_name="play-arrow" size={64} color="#FFFFFF" />
+      <Animated.View style={[styles.playPauseOverlay, { opacity: overlayOpacity }]}>
+        <View style={styles.playPauseIconCircle}>
+          <Text style={styles.playPauseIconText}>{overlayIcon}</Text>
         </View>
-      )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
@@ -1057,10 +1079,22 @@ const styles = StyleSheet.create({
   video: {
     ...StyleSheet.absoluteFillObject,
   },
-  playPauseIndicator: {
+  playPauseOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
+  },
+  playPauseIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playPauseIconText: {
+    fontSize: 32,
+    color: "#FFFFFF",
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

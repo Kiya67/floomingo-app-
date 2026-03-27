@@ -13,6 +13,7 @@ import {
   ImageSourcePropType,
   Share,
   Alert,
+  Animated,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Film } from "lucide-react-native";
@@ -28,6 +29,8 @@ import { Toast } from "@/components/ui/Toast";
 
 const PINK = "#FF3B7A";
 const { width, height } = Dimensions.get("window");
+
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 50 };
 
 function resolveImageSource(source: string | number | ImageSourcePropType | undefined): ImageSourcePropType {
   if (!source) return { uri: "" };
@@ -96,6 +99,22 @@ function VideoPlayer({
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const isMountedRef = useRef(true);
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const overlayIconRef = useRef<"play" | "pause">("play");
+  const fadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showOverlay = (icon: "play" | "pause") => {
+    overlayIconRef.current = icon;
+    if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current);
+    overlayOpacity.setValue(1);
+    fadeOutTimerRef.current = setTimeout(() => {
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, 800);
+  };
 
   const player = useVideoPlayer(videoUrl, (p) => {
     p.loop = true;
@@ -105,6 +124,7 @@ function VideoPlayer({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      if (fadeOutTimerRef.current) clearTimeout(fadeOutTimerRef.current);
       try {
         if (player && player.playing) player.pause();
       } catch {}
@@ -144,10 +164,12 @@ function VideoPlayer({
         player.pause();
         setIsPlaying(false);
         onPlayingChange(false);
+        showOverlay("pause");
       } else {
         player.play();
         setIsPlaying(true);
         onPlayingChange(true);
+        showOverlay("play");
       }
     } catch (e) {
       console.error("Explore feed: error toggling play/pause:", e);
@@ -160,6 +182,8 @@ function VideoPlayer({
 
   if (!videoUrl) return null;
 
+  const overlayIcon = overlayIconRef.current === "pause" ? "⏸" : "▶";
+
   return (
     <TouchableOpacity style={styles.video} activeOpacity={1} onPress={toggle}>
       <VideoView
@@ -170,11 +194,11 @@ function VideoPlayer({
         allowsFullscreen={false}
         allowsPictureInPicture={false}
       />
-      {!isPlaying && (
-        <View style={styles.playPauseIndicator}>
-          <IconSymbol android_material_icon_name="play-arrow" size={64} color="#FFFFFF" />
+      <Animated.View style={[styles.playPauseOverlay, { opacity: overlayOpacity }]}>
+        <View style={styles.playPauseIconCircle}>
+          <Text style={styles.playPauseIconText}>{overlayIcon}</Text>
         </View>
-      )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
@@ -374,8 +398,10 @@ export default function ExploreScreen() {
     });
   }, []);
 
-  const handleViewableItemsChanged = useCallback(
-    ({ viewableItems }: any) => {
+  const viewableItemsHandlerRef = useRef<(info: { viewableItems: any[] }) => void>(() => {});
+
+  useEffect(() => {
+    viewableItemsHandlerRef.current = ({ viewableItems }: any) => {
       if (viewableItems.length > 0) {
         const newIndex = viewableItems[0].index;
         setCurrentIndex(newIndex);
@@ -403,11 +429,12 @@ export default function ExploreScreen() {
           }
         }
       }
-    },
-    [feed, currentUserId, loadPostInteractions, viewedPostIds]
-  );
+    };
+  }, [feed, currentUserId, loadPostInteractions, viewedPostIds]);
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+  const handleViewableItemsChanged = useRef((info: any) => {
+    viewableItemsHandlerRef.current(info);
+  }).current;
 
   // ── Actions ──
   const handleLike = async (moment: Moment) => {
@@ -809,7 +836,7 @@ export default function ExploreScreen() {
         snapToAlignment="start"
         decelerationRate="fast"
         onViewableItemsChanged={handleViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+        viewabilityConfig={VIEWABILITY_CONFIG}
         onEndReached={() => {
           if (!loadingMore && hasMore && nextCursor) {
             setLoadingMore(true);
@@ -970,10 +997,22 @@ const styles = StyleSheet.create({
   video: {
     ...StyleSheet.absoluteFillObject,
   },
-  playPauseIndicator: {
+  playPauseOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
+  },
+  playPauseIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  playPauseIconText: {
+    fontSize: 32,
+    color: "#FFFFFF",
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
