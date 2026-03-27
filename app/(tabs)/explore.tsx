@@ -113,10 +113,6 @@ function formatDuration(seconds: number): string {
   return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
 }
 
-function formatViews(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-  return String(count);
-}
 
 // ─── Style factory ────────────────────────────────────────────────────────────
 function getStyles(c: Colors) {
@@ -220,18 +216,6 @@ function getStyles(c: Colors) {
       position: "absolute",
       bottom: 10,
       right: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      backgroundColor: "rgba(0,0,0,0.6)",
-      borderRadius: 8,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-    },
-    viewsBadge: {
-      position: "absolute",
-      bottom: 10,
-      left: 10,
       flexDirection: "row",
       alignItems: "center",
       gap: 4,
@@ -735,8 +719,12 @@ function ExperienceCard({
     router.push(`/search-location?q=${encodeURIComponent(item.location)}` as any);
   };
 
+  const handleCreatorPress = () => {
+    console.log("User tapped creator on explore card:", item.creator);
+    router.push(("/user/" + item.id) as any);
+  };
+
   const durationText = formatDuration(item.duration);
-  const viewsText = formatViews(item.view_count);
   const thumbSource = resolveImageSource(item.thumbnail_url);
   const avatarSource = resolveImageSource(item.avatar);
 
@@ -763,19 +751,18 @@ function ExperienceCard({
               <Feather name="clock" size={10} color="#FFF" />
               <Text style={styles.durationBadgeText}>{durationText}</Text>
             </View>
-            {/* Views badge */}
-            <View style={styles.viewsBadge}>
-              <Feather name="eye" size={10} color="#FFF" />
-              <Text style={styles.durationBadgeText}>{viewsText}</Text>
-            </View>
           </View>
 
           {/* Card info */}
           <View style={styles.cardInfo}>
             <View style={styles.cardInfoTop}>
-              <Image source={avatarSource} style={styles.cardAvatar} />
+              <TouchableOpacity activeOpacity={0.7} onPress={handleCreatorPress}>
+                <Image source={avatarSource} style={styles.cardAvatar} />
+              </TouchableOpacity>
               <View style={styles.cardTextBlock}>
-                <Text style={styles.cardCreator}>{item.creator}</Text>
+                <TouchableOpacity activeOpacity={0.7} onPress={handleCreatorPress}>
+                  <Text style={styles.cardCreator}>{item.creator}</Text>
+                </TouchableOpacity>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                 <TouchableOpacity
                   style={styles.locationRow}
