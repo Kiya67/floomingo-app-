@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -8,56 +8,50 @@ import {
   ImageSourcePropType,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   Dimensions,
   Share,
+  Animated,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { useVideoPlayer, VideoView } from "expo-video";
-import { Heart, Bookmark, Share2, MapPin, Play, ChevronDown, ChevronUp } from "lucide-react-native";
-import { apiGet, authenticatedPost } from "@/utils/api";
-import { supabase } from "@/lib/supabase";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const PINK = "#FF3B7A";
+// ─── Colors ──────────────────────────────────────────────────────────────────
+const PINK = "#FF6B9D";
+const ORANGE = "#FF8C42";
+const TEXT = "#1A1A1A";
+const TEXT_SECONDARY = "#6B6B6B";
+const TEXT_TERTIARY = "#A0A0A0";
+const BORDER = "rgba(0,0,0,0.07)";
+const INPUT_BG = "#F0F0F0";
+const SURFACE = "#FFFFFF";
+
 const { width } = Dimensions.get("window");
-const VIDEO_HEIGHT = width * (9 / 16);
+const VIDEO_HEIGHT = 250;
+const CARD_WIDTH = width - 32;
+const RELATED_THUMB_HEIGHT = CARD_WIDTH * (9 / 16);
 
-interface Place {
-  id: string;
-  place_id: string;
-  place_name: string;
-  place_address?: string;
-}
+// ─── Demo Data ────────────────────────────────────────────────────────────────
+const DEMO_EXPERIENCES = [
+  { id: "1", title: "Sunset in Santorini", description: "Golden hour views over the caldera", location: "Santorini, Greece", duration: 3600, view_count: 12400, thumbnail_url: "https://picsum.photos/seed/santorini/400/300", creator: "Sofia M.", avatar: "https://i.pravatar.cc/40?img=1", created_at: "2024-01-15T10:00:00Z" },
+  { id: "2", title: "Tokyo Street Food Tour", description: "Exploring the best ramen and sushi spots", location: "Tokyo, Japan", duration: 5400, view_count: 8900, thumbnail_url: "https://picsum.photos/seed/tokyo/400/300", creator: "Kenji T.", avatar: "https://i.pravatar.cc/40?img=2", created_at: "2024-01-14T10:00:00Z" },
+  { id: "3", title: "Hiking the Dolomites", description: "Epic mountain trails and alpine lakes", location: "Dolomites, Italy", duration: 7200, view_count: 21000, thumbnail_url: "https://picsum.photos/seed/dolomites/400/300", creator: "Marco R.", avatar: "https://i.pravatar.cc/40?img=3", created_at: "2024-01-13T10:00:00Z" },
+  { id: "4", title: "Bali Rice Terraces", description: "Peaceful walks through Tegallalang", location: "Ubud, Bali", duration: 2700, view_count: 15600, thumbnail_url: "https://picsum.photos/seed/bali/400/300", creator: "Ayu W.", avatar: "https://i.pravatar.cc/40?img=4", created_at: "2024-01-12T10:00:00Z" },
+  { id: "5", title: "Northern Lights in Iceland", description: "Chasing the aurora borealis", location: "Reykjavik, Iceland", duration: 4800, view_count: 33000, thumbnail_url: "https://picsum.photos/seed/iceland/400/300", creator: "Bjorn H.", avatar: "https://i.pravatar.cc/40?img=5", created_at: "2024-01-11T10:00:00Z" },
+  { id: "6", title: "Safari in Serengeti", description: "Wildlife encounters on the great plains", location: "Serengeti, Tanzania", duration: 6600, view_count: 19200, thumbnail_url: "https://picsum.photos/seed/serengeti/400/300", creator: "Amara N.", avatar: "https://i.pravatar.cc/40?img=6", created_at: "2024-01-10T10:00:00Z" },
+];
 
-interface UserSummary {
+interface DemoExperience {
   id: string;
-  username: string;
-  avatar_url?: string;
-}
-
-interface MomentSummary {
-  id: string;
-  video_url: string;
-  thumbnail_url?: string;
-  caption?: string;
-}
-
-interface Experience {
-  id: string;
-  user_id: string;
-  video_url: string;
-  thumbnail_url?: string;
   title: string;
-  description?: string;
-  linked_moment_id?: string;
-  linked_moment?: MomentSummary;
-  likes_count: number;
-  bookmarks_count: number;
-  is_liked: boolean;
-  is_bookmarked: boolean;
-  places: Place[];
-  user: UserSummary;
+  description: string;
+  location: string;
+  duration: number;
+  view_count: number;
+  thumbnail_url: string;
+  creator: string;
+  avatar: string;
   created_at: string;
 }
 
@@ -67,351 +61,254 @@ function resolveImageSource(source: string | number | ImageSourcePropType | unde
   return source as ImageSourcePropType;
 }
 
-function getInitials(name: string): string {
-  if (!name) return "?";
-  const parts = name.split(/[\s_]+/);
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  return name.substring(0, 2).toUpperCase();
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
 }
 
-function ExperienceVideoPlayer({ videoUrl, experienceId }: { videoUrl: string; experienceId: string }) {
-  const isMountedRef = useRef(true);
-  const player = useVideoPlayer(videoUrl, (p) => {
-    p.loop = false;
-  });
+function formatViews(count: number): string {
+  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+  return String(count);
+}
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    const t = setTimeout(() => {
-      if (isMountedRef.current) {
-        try {
-          player.play();
-          console.log("Experience player: video started for:", experienceId);
-        } catch (e) {
-          console.error("Experience player: error starting video:", e);
-        }
-      }
-    }, 400);
-    return () => {
-      isMountedRef.current = false;
-      clearTimeout(t);
-      try { if (player?.playing) player.pause(); } catch {}
-    };
-  }, [player, experienceId]);
-
-  const handleTap = useCallback(() => {
-    console.log("User tapped experience video - toggling play/pause:", experienceId);
-    if (!player) return;
-    try {
-      if (player.playing) { player.pause(); } else { player.play(); }
-    } catch {}
-  }, [player, experienceId]);
-
+// ─── Gradient Border Card (related) ──────────────────────────────────────────
+function GradientBorderCard({ children }: { children: React.ReactNode }) {
   return (
-    <TouchableOpacity style={videoStyles.container} activeOpacity={1} onPress={handleTap}>
-      <VideoView
-        style={videoStyles.video}
-        player={player}
-        nativeControls={false}
-        contentFit="contain"
-        allowsFullscreen={false}
-        allowsPictureInPicture={false}
-      />
-    </TouchableOpacity>
+    <LinearGradient
+      colors={[PINK, ORANGE]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.gradientBorder}
+    >
+      <View style={styles.cardInner}>
+        {children}
+      </View>
+    </LinearGradient>
   );
 }
 
-const videoStyles = StyleSheet.create({
-  container: { width, height: VIDEO_HEIGHT, backgroundColor: "#000" },
-  video: { width, height: VIDEO_HEIGHT },
-});
-
-function SuggestedCard({ experience, onPress }: { experience: Experience; onPress: () => void }) {
-  const THUMB_H = (width - 64) * (9 / 16);
-  const username = experience.user?.username || "unknown";
-  const avatarUrl = experience.user?.avatar_url || "";
-  const initials = getInitials(username);
-  const title = experience.title || "Untitled";
-  const hasThumbnail = !!experience.thumbnail_url;
+// ─── Related Card ─────────────────────────────────────────────────────────────
+function RelatedCard({ item, onPress }: { item: DemoExperience; onPress: () => void }) {
+  const thumbSource = resolveImageSource(item.thumbnail_url);
+  const avatarSource = resolveImageSource(item.avatar);
+  const durationText = formatDuration(item.duration);
+  const viewsText = formatViews(item.view_count);
 
   return (
-    <TouchableOpacity style={sugStyles.card} onPress={onPress} activeOpacity={0.9}>
-      <View style={[sugStyles.thumb, { height: THUMB_H }]}>
-        {hasThumbnail ? (
-          <Image source={resolveImageSource(experience.thumbnail_url)} style={[sugStyles.thumbImg, { height: THUMB_H }]} resizeMode="cover" />
-        ) : (
-          <View style={[sugStyles.thumbPlaceholder, { height: THUMB_H }]}>
-            <Play size={24} color="rgba(255,255,255,0.4)" strokeWidth={1.5} />
+    <TouchableOpacity onPress={onPress} activeOpacity={0.9}>
+      <GradientBorderCard>
+        <View style={styles.relatedThumbContainer}>
+          <Image source={thumbSource} style={styles.relatedThumb} resizeMode="cover" />
+          <View style={styles.durationBadge}>
+            <Feather name="clock" size={10} color="#FFF" />
+            <Text style={styles.badgeText}>{durationText}</Text>
           </View>
-        )}
-      </View>
-      <View style={sugStyles.info}>
-        <Text style={sugStyles.title} numberOfLines={2}>{title}</Text>
-        <View style={sugStyles.creatorRow}>
-          {avatarUrl ? (
-            <Image source={resolveImageSource(avatarUrl)} style={sugStyles.avatar} />
-          ) : (
-            <View style={sugStyles.avatarFallback}>
-              <Text style={sugStyles.avatarInitials}>{initials}</Text>
-            </View>
-          )}
-          <Text style={sugStyles.creatorName}>@{username}</Text>
+          <View style={styles.viewsBadge}>
+            <Feather name="eye" size={10} color="#FFF" />
+            <Text style={styles.badgeText}>{viewsText}</Text>
+          </View>
         </View>
-      </View>
+        <View style={styles.relatedInfo}>
+          <Image source={avatarSource} style={styles.relatedAvatar} />
+          <View style={styles.relatedTextBlock}>
+            <Text style={styles.relatedCreator}>{item.creator}</Text>
+            <Text style={styles.relatedTitle} numberOfLines={2}>{item.title}</Text>
+            <View style={styles.relatedLocationRow}>
+              <Feather name="map-pin" size={11} color={PINK} />
+              <Text style={styles.relatedLocation} numberOfLines={1}>{item.location}</Text>
+            </View>
+          </View>
+        </View>
+      </GradientBorderCard>
     </TouchableOpacity>
   );
 }
 
-const sugStyles = StyleSheet.create({
-  card: { marginBottom: 16 },
-  thumb: { borderRadius: 12, overflow: "hidden" },
-  thumbImg: { width: "100%", backgroundColor: "#E5E7EB" },
-  thumbPlaceholder: { width: "100%", backgroundColor: "#1A1A2E", justifyContent: "center", alignItems: "center" },
-  info: { paddingTop: 8, gap: 4 },
-  title: { fontSize: 14, fontWeight: "700", color: "#111827", lineHeight: 20 },
-  creatorRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  avatar: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#E5E7EB" },
-  avatarFallback: { width: 20, height: 20, borderRadius: 10, backgroundColor: PINK, justifyContent: "center", alignItems: "center" },
-  avatarInitials: { fontSize: 8, fontWeight: "700", color: "#FFF" },
-  creatorName: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
-});
-
-export default function ExperiencePlayerScreen() {
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function ExperienceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const [experience, setExperience] = useState<Experience | null>(null);
-  const [suggested, setSuggested] = useState<Experience[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const [likesCount, setLikesCount] = useState(0);
-  const [bookmarksCount, setBookmarksCount] = useState(0);
-  const [descExpanded, setDescExpanded] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [progress] = useState(0.35);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id);
-    });
-  }, []);
+  const experience = DEMO_EXPERIENCES.find((e) => e.id === id) || DEMO_EXPERIENCES[0];
+  const related = DEMO_EXPERIENCES.filter((e) => e.id !== experience.id).slice(0, 4);
 
-  useEffect(() => {
-    if (!id) return;
-    console.log("ExperiencePlayer: loading experience:", id);
-    setLoading(true);
-    Promise.all([
-      apiGet<Experience>(`/api/experiences/${id}`),
-      apiGet<{ experiences: Experience[]; next_cursor: string | null }>("/api/experiences?limit=20"),
-    ])
-      .then(([exp, feed]) => {
-        setExperience(exp);
-        setIsLiked(exp.is_liked);
-        setIsBookmarked(exp.is_bookmarked);
-        setLikesCount(Number(exp.likes_count) || 0);
-        setBookmarksCount(Number(exp.bookmarks_count) || 0);
-        const others = (feed?.experiences || []).filter((e) => e.id !== id).slice(0, 5);
-        setSuggested(others);
-        setError(null);
-      })
-      .catch((e) => {
-        console.error("ExperiencePlayer: load error:", e);
-        setError("Couldn't load this experience.");
-      })
-      .finally(() => setLoading(false));
-  }, [id]);
+  const thumbSource = resolveImageSource(experience.thumbnail_url);
+  const avatarSource = resolveImageSource(experience.avatar);
+  const viewsText = formatViews(experience.view_count);
+  const durationText = formatDuration(experience.duration);
 
-  const handleLike = useCallback(async () => {
-    console.log("User tapped like on experience:", id);
-    if (!currentUserId || !id) return;
-    const wasLiked = isLiked;
-    setIsLiked(!wasLiked);
-    setLikesCount((c) => wasLiked ? Math.max(0, c - 1) : c + 1);
-    try {
-      const res = await authenticatedPost<{ liked: boolean; likes_count: number }>(`/api/experiences/${id}/like`, {});
-      setIsLiked(res.liked);
-      setLikesCount(Number(res.likes_count) || 0);
-    } catch (e) {
-      console.error("ExperiencePlayer: like error:", e);
-      setIsLiked(wasLiked);
-      setLikesCount((c) => wasLiked ? c + 1 : Math.max(0, c - 1));
-    }
-  }, [id, currentUserId, isLiked]);
+  const likeColor = isLiked ? PINK : TEXT_TERTIARY;
+  const bookmarkColor = isBookmarked ? PINK : TEXT_TERTIARY;
+  const likeFill = isLiked ? PINK : "transparent";
+  const bookmarkFill = isBookmarked ? PINK : "transparent";
 
-  const handleBookmark = useCallback(async () => {
-    console.log("User tapped bookmark on experience:", id);
-    if (!currentUserId || !id) return;
-    const wasBookmarked = isBookmarked;
-    setIsBookmarked(!wasBookmarked);
-    setBookmarksCount((c) => wasBookmarked ? Math.max(0, c - 1) : c + 1);
-    try {
-      const res = await authenticatedPost<{ bookmarked: boolean; bookmarks_count: number }>(`/api/experiences/${id}/bookmark`, {});
-      setIsBookmarked(res.bookmarked);
-      setBookmarksCount(Number(res.bookmarks_count) || 0);
-    } catch (e) {
-      console.error("ExperiencePlayer: bookmark error:", e);
-      setIsBookmarked(wasBookmarked);
-      setBookmarksCount((c) => wasBookmarked ? c + 1 : Math.max(0, c - 1));
-    }
-  }, [id, currentUserId, isBookmarked]);
+  const handleLike = useCallback(() => {
+    console.log("User tapped like on experience detail:", experience.id);
+    setIsLiked((v) => !v);
+  }, [experience.id]);
+
+  const handleBookmark = useCallback(() => {
+    console.log("User tapped bookmark on experience detail:", experience.id);
+    setIsBookmarked((v) => !v);
+  }, [experience.id]);
+
+  const handleFollow = useCallback(() => {
+    console.log("User tapped Follow button for creator:", experience.creator);
+    setIsFollowing((v) => !v);
+  }, [experience.creator]);
 
   const handleShare = useCallback(async () => {
-    console.log("User tapped share on experience:", id);
+    console.log("User tapped share on experience detail:", experience.id);
     try {
-      await Share.share({ message: experience?.title || "Check out this experience on Floomingo!" });
+      await Share.share({ message: `${experience.title} — Check it out on Floomingo!` });
     } catch (e) {
-      console.error("ExperiencePlayer: share error:", e);
+      console.error("Share error:", e);
     }
-  }, [id, experience]);
+  }, [experience]);
 
-  const handleProfilePress = useCallback(() => {
-    if (!experience?.user_id) return;
-    console.log("User tapped creator profile on experience:", experience.user_id);
-    router.push(`/user/${experience.user_id}` as any);
-  }, [experience, router]);
+  const handleComment = useCallback(() => {
+    console.log("User tapped comment on experience detail:", experience.id);
+  }, [experience.id]);
 
-  const handlePlacePress = useCallback((place: Place) => {
-    console.log("User tapped place pill on experience:", place.place_name);
-    router.push(`/location/${place.place_id}` as any);
+  const handleMore = useCallback(() => {
+    console.log("User tapped more (...) on experience detail:", experience.id);
+  }, [experience.id]);
+
+  const handleRelatedPress = useCallback((item: DemoExperience) => {
+    console.log("User tapped related experience:", item.id, item.title);
+    router.push(`/experience/${item.id}` as any);
   }, [router]);
-
-  const handleSuggestedPress = useCallback((exp: Experience) => {
-    console.log("User tapped suggested experience:", exp.id, exp.title);
-    router.push(`/experience/${exp.id}` as any);
-  }, [router]);
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Stack.Screen options={{ title: "Experience", headerBackTitle: "" }} />
-        <View style={styles.loadingState}>
-          <ActivityIndicator size="large" color={PINK} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error || !experience) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Stack.Screen options={{ title: "Experience", headerBackTitle: "" }} />
-        <View style={styles.errorState}>
-          <Play size={48} color="#D1D5DB" strokeWidth={1.5} />
-          <Text style={styles.errorTitle}>Couldn't load experience</Text>
-          <Text style={styles.errorSubtitle}>{error || "Something went wrong"}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const username = experience.user?.username || "unknown";
-  const avatarUrl = experience.user?.avatar_url || "";
-  const initials = getInitials(username);
-  const title = experience.title || "Untitled Experience";
-  const description = experience.description || "";
-  const descLong = description.length > 150;
-  const descDisplay = descLong && !descExpanded ? description.substring(0, 150) + "…" : description;
-  const likesText = String(likesCount);
-  const bookmarksText = String(bookmarksCount);
-  const likeColor = isLiked ? PINK : "#374151";
-  const bookmarkColor = isBookmarked ? PINK : "#374151";
 
   return (
     <>
-      <Stack.Screen options={{ title: "", headerBackTitle: "", headerTintColor: "#111827" }} />
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Video */}
-        <ExperienceVideoPlayer videoUrl={experience.video_url} experienceId={experience.id} />
+      <Stack.Screen
+        options={{
+          title: "",
+          headerBackTitle: "",
+          headerTintColor: TEXT,
+          headerStyle: { backgroundColor: SURFACE },
+          headerShadowVisible: false,
+        }}
+      />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Video placeholder */}
+        <View style={styles.videoContainer}>
+          <Image source={thumbSource} style={styles.videoThumb} resizeMode="cover" />
+          <View style={styles.videoOverlay} />
+          <View style={styles.playButtonCircle}>
+            <Feather name="play" size={32} color="#FFF" />
+          </View>
+          {/* Meta overlay */}
+          <View style={styles.videoMeta}>
+            <View style={styles.videoBadge}>
+              <Feather name="eye" size={11} color="#FFF" />
+              <Text style={styles.videoBadgeText}>{viewsText}</Text>
+            </View>
+            <View style={styles.videoBadge}>
+              <Feather name="clock" size={11} color="#FFF" />
+              <Text style={styles.videoBadgeText}>{durationText}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Progress bar */}
+        <View style={styles.progressTrack}>
+          <LinearGradient
+            colors={[PINK, ORANGE]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressFill, { width: `${progress * 100}%` }]}
+          />
+        </View>
 
         <View style={styles.body}>
           {/* Creator row */}
           <View style={styles.creatorRow}>
-            <TouchableOpacity style={styles.creatorLeft} onPress={handleProfilePress} activeOpacity={0.8}>
-              {avatarUrl ? (
-                <Image source={resolveImageSource(avatarUrl)} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </View>
-              )}
-              <Text style={styles.creatorName}>@{username}</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.creatorLeft}>
+              <Image source={avatarSource} style={styles.avatar} />
+              <Text style={styles.creatorName}>{experience.creator}</Text>
+              <TouchableOpacity
+                onPress={handleFollow}
+                activeOpacity={0.85}
+              >
+                {isFollowing ? (
+                  <View style={styles.followingBtn}>
+                    <Text style={styles.followingBtnText}>Following</Text>
+                  </View>
+                ) : (
+                  <LinearGradient
+                    colors={[PINK, ORANGE]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.followBtn}
+                  >
+                    <Text style={styles.followBtnText}>Follow</Text>
+                  </LinearGradient>
+                )}
+              </TouchableOpacity>
+            </View>
 
-          {/* Action row */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleLike} activeOpacity={0.8}>
-              <Heart size={22} color={likeColor} fill={isLiked ? PINK : "transparent"} strokeWidth={2} />
-              <Text style={[styles.actionCount, isLiked && { color: PINK }]}>{likesText}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleBookmark} activeOpacity={0.8}>
-              <Bookmark size={22} color={bookmarkColor} fill={isBookmarked ? PINK : "transparent"} strokeWidth={2} />
-              <Text style={[styles.actionCount, isBookmarked && { color: PINK }]}>{bookmarksText}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.8}>
-              <Share2 size={22} color="#374151" strokeWidth={2} />
-              <Text style={styles.actionCount}>Share</Text>
-            </TouchableOpacity>
+            {/* Right action icons */}
+            <View style={styles.creatorActions}>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleLike} activeOpacity={0.7}>
+                <Feather name="heart" size={20} color={likeColor} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleComment} activeOpacity={0.7}>
+                <Feather name="message-circle" size={20} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleBookmark} activeOpacity={0.7}>
+                <Feather name="bookmark" size={20} color={bookmarkColor} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleShare} activeOpacity={0.7}>
+                <Feather name="send" size={20} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={handleMore} activeOpacity={0.7}>
+                <Feather name="more-horizontal" size={20} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Title */}
-          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.title}>{experience.title}</Text>
 
           {/* Description */}
-          {description ? (
-            <View style={styles.descSection}>
-              <Text style={styles.description}>{descDisplay}</Text>
-              {descLong ? (
-                <TouchableOpacity
-                  style={styles.expandBtn}
-                  onPress={() => {
-                    console.log("User tapped expand/collapse description");
-                    setDescExpanded((v) => !v);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {descExpanded ? (
-                    <ChevronUp size={16} color={PINK} strokeWidth={2} />
-                  ) : (
-                    <ChevronDown size={16} color={PINK} strokeWidth={2} />
-                  )}
-                  <Text style={styles.expandBtnText}>{descExpanded ? "Show less" : "Show more"}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+          {experience.description ? (
+            <Text style={styles.description}>{experience.description}</Text>
           ) : null}
 
-          {/* Places */}
-          {experience.places && experience.places.length > 0 ? (
-            <View style={styles.placesSection}>
-              <View style={styles.placesList}>
-                {experience.places.map((place) => (
-                  <TouchableOpacity
-                    key={place.id}
-                    style={styles.placePill}
-                    onPress={() => handlePlacePress(place)}
-                    activeOpacity={0.8}
-                  >
-                    <MapPin size={13} color={PINK} strokeWidth={2} />
-                    <Text style={styles.placePillText}>{place.place_name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          ) : null}
+          {/* Location */}
+          <View style={styles.locationRow}>
+            <Feather name="map-pin" size={13} color={PINK} />
+            <Text style={styles.locationText}>{experience.location}</Text>
+          </View>
 
           {/* Divider */}
           <View style={styles.divider} />
 
-          {/* Suggested */}
-          {suggested.length > 0 ? (
-            <View style={styles.suggestedSection}>
-              <Text style={styles.suggestedTitle}>More experiences</Text>
-              {suggested.map((exp) => (
-                <SuggestedCard key={exp.id} experience={exp} onPress={() => handleSuggestedPress(exp)} />
-              ))}
-            </View>
-          ) : null}
+          {/* Related */}
+          <Text style={styles.relatedTitle}>More experiences</Text>
+          <View style={styles.relatedList}>
+            {related.map((item) => (
+              <RelatedCard
+                key={item.id}
+                item={item}
+                onPress={() => handleRelatedPress(item)}
+              />
+            ))}
+          </View>
         </View>
       </ScrollView>
     </>
@@ -419,32 +316,266 @@ export default function ExperiencePlayerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFF" },
-  scrollContent: { paddingBottom: 100 },
-  loadingState: { flex: 1, justifyContent: "center", alignItems: "center" },
-  errorState: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, paddingTop: 80 },
-  errorTitle: { fontSize: 18, fontWeight: "700", color: "#374151", marginTop: 16 },
-  errorSubtitle: { fontSize: 14, color: "#9CA3AF", marginTop: 8, textAlign: "center" },
-  body: { paddingHorizontal: 16, paddingTop: 16 },
-  creatorRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  creatorLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#E5E7EB" },
-  avatarFallback: { width: 40, height: 40, borderRadius: 20, backgroundColor: PINK, justifyContent: "center", alignItems: "center" },
-  avatarInitials: { fontSize: 14, fontWeight: "700", color: "#FFF" },
-  creatorName: { fontSize: 15, fontWeight: "600", color: "#111827" },
-  actionRow: { flexDirection: "row", gap: 20, marginBottom: 16 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
-  actionCount: { fontSize: 14, fontWeight: "600", color: "#374151" },
-  title: { fontSize: 20, fontWeight: "800", color: "#111827", letterSpacing: -0.3, lineHeight: 28, marginBottom: 12 },
-  descSection: { marginBottom: 16 },
-  description: { fontSize: 15, color: "#4B5563", lineHeight: 22 },
-  expandBtn: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
-  expandBtnText: { fontSize: 14, color: PINK, fontWeight: "600" },
-  placesSection: { marginBottom: 16 },
-  placesList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  placePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,59,122,0.08)", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "rgba(255,59,122,0.2)" },
-  placePillText: { fontSize: 13, color: PINK, fontWeight: "600" },
-  divider: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 16 },
-  suggestedSection: {},
-  suggestedTitle: { fontSize: 17, fontWeight: "700", color: "#111827", marginBottom: 16, letterSpacing: -0.2 },
+  container: {
+    flex: 1,
+    backgroundColor: SURFACE,
+  },
+  // ── Video ──
+  videoContainer: {
+    width,
+    height: VIDEO_HEIGHT,
+    backgroundColor: "#111",
+    position: "relative",
+    overflow: "hidden",
+  },
+  videoThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  videoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  playButtonCircle: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -28,
+    marginLeft: -28,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  videoMeta: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    flexDirection: "row",
+    gap: 8,
+  },
+  videoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  videoBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+  // ── Progress bar ──
+  progressTrack: {
+    height: 3,
+    backgroundColor: "#E5E7EB",
+    width: "100%",
+  },
+  progressFill: {
+    height: "100%",
+  },
+  // ── Body ──
+  body: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  // ── Creator row ──
+  creatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  creatorLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: INPUT_BG,
+  },
+  creatorName: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: TEXT,
+  },
+  followBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  followBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+  followingBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    backgroundColor: INPUT_BG,
+  },
+  followingBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: TEXT_SECONDARY,
+  },
+  creatorActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  iconBtn: {
+    padding: 6,
+  },
+  // ── Title & description ──
+  title: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: TEXT,
+    letterSpacing: -0.3,
+    lineHeight: 26,
+    marginBottom: 8,
+  },
+  description: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    lineHeight: 21,
+    marginBottom: 10,
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  locationText: {
+    fontSize: 13,
+    color: TEXT_SECONDARY,
+    fontWeight: "500",
+  },
+  // ── Divider ──
+  divider: {
+    height: 1,
+    backgroundColor: "#F0F0F0",
+    marginVertical: 20,
+  },
+  // ── Related ──
+  relatedTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: TEXT,
+    letterSpacing: -0.2,
+    marginBottom: 14,
+  },
+  relatedList: {
+    gap: 14,
+  },
+  // ── Gradient border card ──
+  gradientBorder: {
+    borderRadius: 18,
+    padding: 2.5,
+    shadowColor: PINK,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  cardInner: {
+    backgroundColor: SURFACE,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  // ── Related card ──
+  relatedThumbContainer: {
+    width: "100%",
+    height: RELATED_THUMB_HEIGHT,
+    backgroundColor: INPUT_BG,
+    overflow: "hidden",
+  },
+  relatedThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  durationBadge: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  viewsBadge: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+  relatedInfo: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 12,
+    gap: 10,
+  },
+  relatedAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: INPUT_BG,
+    marginTop: 2,
+  },
+  relatedTextBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  relatedCreator: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: TEXT_SECONDARY,
+  },
+  relatedTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: TEXT,
+    lineHeight: 20,
+  },
+  relatedLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  relatedLocation: {
+    fontSize: 11,
+    color: TEXT_TERTIARY,
+    flex: 1,
+  },
 });

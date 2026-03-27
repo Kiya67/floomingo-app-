@@ -16,14 +16,14 @@ import {
   Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { MapPin, Eye, Clock, Search, SlidersHorizontal, Film } from "lucide-react-native";
+import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
 const PINK = "#FF6B9D";
 const ORANGE = "#FF8C42";
-const BG = "#F8F8F8";
+const BG = "#FFFFFF";
 const SURFACE = "#FFFFFF";
 const TEXT = "#1A1A1A";
 const TEXT_SECONDARY = "#6B6B6B";
@@ -32,16 +32,17 @@ const BORDER = "rgba(0,0,0,0.07)";
 const INPUT_BG = "#F0F0F0";
 
 const { width } = Dimensions.get("window");
-const THUMB_HEIGHT = (width - 32) * (9 / 16);
+const CARD_WIDTH = width - 32;
+const THUMB_HEIGHT = CARD_WIDTH * (9 / 16);
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
 const DEMO_EXPERIENCES = [
-  { id: "1", title: "Sunset in Santorini", description: "Golden hour views over the caldera", location: "Santorini, Greece", duration: 3600, view_count: 12400, thumbnail_url: "https://picsum.photos/seed/santorini/400/300", created_at: "2024-01-15T10:00:00Z" },
-  { id: "2", title: "Tokyo Street Food Tour", description: "Exploring the best ramen and sushi spots", location: "Tokyo, Japan", duration: 5400, view_count: 8900, thumbnail_url: "https://picsum.photos/seed/tokyo/400/300", created_at: "2024-01-14T10:00:00Z" },
-  { id: "3", title: "Hiking the Dolomites", description: "Epic mountain trails and alpine lakes", location: "Dolomites, Italy", duration: 7200, view_count: 21000, thumbnail_url: "https://picsum.photos/seed/dolomites/400/300", created_at: "2024-01-13T10:00:00Z" },
-  { id: "4", title: "Bali Rice Terraces", description: "Peaceful walks through Tegallalang", location: "Ubud, Bali", duration: 2700, view_count: 15600, thumbnail_url: "https://picsum.photos/seed/bali/400/300", created_at: "2024-01-12T10:00:00Z" },
-  { id: "5", title: "Northern Lights in Iceland", description: "Chasing the aurora borealis", location: "Reykjavik, Iceland", duration: 4800, view_count: 33000, thumbnail_url: "https://picsum.photos/seed/iceland/400/300", created_at: "2024-01-11T10:00:00Z" },
-  { id: "6", title: "Safari in Serengeti", description: "Wildlife encounters on the great plains", location: "Serengeti, Tanzania", duration: 6600, view_count: 19200, thumbnail_url: "https://picsum.photos/seed/serengeti/400/300", created_at: "2024-01-10T10:00:00Z" },
+  { id: "1", title: "Sunset in Santorini", description: "Golden hour views over the caldera", location: "Santorini, Greece", duration: 3600, view_count: 12400, thumbnail_url: "https://picsum.photos/seed/santorini/400/300", creator: "Sofia M.", avatar: "https://i.pravatar.cc/40?img=1", created_at: "2024-01-15T10:00:00Z" },
+  { id: "2", title: "Tokyo Street Food Tour", description: "Exploring the best ramen and sushi spots", location: "Tokyo, Japan", duration: 5400, view_count: 8900, thumbnail_url: "https://picsum.photos/seed/tokyo/400/300", creator: "Kenji T.", avatar: "https://i.pravatar.cc/40?img=2", created_at: "2024-01-14T10:00:00Z" },
+  { id: "3", title: "Hiking the Dolomites", description: "Epic mountain trails and alpine lakes", location: "Dolomites, Italy", duration: 7200, view_count: 21000, thumbnail_url: "https://picsum.photos/seed/dolomites/400/300", creator: "Marco R.", avatar: "https://i.pravatar.cc/40?img=3", created_at: "2024-01-13T10:00:00Z" },
+  { id: "4", title: "Bali Rice Terraces", description: "Peaceful walks through Tegallalang", location: "Ubud, Bali", duration: 2700, view_count: 15600, thumbnail_url: "https://picsum.photos/seed/bali/400/300", creator: "Ayu W.", avatar: "https://i.pravatar.cc/40?img=4", created_at: "2024-01-12T10:00:00Z" },
+  { id: "5", title: "Northern Lights in Iceland", description: "Chasing the aurora borealis", location: "Reykjavik, Iceland", duration: 4800, view_count: 33000, thumbnail_url: "https://picsum.photos/seed/iceland/400/300", creator: "Bjorn H.", avatar: "https://i.pravatar.cc/40?img=5", created_at: "2024-01-11T10:00:00Z" },
+  { id: "6", title: "Safari in Serengeti", description: "Wildlife encounters on the great plains", location: "Serengeti, Tanzania", duration: 6600, view_count: 19200, thumbnail_url: "https://picsum.photos/seed/serengeti/400/300", creator: "Amara N.", avatar: "https://i.pravatar.cc/40?img=6", created_at: "2024-01-10T10:00:00Z" },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +54,8 @@ interface DemoExperience {
   duration: number;
   view_count: number;
   thumbnail_url: string;
+  creator: string;
+  avatar: string;
   created_at: string;
 }
 
@@ -62,15 +65,20 @@ type SortOption = (typeof SORT_OPTIONS)[number];
 const DURATION_OPTIONS = ["< 30 min", "30–60 min", "1–2 hrs", "2+ hrs"] as const;
 type DurationOption = (typeof DURATION_OPTIONS)[number];
 
+const PLACE_SUGGESTIONS = ["Paris, France", "Tokyo, Japan", "New York, USA", "Bali, Indonesia"];
+const KEYWORD_CHIPS = ["Food", "Travel", "Nature", "City", "Adventure", "Culture"];
+
 interface FilterState {
   sort: SortOption;
   duration: DurationOption | null;
+  place: string;
+  keywords: string[];
 }
 
-const DEFAULT_FILTERS: FilterState = { sort: "Newest", duration: null };
+const DEFAULT_FILTERS: FilterState = { sort: "Newest", duration: null, place: "", keywords: [] };
 
 function isFilterActive(f: FilterState): boolean {
-  return f.sort !== "Newest" || f.duration !== null;
+  return f.sort !== "Newest" || f.duration !== null || f.place !== "" || f.keywords.length > 0;
 }
 
 function resolveImageSource(
@@ -83,7 +91,7 @@ function resolveImageSource(
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
-  if (mins < 60) return `${mins} min`;
+  if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
   const rem = mins % 60;
   return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
@@ -92,6 +100,22 @@ function formatDuration(seconds: number): string {
 function formatViews(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
   return String(count);
+}
+
+// ─── Gradient Border Card ─────────────────────────────────────────────────────
+function GradientBorderCard({ children }: { children: React.ReactNode }) {
+  return (
+    <LinearGradient
+      colors={[PINK, ORANGE]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.gradientBorder}
+    >
+      <View style={styles.cardInner}>
+        {children}
+      </View>
+    </LinearGradient>
+  );
 }
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
@@ -107,24 +131,56 @@ function FilterSheet({
   onApply: (f: FilterState) => void;
 }) {
   const [draft, setDraft] = useState<FilterState>(filters);
+  const [placeInput, setPlaceInput] = useState(filters.place);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    if (visible) setDraft(filters);
+    if (visible) {
+      setDraft(filters);
+      setPlaceInput(filters.place);
+    }
   }, [visible, filters]);
 
   const handleApply = () => {
-    console.log("User tapped Apply Filters on explore filter sheet (iOS):", draft);
-    onApply(draft);
+    const final = { ...draft, place: placeInput };
+    console.log("User tapped Apply Filters on explore filter sheet (iOS):", final);
+    onApply(final);
     onClose();
   };
 
   const handleReset = () => {
     console.log("User tapped Reset on explore filter sheet (iOS)");
     setDraft(DEFAULT_FILTERS);
+    setPlaceInput("");
     onApply(DEFAULT_FILTERS);
     onClose();
   };
+
+  const handlePlaceInput = (text: string) => {
+    setPlaceInput(text);
+    setShowSuggestions(text.length > 0);
+    setDraft((d) => ({ ...d, place: text }));
+  };
+
+  const handleSelectPlace = (place: string) => {
+    console.log("User selected place suggestion (iOS):", place);
+    setPlaceInput(place);
+    setDraft((d) => ({ ...d, place }));
+    setShowSuggestions(false);
+  };
+
+  const toggleKeyword = (kw: string) => {
+    console.log("User toggled keyword chip (iOS):", kw);
+    setDraft((d) => {
+      const has = d.keywords.includes(kw);
+      return { ...d, keywords: has ? d.keywords.filter((k) => k !== kw) : [...d.keywords, kw] };
+    });
+  };
+
+  const filteredSuggestions = PLACE_SUGGESTIONS.filter((p) =>
+    p.toLowerCase().includes(placeInput.toLowerCase())
+  );
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -153,12 +209,7 @@ function FilterSheet({
                     activeOpacity={0.7}
                   >
                     {isSelected ? (
-                      <LinearGradient
-                        colors={[PINK, ORANGE]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.chipSelected}
-                      >
+                      <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.chipSelected}>
                         <Text style={styles.chipTextSelected}>{opt}</Text>
                       </LinearGradient>
                     ) : (
@@ -181,25 +232,85 @@ function FilterSheet({
                     key={opt}
                     onPress={() => {
                       console.log("User selected duration option (iOS):", opt);
-                      setDraft((d) => ({
-                        ...d,
-                        duration: d.duration === opt ? null : opt,
-                      }));
+                      setDraft((d) => ({ ...d, duration: d.duration === opt ? null : opt }));
                     }}
                     activeOpacity={0.7}
                   >
                     {isSelected ? (
-                      <LinearGradient
-                        colors={[PINK, ORANGE]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={styles.chipSelected}
-                      >
+                      <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.chipSelected}>
                         <Text style={styles.chipTextSelected}>{opt}</Text>
                       </LinearGradient>
                     ) : (
                       <View style={styles.chip}>
                         <Text style={styles.chipText}>{opt}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Location */}
+            <Text style={[styles.sheetSectionLabel, { marginTop: 24 }]}>Filter by place</Text>
+            <View style={styles.filterInputWrapper}>
+              <Feather name="map-pin" size={16} color={TEXT_TERTIARY} style={styles.filterInputIcon} />
+              <TextInput
+                style={styles.filterInput}
+                placeholder="Search a place..."
+                placeholderTextColor={TEXT_TERTIARY}
+                value={placeInput}
+                onChangeText={handlePlaceInput}
+                autoCapitalize="words"
+                autoCorrect={false}
+                onFocus={() => setShowSuggestions(placeInput.length > 0)}
+              />
+              {placeInput.length > 0 && (
+                <TouchableOpacity onPress={() => { setPlaceInput(""); setDraft((d) => ({ ...d, place: "" })); setShowSuggestions(false); }}>
+                  <Feather name="x" size={16} color={TEXT_TERTIARY} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <View style={styles.suggestionsBox}>
+                {filteredSuggestions.map((place) => (
+                  <TouchableOpacity
+                    key={place}
+                    style={styles.suggestionItem}
+                    onPress={() => handleSelectPlace(place)}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="map-pin" size={13} color={PINK} />
+                    <Text style={styles.suggestionText}>{place}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {draft.place !== "" && (
+              <View style={[styles.chipRow, { marginTop: 8 }]}>
+                <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.chipSelected}>
+                  <Text style={styles.chipTextSelected}>{draft.place}</Text>
+                </LinearGradient>
+              </View>
+            )}
+
+            {/* Keywords */}
+            <Text style={[styles.sheetSectionLabel, { marginTop: 24 }]}>Keywords</Text>
+            <View style={styles.filterInputWrapper}>
+              <Feather name="tag" size={16} color={TEXT_TERTIARY} style={styles.filterInputIcon} />
+              <Text style={styles.filterInputPlaceholder}>Tap chips below to filter</Text>
+            </View>
+            <View style={[styles.chipRow, { marginTop: 10 }]}>
+              {KEYWORD_CHIPS.map((kw) => {
+                const isSelected = draft.keywords.includes(kw);
+                return (
+                  <TouchableOpacity key={kw} onPress={() => toggleKeyword(kw)} activeOpacity={0.7}>
+                    {isSelected ? (
+                      <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.chipSelected}>
+                        <Text style={styles.chipTextSelected}>{kw}</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.chip}>
+                        <Text style={styles.chipText}>{kw}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -214,12 +325,7 @@ function FilterSheet({
               <Text style={styles.resetBtnText}>Reset</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.applyBtnWrapper} onPress={handleApply} activeOpacity={0.85}>
-              <LinearGradient
-                colors={[PINK, ORANGE]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.applyBtn}
-              >
+              <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.applyBtn}>
                 <Text style={styles.applyBtnText}>Apply filters</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -241,28 +347,18 @@ function ExperienceCard({
   onPress: () => void;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(16)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
   const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 350,
-        delay: index * 70,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 350,
-        delay: index * 70,
-        useNativeDriver: true,
-      }),
+      Animated.timing(opacity, { toValue: 1, duration: 380, delay: index * 80, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 380, delay: index * 80, useNativeDriver: true }),
     ]).start();
   }, []);
 
   const handlePressIn = () => {
-    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+    Animated.spring(scale, { toValue: 0.975, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
   };
   const handlePressOut = () => {
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
@@ -271,69 +367,77 @@ function ExperienceCard({
   const durationText = formatDuration(item.duration);
   const viewsText = formatViews(item.view_count);
   const thumbSource = resolveImageSource(item.thumbnail_url);
+  const avatarSource = resolveImageSource(item.avatar);
 
   return (
-    <Animated.View style={[{ opacity, transform: [{ translateY }, { scale }] }]}>
+    <Animated.View style={{ opacity, transform: [{ translateY }, { scale }] }}>
       <TouchableOpacity
         activeOpacity={1}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
       >
-        <View style={styles.card}>
+        <GradientBorderCard>
           {/* Thumbnail */}
           <View style={styles.thumbContainer}>
-            <Image
-              source={thumbSource}
-              style={styles.thumb}
-              resizeMode="cover"
-            />
-            {/* Gradient bar at bottom of thumbnail */}
-            <LinearGradient
-              colors={[PINK, ORANGE]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.thumbGradientBar}
-              pointerEvents="none"
-            />
-            {/* Duration badge */}
+            <Image source={thumbSource} style={styles.thumb} resizeMode="cover" />
             <View style={styles.durationBadge}>
-              <Clock size={11} color="#FFF" strokeWidth={2.5} />
+              <Feather name="clock" size={10} color="#FFF" />
               <Text style={styles.durationBadgeText}>{durationText}</Text>
+            </View>
+            <View style={styles.viewsBadge}>
+              <Feather name="eye" size={10} color="#FFF" />
+              <Text style={styles.durationBadgeText}>{viewsText}</Text>
             </View>
           </View>
 
           {/* Card info */}
           <View style={styles.cardInfo}>
-            {/* Left accent bar */}
-            <LinearGradient
-              colors={[PINK, ORANGE]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.accentBar}
-            />
-            <View style={styles.cardInfoInner}>
-              <Text style={styles.cardTitle} numberOfLines={2}>
-                {item.title}
-              </Text>
-              <Text style={styles.cardDescription} numberOfLines={1}>
-                {item.description}
-              </Text>
-              <View style={styles.metaRow}>
-                <View style={styles.metaChip}>
-                  <MapPin size={12} color={PINK} strokeWidth={2} />
-                  <Text style={styles.metaText} numberOfLines={1}>
-                    {item.location}
-                  </Text>
-                </View>
-                <View style={styles.metaChip}>
-                  <Eye size={12} color={TEXT_TERTIARY} strokeWidth={2} />
-                  <Text style={styles.metaTextMuted}>{viewsText}</Text>
+            <View style={styles.cardInfoTop}>
+              <Image source={avatarSource} style={styles.cardAvatar} />
+              <View style={styles.cardTextBlock}>
+                <Text style={styles.cardCreator}>{item.creator}</Text>
+                <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+                <View style={styles.locationRow}>
+                  <Feather name="map-pin" size={11} color={PINK} />
+                  <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
                 </View>
               </View>
             </View>
+
+            {/* Action icons */}
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => console.log("User tapped heart on card (iOS):", item.id)}
+                activeOpacity={0.7}
+              >
+                <Feather name="heart" size={18} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => console.log("User tapped comment on card (iOS):", item.id)}
+                activeOpacity={0.7}
+              >
+                <Feather name="message-circle" size={18} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => console.log("User tapped bookmark on card (iOS):", item.id)}
+                activeOpacity={0.7}
+              >
+                <Feather name="bookmark" size={18} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => console.log("User tapped share on card (iOS):", item.id)}
+                activeOpacity={0.7}
+              >
+                <Feather name="send" size={18} color={TEXT_TERTIARY} />
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </GradientBorderCard>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -361,17 +465,27 @@ export default function ExploreScreen() {
 
   const filteredFeed = React.useMemo(() => {
     let result = [...DEMO_EXPERIENCES];
-
     const q = debouncedQuery.trim().toLowerCase();
     if (q) {
-      result = result.filter((exp) => {
-        const titleMatch = exp.title.toLowerCase().includes(q);
-        const descMatch = exp.description.toLowerCase().includes(q);
-        const locMatch = exp.location.toLowerCase().includes(q);
-        return titleMatch || descMatch || locMatch;
-      });
+      result = result.filter((exp) =>
+        exp.title.toLowerCase().includes(q) ||
+        exp.description.toLowerCase().includes(q) ||
+        exp.location.toLowerCase().includes(q)
+      );
     }
-
+    if (filters.place) {
+      result = result.filter((exp) =>
+        exp.location.toLowerCase().includes(filters.place.toLowerCase())
+      );
+    }
+    if (filters.keywords.length > 0) {
+      result = result.filter((exp) =>
+        filters.keywords.some((kw) =>
+          exp.title.toLowerCase().includes(kw.toLowerCase()) ||
+          exp.description.toLowerCase().includes(kw.toLowerCase())
+        )
+      );
+    }
     if (filters.duration !== null) {
       result = result.filter((exp) => {
         const mins = exp.duration / 60;
@@ -382,15 +496,11 @@ export default function ExploreScreen() {
         return true;
       });
     }
-
     if (filters.sort === "Most Viewed") {
       result = result.sort((a, b) => b.view_count - a.view_count);
     } else {
-      result = result.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
+      result = result.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
-
     return result;
   }, [debouncedQuery, filters]);
 
@@ -411,7 +521,6 @@ export default function ExploreScreen() {
   );
 
   const keyExtractor = useCallback((item: DemoExperience) => item.id, []);
-
   const headerPaddingTop = insets.top + 8;
 
   return (
@@ -420,9 +529,8 @@ export default function ExploreScreen() {
       <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
         <Text style={styles.headerTitle}>Explore</Text>
         <View style={styles.searchRow}>
-          {/* Search input */}
           <View style={styles.searchInputWrapper}>
-            <Search size={17} color={TEXT_TERTIARY} strokeWidth={2} style={styles.searchIcon} />
+            <Feather name="search" size={17} color={TEXT_TERTIARY} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search experiences..."
@@ -435,8 +543,6 @@ export default function ExploreScreen() {
               clearButtonMode="while-editing"
             />
           </View>
-
-          {/* Filter button */}
           <TouchableOpacity
             style={styles.filterBtnWrapper}
             onPress={() => {
@@ -445,13 +551,8 @@ export default function ExploreScreen() {
             }}
             activeOpacity={0.85}
           >
-            <LinearGradient
-              colors={[PINK, ORANGE]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.filterBtn}
-            >
-              <SlidersHorizontal size={18} color="#FFF" strokeWidth={2.5} />
+            <LinearGradient colors={[PINK, ORANGE]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.filterBtn}>
+              <Feather name="sliders" size={18} color="#FFF" />
             </LinearGradient>
             {filterActive && <View style={styles.filterBadge} />}
           </TouchableOpacity>
@@ -463,19 +564,14 @@ export default function ExploreScreen() {
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: insets.bottom + 100 },
-        ]}
+        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 100 }]}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <View style={styles.emptyIconCircle}>
-              <Film size={28} color={PINK} strokeWidth={1.5} />
+              <Feather name="film" size={28} color={PINK} />
             </View>
             <Text style={styles.emptyTitle}>No results found</Text>
-            <Text style={styles.emptySubtitle}>
-              Try a different search or adjust your filters
-            </Text>
+            <Text style={styles.emptySubtitle}>Try a different search or adjust your filters</Text>
           </View>
         }
       />
@@ -498,7 +594,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
-  // ── Header ──
   header: {
     backgroundColor: SURFACE,
     paddingHorizontal: 16,
@@ -562,23 +657,23 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: SURFACE,
   },
-  // ── List ──
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     gap: 16,
   },
-  // ── Card ──
-  card: {
+  gradientBorder: {
+    borderRadius: 18,
+    padding: 2.5,
+    shadowColor: PINK,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+  },
+  cardInner: {
     backgroundColor: SURFACE,
     borderRadius: 16,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: BORDER,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
   },
   thumbContainer: {
     width: "100%",
@@ -590,13 +685,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-  thumbGradientBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-  },
   durationBadge: {
     position: "absolute",
     bottom: 10,
@@ -604,7 +692,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  viewsBadge: {
+    position: "absolute",
+    bottom: 10,
+    left: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -615,18 +715,29 @@ const styles = StyleSheet.create({
     color: "#FFF",
   },
   cardInfo: {
+    padding: 12,
+    gap: 10,
+  },
+  cardInfoTop: {
     flexDirection: "row",
-    padding: 14,
+    alignItems: "flex-start",
+    gap: 10,
   },
-  accentBar: {
-    width: 3,
-    borderRadius: 2,
-    marginRight: 12,
-    alignSelf: "stretch",
+  cardAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: INPUT_BG,
+    marginTop: 2,
   },
-  cardInfoInner: {
+  cardTextBlock: {
     flex: 1,
-    gap: 5,
+    gap: 2,
+  },
+  cardCreator: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: TEXT_SECONDARY,
   },
   cardTitle: {
     fontSize: 15,
@@ -635,35 +746,28 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     letterSpacing: -0.1,
   },
-  cardDescription: {
-    fontSize: 13,
-    color: TEXT_SECONDARY,
-    lineHeight: 18,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 2,
-  },
-  metaChip: {
+  locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    flex: 1,
+    marginTop: 2,
   },
-  metaText: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-    fontWeight: "500",
-    flex: 1,
-  },
-  metaTextMuted: {
+  locationText: {
     fontSize: 12,
     color: TEXT_TERTIARY,
-    fontWeight: "500",
+    flex: 1,
   },
-  // ── Empty state ──
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  actionBtn: {
+    padding: 4,
+  },
   emptyState: {
     alignItems: "center",
     paddingTop: 80,
@@ -690,7 +794,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-  // ── Filter Sheet ──
   sheetOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -703,7 +806,7 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "75%",
+    maxHeight: "82%",
   },
   sheetHandle: {
     width: 36,
@@ -754,6 +857,57 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#FFF",
+  },
+  filterInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: INPUT_BG,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  filterInputIcon: {
+    marginRight: 8,
+  },
+  filterInput: {
+    flex: 1,
+    fontSize: 14,
+    color: TEXT,
+    paddingVertical: 0,
+  },
+  filterInputPlaceholder: {
+    flex: 1,
+    fontSize: 14,
+    color: TEXT_TERTIARY,
+  },
+  suggestionsBox: {
+    backgroundColor: SURFACE,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginTop: 6,
+    marginBottom: 8,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: TEXT,
+    fontWeight: "500",
   },
   sheetFooter: {
     flexDirection: "row",
