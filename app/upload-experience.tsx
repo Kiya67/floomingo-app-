@@ -40,13 +40,14 @@ export default function UploadExperienceScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: false,
       quality: 1,
+      videoMaxDuration: 7200,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       setVideoUri(asset.uri);
       const parts = asset.uri.split("/");
       setVideoName(parts[parts.length - 1] || "video.mp4");
-      console.log("User selected video for experience:", asset.uri);
+      console.log("User selected video for experience:", asset.uri, "duration:", asset.duration ? asset.duration / 1000 : 0, "s");
     }
   }, []);
 

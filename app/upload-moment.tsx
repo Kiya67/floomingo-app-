@@ -39,13 +39,20 @@ export default function UploadMomentScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: false,
       quality: 1,
+      videoMaxDuration: 120,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
+      const durationSecs = asset.duration ? asset.duration / 1000 : 0;
+      if (durationSecs > 120) {
+        console.log("User selected video exceeds 2 minutes for moment:", durationSecs, "s");
+        Alert.alert("Video too long", "Moments can only be up to 2 minutes long.");
+        return;
+      }
       setVideoUri(asset.uri);
       const parts = asset.uri.split("/");
       setVideoName(parts[parts.length - 1] || "video.mp4");
-      console.log("User selected video for moment:", asset.uri);
+      console.log("User selected video for moment:", asset.uri, "duration:", durationSecs, "s");
     }
   }, []);
 
