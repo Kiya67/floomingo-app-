@@ -122,13 +122,13 @@ function FilterSheet({
   }, [visible, filters]);
 
   const handleApply = () => {
-    console.log("User tapped Apply Filters on explore filter sheet:", draft);
+    console.log("User tapped Apply Filters on explore filter sheet (iOS):", draft);
     onApply(draft);
     onClose();
   };
 
   const handleReset = () => {
-    console.log("User tapped Reset on explore filter sheet");
+    console.log("User tapped Reset on explore filter sheet (iOS)");
     setDraft(DEFAULT_FILTERS);
     onApply(DEFAULT_FILTERS);
     onClose();
@@ -142,7 +142,7 @@ function FilterSheet({
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="padding"
         style={styles.sheetOverlay}
       >
         <Pressable style={styles.sheetBackdrop} onPress={onClose} />
@@ -153,6 +153,7 @@ function FilterSheet({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.sheetContent}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Sort by */}
             <Text style={styles.sheetSectionLabel}>Sort by</Text>
@@ -167,7 +168,7 @@ function FilterSheet({
                       isSelected && styles.radioOptionSelected,
                     ]}
                     onPress={() => {
-                      console.log("User selected sort option:", opt);
+                      console.log("User selected sort option (iOS):", opt);
                       setDraft((d) => ({ ...d, sort: opt }));
                     }}
                     activeOpacity={0.7}
@@ -237,7 +238,7 @@ function FilterSheet({
                   <TouchableOpacity
                     key={opt}
                     onPress={() => {
-                      console.log("User selected duration option:", opt);
+                      console.log("User selected duration option (iOS):", opt);
                       setDraft((d) => ({ ...d, duration: opt }));
                     }}
                     activeOpacity={0.7}
@@ -346,7 +347,7 @@ function VideoCard({
   useEffect(() => {
     if (!player) return;
     if (isActive) {
-      console.log("Explore feed: experience video active, playing:", postId);
+      console.log("Explore feed (iOS): experience video active, playing:", postId);
       const t = setTimeout(() => {
         if (isMountedRef.current) {
           try {
@@ -354,7 +355,7 @@ function VideoCard({
             setIsPlaying(true);
             onPlayingChange(true);
           } catch (e) {
-            console.error("Explore feed: error playing experience video:", e);
+            console.error("Explore feed (iOS): error playing experience video:", e);
           }
         }
       }, 300);
@@ -370,7 +371,7 @@ function VideoCard({
 
   const toggle = useCallback(() => {
     console.log(
-      "User tapped experience video to toggle play/pause (explore), id:",
+      "User tapped experience video to toggle play/pause (explore iOS), id:",
       postId
     );
     if (!player) return;
@@ -387,7 +388,7 @@ function VideoCard({
         showOverlay("play");
       }
     } catch (e) {
-      console.error("Explore feed: error toggling play/pause:", e);
+      console.error("Explore feed (iOS): error toggling play/pause:", e);
     }
   }, [player, isPlaying, onPlayingChange, postId]);
 
@@ -468,7 +469,7 @@ export default function ExploreScreen() {
     setSearchQuery(text);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
-      console.log("Explore search: debounced query updated to:", text);
+      console.log("Explore search (iOS): debounced query updated to:", text);
       setDebouncedQuery(text);
     }, 400);
   };
@@ -477,7 +478,6 @@ export default function ExploreScreen() {
   const filteredFeed = React.useMemo(() => {
     let result = [...feed];
 
-    // Search filter
     const q = debouncedQuery.trim().toLowerCase();
     if (q) {
       result = result.filter((exp) => {
@@ -490,7 +490,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // Location filter
     const locQ = filters.location.trim().toLowerCase();
     if (locQ) {
       result = result.filter((exp) =>
@@ -500,7 +499,6 @@ export default function ExploreScreen() {
       );
     }
 
-    // Duration filter
     if (filters.duration !== "Any") {
       result = result.filter((exp) => {
         const dur = Number(exp.duration ?? 0);
@@ -512,7 +510,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // Sort
     if (filters.sort === "Most Viewed") {
       result = result.sort(
         (a, b) => Number(b.view_count ?? 0) - Number(a.view_count ?? 0)
@@ -533,7 +530,7 @@ export default function ExploreScreen() {
   const fetchExperiences = useCallback(
     async (isRefresh = false, cursor: string | null = null) => {
       console.log(
-        "Explore feed: fetching experiences from /api/experiences, isRefresh:",
+        "Explore feed (iOS): fetching experiences from /api/experiences, isRefresh:",
         isRefresh,
         "cursor:",
         cursor
@@ -542,7 +539,7 @@ export default function ExploreScreen() {
         const params = new URLSearchParams({ limit: "20" });
         if (cursor) params.set("cursor", cursor);
         const url = `/api/experiences?${params.toString()}`;
-        console.log("Explore feed: GET", url);
+        console.log("Explore feed (iOS): GET", url);
         const data = await apiGet<any>(url);
 
         const items: Experience[] = (
@@ -584,7 +581,7 @@ export default function ExploreScreen() {
               },
         }));
 
-        console.log("Explore feed: fetched", items.length, "experiences");
+        console.log("Explore feed (iOS): fetched", items.length, "experiences");
 
         const newNextCursor =
           items.length === 20 ? items[items.length - 1].created_at : null;
@@ -603,7 +600,7 @@ export default function ExploreScreen() {
         setHasMore(!!newNextCursor);
         setError(null);
       } catch (e: any) {
-        console.error("Explore feed: fetch experiences error:", e);
+        console.error("Explore feed (iOS): fetch experiences error:", e);
         setError("Couldn't load experiences. Check your connection.");
       } finally {
         setLoading(false);
@@ -615,7 +612,7 @@ export default function ExploreScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log("ExploreScreen focused - loading experiences feed");
+      console.log("ExploreScreen (iOS) focused - loading experiences feed");
       setLoading(true);
       setNextCursor(null);
       setHasMore(true);
@@ -623,13 +620,12 @@ export default function ExploreScreen() {
     }, [fetchExperiences])
   );
 
-  // Pause on tab blur, resume on focus
   const wasPlayingOnBlurRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
       if (wasPlayingOnBlurRef.current) {
         console.log(
-          "ExploreScreen regained focus - resuming active experience video"
+          "ExploreScreen (iOS) regained focus - resuming active experience video"
         );
         const exp = feed[currentIndex];
         if (exp) {
@@ -645,7 +641,7 @@ export default function ExploreScreen() {
           const isCurrentlyPlaying = playingMap.get(exp.id);
           if (isCurrentlyPlaying) {
             console.log(
-              "ExploreScreen lost focus - pausing experience video:",
+              "ExploreScreen (iOS) lost focus - pausing experience video:",
               exp.id
             );
             wasPlayingOnBlurRef.current = true;
@@ -657,7 +653,6 @@ export default function ExploreScreen() {
     }, [feed, currentIndex, playingMap])
   );
 
-  // ── Viewability ──
   const viewableItemsHandlerRef = useRef<
     (info: { viewableItems: any[] }) => void
   >(() => {});
@@ -667,7 +662,7 @@ export default function ExploreScreen() {
       if (viewableItems.length > 0) {
         const newIndex = viewableItems[0].index;
         console.log(
-          "Explore feed: visible experience index changed to:",
+          "Explore feed (iOS): visible experience index changed to:",
           newIndex
         );
         setCurrentIndex(newIndex);
@@ -686,7 +681,6 @@ export default function ExploreScreen() {
     return name.substring(0, 2).toUpperCase();
   };
 
-  // ── Render item ──
   const renderItem = useCallback(
     ({ item: exp, index }: { item: Experience; index: number }) => {
       if (!exp?.video_url) return null;
@@ -727,7 +721,7 @@ export default function ExploreScreen() {
               style={styles.userRow}
               onPress={() => {
                 console.log(
-                  "User tapped profile on explore experience card, navigating to:",
+                  "User tapped profile on explore experience card (iOS), navigating to:",
                   exp.user_id
                 );
                 router.push(`/user/${exp.user_id}` as any);
@@ -755,7 +749,7 @@ export default function ExploreScreen() {
                   style={styles.locationChip}
                   onPress={() => {
                     console.log(
-                      "User tapped location chip on explore experience card:",
+                      "User tapped location chip on explore experience card (iOS):",
                       placeName
                     );
                     if (placeId) router.push(`/location/${placeId}` as any);
@@ -763,6 +757,7 @@ export default function ExploreScreen() {
                   activeOpacity={0.7}
                 >
                   <IconSymbol
+                    ios_icon_name="mappin"
                     android_material_icon_name="location-on"
                     size={13}
                     color={PINK}
@@ -774,6 +769,7 @@ export default function ExploreScreen() {
               ) : null}
               <View style={styles.viewsChip}>
                 <IconSymbol
+                  ios_icon_name="eye"
                   android_material_icon_name="visibility"
                   size={13}
                   color="rgba(255,255,255,0.5)"
@@ -815,7 +811,7 @@ export default function ExploreScreen() {
       <TouchableOpacity
         style={styles.filterBtnWrapper}
         onPress={() => {
-          console.log("User tapped filter button on explore screen");
+          console.log("User tapped filter button on explore screen (iOS)");
           setFilterSheetVisible(true);
         }}
         activeOpacity={0.85}
@@ -833,29 +829,27 @@ export default function ExploreScreen() {
     </View>
   );
 
-  // ── Loading ──
   if (loading) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
+        <StatusBar barStyle="light-content" />
         <ActivityIndicator size="large" color={PINK} />
         <Text style={styles.loadingText}>Loading experiences…</Text>
       </View>
     );
   }
 
-  // ── Error ──
   if (error) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
+        <StatusBar barStyle="light-content" />
         <Film size={48} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
         <Text style={styles.emptyTitle}>Couldn't load experiences</Text>
         <Text style={styles.emptySubtitle}>{error}</Text>
         <TouchableOpacity
           style={styles.retryBtn}
           onPress={() => {
-            console.log("User tapped retry on explore experiences feed");
+            console.log("User tapped retry on explore experiences feed (iOS)");
             setLoading(true);
             fetchExperiences(false, null);
           }}
@@ -867,11 +861,10 @@ export default function ExploreScreen() {
     );
   }
 
-  // ── Empty (no data fetched) ──
   if (feed.length === 0) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
+        <StatusBar barStyle="light-content" />
         <Film size={48} color="rgba(255,255,255,0.3)" strokeWidth={1.5} />
         <Text style={styles.emptyTitle}>No experiences yet</Text>
         <Text style={styles.emptySubtitle}>
@@ -880,7 +873,9 @@ export default function ExploreScreen() {
         <TouchableOpacity
           style={styles.retryBtn}
           onPress={() => {
-            console.log("User tapped refresh on empty explore experiences feed");
+            console.log(
+              "User tapped refresh on empty explore experiences feed (iOS)"
+            );
             setLoading(true);
             fetchExperiences(false, null);
           }}
@@ -894,7 +889,7 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <StatusBar barStyle="light-content" />
 
       {/* Fixed header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -917,7 +912,7 @@ export default function ExploreScreen() {
         onEndReached={() => {
           if (!loadingMore && hasMore && nextCursor) {
             setLoadingMore(true);
-            console.log("Explore feed: loading more experiences");
+            console.log("Explore feed (iOS): loading more experiences");
             fetchExperiences(false, nextCursor);
           }
         }}
@@ -950,7 +945,7 @@ export default function ExploreScreen() {
         onClose={() => setFilterSheetVisible(false)}
         filters={filters}
         onApply={(f) => {
-          console.log("Explore: filters applied:", f);
+          console.log("Explore (iOS): filters applied:", f);
           setFilters(f);
         }}
       />
@@ -982,7 +977,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginBottom: 12,
   },
-  // ── Search row ──
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1030,7 +1024,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: BG,
   },
-  // ── List ──
   loadingText: {
     marginTop: 12,
     fontSize: 14,
@@ -1085,7 +1078,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-  // ── Card ──
   card: {
     backgroundColor: CARD_BG,
     borderRadius: 12,
