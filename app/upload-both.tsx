@@ -12,11 +12,12 @@ import {
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { Video, MapPin, X, Plus, Play, Film } from "lucide-react-native";
-import { authenticatedPost } from "@/utils/api";
+import { getBearerToken, authenticatedPost, BACKEND_URL } from "@/utils/api";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const PINK = "#FF3B7A";
+const EXPERIENCE_ENDPOINT = "https://7efxms2e3tmdd7a38j8uphfzrnwcgesc.app.specular.dev/api/experiences";
 
 interface Place {
   id: string;
@@ -28,11 +29,12 @@ export default function UploadBothScreen() {
   const router = useRouter();
   const [momentVideoUri, setMomentVideoUri] = useState<string | null>(null);
   const [momentVideoName, setMomentVideoName] = useState<string>("");
-  const [caption, setCaption] = useState("");
   const [expVideoUri, setExpVideoUri] = useState<string | null>(null);
   const [expVideoName, setExpVideoName] = useState<string>("");
-  const [expTitle, setExpTitle] = useState("");
-  const [expDescription, setExpDescription] = useState("");
+  const [expVideoDuration, setExpVideoDuration] = useState<number>(0);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [location, setLocation] = useState("");
   const [places, setPlaces] = useState<Place[]>([]);
   const [placeInput, setPlaceInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -41,32 +43,42 @@ export default function UploadBothScreen() {
   const handlePickMomentVideo = useCallback(async () => {
     console.log("User tapped pick video for moment section (upload-both)");
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: "videos",
       allowsEditing: false,
       quality: 1,
+      videoMaxDuration: 120,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
+      const durationSecs = asset.duration ? asset.duration / 1000 : 0;
+      if (durationSecs > 120) {
+        console.log("Moment video exceeds 2 minutes (upload-both):", durationSecs, "s");
+        Alert.alert("Video too long", "Moments can only be up to 2 minutes long.");
+        return;
+      }
       setMomentVideoUri(asset.uri);
       const parts = asset.uri.split("/");
       setMomentVideoName(parts[parts.length - 1] || "video.mp4");
-      console.log("User selected moment video (upload-both):", asset.uri);
+      console.log("User selected moment video (upload-both):", asset.uri, "duration:", durationSecs, "s");
     }
   }, []);
 
   const handlePickExpVideo = useCallback(async () => {
     console.log("User tapped pick video for experience section (upload-both)");
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: "videos",
       allowsEditing: false,
       quality: 1,
+      videoMaxDuration: 7200,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
+      const durationSecs = asset.duration ? asset.duration / 1000 : 0;
       setExpVideoUri(asset.uri);
+      setExpVideoDuration(durationSecs);
       const parts = asset.uri.split("/");
       setExpVideoName(parts[parts.length - 1] || "video.mp4");
-      console.log("User selected experience video (upload-both):", asset.uri);
+      console.log("User selected experience video (upload-both):", asset.uri, "duration:", durationSecs, "s");
     }
   }, []);
 
@@ -97,124 +109,145 @@ export default function UploadBothScreen() {
       Alert.alert("Missing experience video", "Please select a video for the Experience.");
       return;
     }
-    if (!expTitle.trim()) {
-      Alert.alert("Missing title", "Please add a title for the Experience.");
+    if (!title.trim()) {
+      Alert.alert("Missing title", "Please add a title.");
       return;
     }
-    console.log("User tapped Post Both - submitting moment + experience upload");
+    console.log("User tapped Post Both - submitting moment + experience upload in parallel");
     setSubmitting(true);
-    const placesPayload = places.map((p) => ({ place_id: p.place_id, place_name: p.place_name }));
-    try {
-      // Step 1: Post moment
-      setSubmitStep("Posting moment...");
-      console.log("Step 1: Posting moment to /api/moments");
-      const momentRes = await authenticatedPost<{ id: string }>("/api/moments", {
-        video_url: momentVideoUri,
-        caption: caption.trim() || undefined,
-        places: placesPayload,
-      });
-      const momentId = momentRes?.id;
-      console.log("Moment posted, id:", momentId);
+    setSubmitStep("Uploading...");
 
-      // Step 2: Post experience linked to moment
-      setSubmitStep("Posting experience...");
-      console.log("Step 2: Posting experience to /api/experiences, linked_moment_id:", momentId);
-      await authenticatedPost("/api/experiences", {
-        video_url: expVideoUri,
-        title: expTitle.trim(),
-        description: expDescription.trim() || undefined,
-        places: placesPayload,
-        linked_moment_id: momentId || undefined,
-      });
-      console.log("Experience posted successfully");
+    try {
+      const token = await getBearerToken();
+      if (!token) {
+        Alert.alert("Not signed in", "Please sign in to upload.");
+        return;
+      }
+
+      // Build moment payload
+      const momentPayload = {
+        video_url: momentVideoUri,
+        caption: title.trim(),
+        places: places.map((p) => ({ place_id: p.place_id, place_name: p.place_name })),
+      };
+
+      // Build experience FormData
+      const expFormData = new FormData();
+      expFormData.append("video", {
+        uri: expVideoUri,
+        name: expVideoName || "video.mp4",
+        type: "video/mp4",
+      } as any);
+      expFormData.append("title", title.trim());
+      if (description.trim()) expFormData.append("description", description.trim());
+      if (location.trim()) expFormData.append("location", location.trim());
+      expFormData.append("duration", String(Math.round(expVideoDuration)));
+
+      console.log("Uploading moment to /api/moments and experience to", EXPERIENCE_ENDPOINT, "in parallel");
+
+      const [momentResult, expResponse] = await Promise.all([
+        authenticatedPost("/api/moments", momentPayload).catch((e) => { throw new Error("Moment upload failed: " + e.message); }),
+        fetch(EXPERIENCE_ENDPOINT, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: expFormData,
+        }),
+      ]);
+
+      console.log("Moment upload result:", momentResult);
+      console.log("Experience upload response status:", expResponse.status);
+
+      if (!expResponse.ok) {
+        const text = await expResponse.text();
+        console.error("Experience upload error response:", text);
+        throw new Error("Experience upload failed: " + text);
+      }
+
+      const expData = await expResponse.json();
+      console.log("Both uploads successful. Experience:", expData);
 
       Alert.alert("Posted!", "Your Moment and Experience have been shared.", [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (e: any) {
       console.error("Upload both error:", e);
-      Alert.alert("Upload failed", "Couldn't post. Please try again.");
+      Alert.alert("Upload failed", e?.message || "Couldn't post. Please try again.");
     } finally {
       setSubmitting(false);
       setSubmitStep("");
     }
-  }, [momentVideoUri, expVideoUri, expTitle, caption, expDescription, places, router]);
+  }, [momentVideoUri, expVideoUri, expVideoName, expVideoDuration, title, description, location, places, router]);
 
-  const canSubmit = !!momentVideoUri && !!expVideoUri && !!expTitle.trim() && !submitting;
+  const canSubmit = !!momentVideoUri && !!expVideoUri && !!title.trim() && !submitting;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <Stack.Screen options={{ title: "Upload Both", headerBackTitle: "", headerTintColor: "#111827" }} />
+      <Stack.Screen options={{ title: "Upload Both", headerBackTitle: "", headerStyle: { backgroundColor: "#0a0a0a" }, headerTintColor: "#fff", headerTitleStyle: { color: "#fff" } }} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
 
         {/* Moment section */}
         <View style={styles.sectionHeader}>
-          <View style={[styles.sectionBadge, { backgroundColor: "rgba(255,59,122,0.1)" }]}>
-            <Play size={14} color={PINK} strokeWidth={2} />
-            <Text style={[styles.sectionBadgeText, { color: PINK }]}>Moment</Text>
+          <View style={[styles.sectionBadge, { backgroundColor: "rgba(255,0,128,0.12)" }]}>
+            <Play size={13} color="#FF0080" strokeWidth={2} />
+            <Text style={[styles.sectionBadgeText, { color: "#FF0080" }]}>Moment</Text>
           </View>
+          <Text style={styles.sectionHint}>Up to 2 minutes</Text>
         </View>
 
-        <Text style={styles.label}>Video</Text>
         <TouchableOpacity style={styles.videoPicker} onPress={handlePickMomentVideo} activeOpacity={0.8}>
           {momentVideoUri ? (
             <View style={styles.videoSelected}>
-              <Video size={20} color={PINK} strokeWidth={2} />
+              <Video size={18} color="#FF0080" strokeWidth={2} />
               <Text style={styles.videoName} numberOfLines={1}>{momentVideoName}</Text>
             </View>
           ) : (
             <View style={styles.videoEmpty}>
-              <Video size={28} color="#9CA3AF" strokeWidth={1.5} />
+              <Video size={28} color="#555" strokeWidth={1.5} />
               <Text style={styles.videoEmptyText}>Tap to select moment video</Text>
             </View>
           )}
         </TouchableOpacity>
 
-        <Text style={styles.label}>Caption</Text>
-        <TextInput
-          style={styles.textArea}
-          placeholder="Write a caption..."
-          placeholderTextColor="#9CA3AF"
-          value={caption}
-          onChangeText={setCaption}
-          multiline
-          numberOfLines={3}
-          maxLength={500}
-        />
-
-        {/* Divider */}
         <View style={styles.divider} />
 
         {/* Experience section */}
         <View style={styles.sectionHeader}>
-          <View style={[styles.sectionBadge, { backgroundColor: "rgba(124,58,237,0.1)" }]}>
-            <Film size={14} color="#7C3AED" strokeWidth={2} />
-            <Text style={[styles.sectionBadgeText, { color: "#7C3AED" }]}>Experience</Text>
+          <View style={[styles.sectionBadge, { backgroundColor: "rgba(255,107,0,0.12)" }]}>
+            <Film size={13} color="#FF6B00" strokeWidth={2} />
+            <Text style={[styles.sectionBadgeText, { color: "#FF6B00" }]}>Experience</Text>
           </View>
+          <Text style={styles.sectionHint}>Up to 2 hours</Text>
         </View>
 
-        <Text style={styles.label}>Video</Text>
         <TouchableOpacity style={styles.videoPicker} onPress={handlePickExpVideo} activeOpacity={0.8}>
           {expVideoUri ? (
             <View style={styles.videoSelected}>
-              <Video size={20} color="#7C3AED" strokeWidth={2} />
+              <Video size={18} color="#FF6B00" strokeWidth={2} />
               <Text style={styles.videoName} numberOfLines={1}>{expVideoName}</Text>
             </View>
           ) : (
             <View style={styles.videoEmpty}>
-              <Video size={28} color="#9CA3AF" strokeWidth={1.5} />
+              <Video size={28} color="#555" strokeWidth={1.5} />
               <Text style={styles.videoEmptyText}>Tap to select experience video</Text>
             </View>
           )}
         </TouchableOpacity>
 
-        <Text style={styles.label}>Title <Text style={styles.required}>*</Text></Text>
+        <View style={styles.divider} />
+
+        {/* Shared fields */}
+        <Text style={styles.sharedLabel}>Shared Details</Text>
+        <Text style={styles.sharedHint}>Title, description, and location apply to both uploads.</Text>
+
+        <Text style={styles.label}>
+          Title <Text style={styles.required}>*</Text>
+        </Text>
         <TextInput
           style={styles.input}
-          placeholder="Give your experience a title..."
-          placeholderTextColor="#9CA3AF"
-          value={expTitle}
-          onChangeText={setExpTitle}
+          placeholder="Give your content a title..."
+          placeholderTextColor="#555"
+          value={title}
+          onChangeText={setTitle}
           maxLength={120}
           returnKeyType="next"
         />
@@ -223,25 +256,34 @@ export default function UploadBothScreen() {
         <TextInput
           style={styles.textArea}
           placeholder="Describe your experience..."
-          placeholderTextColor="#9CA3AF"
-          value={expDescription}
-          onChangeText={setExpDescription}
+          placeholderTextColor="#555"
+          value={description}
+          onChangeText={setDescription}
           multiline
           numberOfLines={4}
           maxLength={2000}
         />
 
-        {/* Divider */}
-        <View style={styles.divider} />
+        <Text style={styles.label}>
+          <MapPin size={13} color="#FF0080" strokeWidth={2} />
+          {"  "}Location
+        </Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Where did this take place?"
+          placeholderTextColor="#555"
+          value={location}
+          onChangeText={setLocation}
+          maxLength={200}
+          returnKeyType="done"
+        />
 
-        {/* Shared places */}
-        <Text style={styles.sharedLabel}>Shared Places</Text>
-        <Text style={styles.sharedHint}>These places will be applied to both your Moment and Experience.</Text>
+        <Text style={styles.label}>Places</Text>
         <View style={styles.placeInputRow}>
           <TextInput
             style={styles.placeInput}
             placeholder="Add a place name..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#555"
             value={placeInput}
             onChangeText={setPlaceInput}
             onSubmitEditing={handleAddPlace}
@@ -255,31 +297,37 @@ export default function UploadBothScreen() {
           <View style={styles.placesList}>
             {places.map((place) => (
               <View key={place.id} style={styles.placePill}>
-                <MapPin size={12} color={PINK} strokeWidth={2} />
+                <MapPin size={12} color="#FF0080" strokeWidth={2} />
                 <Text style={styles.placePillText}>{place.place_name}</Text>
                 <TouchableOpacity onPress={() => handleRemovePlace(place.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <X size={12} color="#6B7280" strokeWidth={2} />
+                  <X size={12} color="#888" strokeWidth={2} />
                 </TouchableOpacity>
               </View>
             ))}
           </View>
         ) : null}
 
-        {/* Submit */}
         <TouchableOpacity
           style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
           onPress={handleSubmit}
           disabled={!canSubmit}
           activeOpacity={0.85}
         >
-          {submitting ? (
-            <View style={styles.submitLoading}>
-              <ActivityIndicator size="small" color="#FFF" />
-              <Text style={styles.submitBtnText}>{submitStep || "Posting..."}</Text>
-            </View>
-          ) : (
-            <Text style={styles.submitBtnText}>Post Both</Text>
-          )}
+          <LinearGradient
+            colors={["#FF0080", "#FF6B00"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.gradientBtn}
+          >
+            {submitting ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator size="small" color="#FFF" />
+                <Text style={styles.submitBtnText}>{submitStep || "Uploading..."}</Text>
+              </View>
+            ) : (
+              <Text style={styles.submitBtnText}>Post Both</Text>
+            )}
+          </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -287,67 +335,68 @@ export default function UploadBothScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: "#0a0a0a" },
   scroll: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 48 },
-  sectionHeader: { marginTop: 8, marginBottom: 4 },
-  sectionBadge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start" },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginTop: 4 },
+  sectionBadge: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   sectionBadgeText: { fontSize: 13, fontWeight: "700" },
-  label: { fontSize: 14, fontWeight: "700", color: "#374151", marginBottom: 8, marginTop: 16 },
-  required: { color: PINK },
-  sharedLabel: { fontSize: 16, fontWeight: "800", color: "#111827", marginBottom: 4, marginTop: 4 },
-  sharedHint: { fontSize: 13, color: "#6B7280", marginBottom: 12, lineHeight: 18 },
-  divider: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 24 },
+  sectionHint: { fontSize: 12, color: "#555" },
+  divider: { height: 1, backgroundColor: "#222", marginVertical: 20 },
+  sharedLabel: { fontSize: 15, fontWeight: "800", color: "#fff", marginBottom: 4 },
+  sharedHint: { fontSize: 12, color: "#555", marginBottom: 4, lineHeight: 18 },
+  label: { fontSize: 14, fontWeight: "700", color: "#fff", marginBottom: 8, marginTop: 16 },
+  required: { color: "#FF0080" },
   videoPicker: {
     borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderWidth: 1.5,
+    borderColor: "#333",
     borderStyle: "dashed",
-    backgroundColor: "#FFF",
+    backgroundColor: "#111",
     overflow: "hidden",
   },
-  videoEmpty: { alignItems: "center", justifyContent: "center", paddingVertical: 32, gap: 8 },
-  videoEmptyText: { fontSize: 13, color: "#9CA3AF" },
+  videoEmpty: { alignItems: "center", justifyContent: "center", paddingVertical: 28, gap: 8 },
+  videoEmptyText: { fontSize: 13, color: "#888" },
   videoSelected: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14 },
-  videoName: { fontSize: 14, color: "#374151", fontWeight: "600", flex: 1 },
+  videoName: { fontSize: 14, color: "#fff", fontWeight: "600", flex: 1 },
   input: {
-    backgroundColor: "#FFF",
+    backgroundColor: "#111",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#333",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: "#111827",
+    color: "#fff",
   },
   textArea: {
-    backgroundColor: "#FFF",
+    backgroundColor: "#111",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#333",
     padding: 14,
     fontSize: 15,
-    color: "#111827",
+    color: "#fff",
     minHeight: 90,
     textAlignVertical: "top",
   },
   placeInputRow: { flexDirection: "row", gap: 10 },
   placeInput: {
     flex: 1,
-    backgroundColor: "#FFF",
+    backgroundColor: "#111",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#333",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: "#111827",
+    color: "#fff",
   },
   addPlaceBtn: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: PINK,
+    backgroundColor: "#FF0080",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -356,22 +405,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(255,59,122,0.08)",
+    backgroundColor: "rgba(255,0,128,0.1)",
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: "rgba(255,59,122,0.2)",
+    borderColor: "rgba(255,0,128,0.25)",
   },
-  placePillText: { fontSize: 13, color: PINK, fontWeight: "600" },
+  placePillText: { fontSize: 13, color: "#FF0080", fontWeight: "600" },
   submitBtn: {
     marginTop: 32,
-    backgroundColor: PINK,
     borderRadius: 14,
+    overflow: "hidden",
+  },
+  submitBtnDisabled: { opacity: 0.45 },
+  gradientBtn: {
     paddingVertical: 16,
     alignItems: "center",
+    justifyContent: "center",
   },
-  submitBtnDisabled: { opacity: 0.5 },
-  submitLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   submitBtnText: { fontSize: 16, fontWeight: "700", color: "#FFF" },
 });
