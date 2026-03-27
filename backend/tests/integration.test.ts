@@ -1550,4 +1550,42 @@ describe('Experiences Feature', () => {
     const res = await api(`/api/experiences/invalid-uuid`);
     await expectStatus(res, 400);
   });
+
+  it('should get experiences filtered by location', async () => {
+    const locationId = 'test-location-123';
+    const res = await api(`/api/experiences/location/${locationId}`);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+  });
+
+  it('should get experiences by location with limit parameter', async () => {
+    const locationId = 'test-location-456';
+    const res = await api(`/api/experiences/location/${locationId}?limit=5`);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+  });
+
+  it('should get experiences by location with excludeId parameter', async () => {
+    const locationId = 'test-location-789';
+    const excludeId = '00000000-0000-0000-0000-000000000000';
+    const res = await api(
+      `/api/experiences/location/${locationId}?excludeId=${excludeId}`
+    );
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+  });
+
+  it('should get experiences by location with limit and excludeId parameters', async () => {
+    const locationId = 'test-location-999';
+    const excludeId = '11111111-1111-1111-1111-111111111111';
+    const res = await api(
+      `/api/experiences/location/${locationId}?limit=10&excludeId=${excludeId}`
+    );
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(Array.isArray(data)).toBe(true);
+  });
 });

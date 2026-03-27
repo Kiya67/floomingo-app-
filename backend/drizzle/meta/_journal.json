@@ -78,6 +78,13 @@
       "when": 1774574380167,
       "tag": "20260327011940_new_domino",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774655428305,
+      "tag": "20260327235028_simple_zaran",
+      "breakpoints": true
     }
   ]
 }
