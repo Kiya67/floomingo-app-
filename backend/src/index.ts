@@ -22,6 +22,9 @@ export type App = typeof app;
 // Set up authentication
 app.withAuth();
 
+// Set up storage
+app.withStorage();
+
 // Register routes - add your route modules here
 // IMPORTANT: Always use registration functions to avoid circular dependency issues
 registerBlockRoutes(app);

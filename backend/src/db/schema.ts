@@ -130,6 +130,9 @@ export const experiences = pgTable('experiences', {
   thumbnailUrl: text('thumbnail_url'),
   title: text('title').notNull(),
   description: text('description'),
+  location: text('location'),
+  duration: integer('duration'),
+  viewCount: integer('view_count').default(0).notNull(),
   linkedMomentId: uuid('linked_moment_id').references(() => moments.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });

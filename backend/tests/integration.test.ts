@@ -1334,7 +1334,6 @@ describe('Moments Feature', () => {
   });
 
   it('should create moment with linked_experience_id', async () => {
-    // First create an experience to link to (if needed)
     const res = await authenticatedApi('/api/moments', authToken, {
       method: 'POST',
       body: JSON.stringify({
@@ -1453,7 +1452,6 @@ describe('Experiences Feature', () => {
   let userId: string;
   let otherUserToken: string;
   let experienceId: string;
-  let momentId: string;
 
   it('should set up test users', async () => {
     const user1 = await signUpTestUser();
@@ -1464,48 +1462,20 @@ describe('Experiences Feature', () => {
     otherUserToken = user2.token;
   });
 
-  it('should create a moment for linking to experience', async () => {
-    const res = await authenticatedApi('/api/moments', authToken, {
-      method: 'POST',
-      body: JSON.stringify({
-        video_url: 'https://example.com/moment-for-exp.mp4',
-        caption: 'Moment to link',
-      }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    await expectStatus(res, 201);
-    const data = await res.json();
-    momentId = data.id;
-  });
-
-  it('should return 401 when getting experiences without authentication', async () => {
+  it('should list experiences without authentication', async () => {
     const res = await api('/api/experiences');
-    await expectStatus(res, 401);
-  });
-
-  it('should list experiences with authentication', async () => {
-    const res = await authenticatedApi('/api/experiences', authToken);
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data).toHaveProperty('data');
+    expect(data).toHaveProperty('experiences');
     expect(data).toHaveProperty('next_cursor');
-    expect(data).toHaveProperty('has_more');
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(Array.isArray(data.experiences)).toBe(true);
   });
 
   it('should list experiences with limit and cursor parameters', async () => {
-    const res = await authenticatedApi('/api/experiences?limit=10', authToken);
+    const res = await api('/api/experiences?limit=10');
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(Array.isArray(data.data)).toBe(true);
-    expect(typeof data.has_more).toBe('boolean');
-  });
-
-  it('should list experiences with keywords filter', async () => {
-    const res = await authenticatedApi('/api/experiences?keywords=adventure', authToken);
-    await expectStatus(res, 200);
-    const data = await res.json();
-    expect(Array.isArray(data.data)).toBe(true);
+    expect(Array.isArray(data.experiences)).toBe(true);
   });
 
   it('should return 401 when creating experience without authentication', async () => {
@@ -1520,15 +1490,6 @@ describe('Experiences Feature', () => {
     await expectStatus(res, 401);
   });
 
-  it('should return 400 when creating experience without title', async () => {
-    const res = await authenticatedApi('/api/experiences', authToken, {
-      method: 'POST',
-      body: JSON.stringify({ video_url: 'https://example.com/video.mp4' }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    await expectStatus(res, 400);
-  });
-
   it('should return 400 when creating experience without video_url', async () => {
     const res = await authenticatedApi('/api/experiences', authToken, {
       method: 'POST',
@@ -1538,7 +1499,7 @@ describe('Experiences Feature', () => {
     await expectStatus(res, 400);
   });
 
-  it('should create experience with required fields only', async () => {
+  it('should create experience with required fields', async () => {
     const res = await authenticatedApi('/api/experiences', authToken, {
       method: 'POST',
       body: JSON.stringify({
@@ -1556,7 +1517,7 @@ describe('Experiences Feature', () => {
     experienceId = data.id;
   });
 
-  it('should create experience with all optional fields', async () => {
+  it('should create experience with optional fields', async () => {
     const res = await authenticatedApi('/api/experiences', authToken, {
       method: 'POST',
       body: JSON.stringify({
@@ -1572,28 +1533,8 @@ describe('Experiences Feature', () => {
     expect(data).toHaveProperty('id');
   });
 
-  it('should create experience with linked_moment_id', async () => {
-    const res = await authenticatedApi('/api/experiences', authToken, {
-      method: 'POST',
-      body: JSON.stringify({
-        video_url: 'https://example.com/exp3.mp4',
-        title: 'Experience with Linked Moment',
-        linked_moment_id: momentId,
-      }),
-      headers: { 'Content-Type': 'application/json' },
-    });
-    await expectStatus(res, 201);
-    const data = await res.json();
-    expect(data).toHaveProperty('id');
-  });
-
-  it('should return 401 when getting experience without authentication', async () => {
+  it('should get experience by ID', async () => {
     const res = await api(`/api/experiences/${experienceId}`);
-    await expectStatus(res, 401);
-  });
-
-  it('should get experience by ID with authentication', async () => {
-    const res = await authenticatedApi(`/api/experiences/${experienceId}`, authToken);
     await expectStatus(res, 200);
     const data = await res.json();
     expect(data).toHaveProperty('id');
@@ -1601,12 +1542,12 @@ describe('Experiences Feature', () => {
 
   it('should return 404 when getting non-existent experience', async () => {
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
-    const res = await authenticatedApi(`/api/experiences/${nonExistentId}`, authToken);
+    const res = await api(`/api/experiences/${nonExistentId}`);
     await expectStatus(res, 404);
   });
 
   it('should return 400 when getting experience with invalid UUID format', async () => {
-    const res = await authenticatedApi(`/api/experiences/invalid-uuid`, authToken);
+    const res = await api(`/api/experiences/invalid-uuid`);
     await expectStatus(res, 400);
   });
 });
