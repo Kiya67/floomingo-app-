@@ -14,6 +14,9 @@ interface ExperienceResponse {
   location: string | null;
   duration: number | null;
   view_count: number;
+  location_id: string | null;
+  location_name: string | null;
+  likes: number;
   created_at: string;
   user: {
     id: string;
@@ -22,6 +25,28 @@ interface ExperienceResponse {
     avatar_url: string | null;
   };
 }
+
+interface LocationExperienceResponse {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  video_url: string;
+  thumbnail_url: string | null;
+  location_id: string | null;
+  location_name: string | null;
+  duration: number | null;
+  views: number;
+  likes: number;
+  created_at: string;
+  profile: {
+    username: string | null;
+    avatar_url: string | null;
+  };
+}
+
+const ALLOWED_MIME_TYPES = ['video/mp4', 'video/mov', 'video/quicktime', 'video/mpeg', 'video/webm'];
+const MAX_FILE_SIZE = 524288000; // 500MB
 
 export function registerExperienceRoutes(app: App) {
   const requireAuth = app.requireAuth();
@@ -46,6 +71,9 @@ export function registerExperienceRoutes(app: App) {
             location: { type: ['string', 'null'] },
             duration: { type: ['integer', 'null'] },
             view_count: { type: 'integer' },
+            location_id: { type: ['string', 'null'] },
+            location_name: { type: ['string', 'null'] },
+            likes: { type: 'integer' },
             created_at: { type: 'string', format: 'date-time' },
             user: {
               type: 'object',
@@ -65,6 +93,11 @@ export function registerExperienceRoutes(app: App) {
         },
         401: {
           description: 'Unauthorized',
+          type: 'object',
+          properties: { error: { type: 'string' } },
+        },
+        413: {
+          description: 'File too large',
           type: 'object',
           properties: { error: { type: 'string' } },
         },
@@ -116,13 +149,28 @@ export function registerExperienceRoutes(app: App) {
         return reply.status(400).send({ error: 'Title is required' });
       }
 
+      // Validate video MIME type
+      if (!ALLOWED_MIME_TYPES.includes(fileMetadata.video.mimetype)) {
+        app.logger.warn({ userId: session.user.id, mimetype: fileMetadata.video.mimetype }, 'Invalid video MIME type');
+        return reply.status(400).send({ error: `Invalid video format. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}` });
+      }
+
+      // Validate file size
+      if (files.video.length > MAX_FILE_SIZE) {
+        app.logger.warn({ userId: session.user.id, size: files.video.length }, 'Video file too large');
+        return reply.status(413).send({ error: `File too large. Maximum size: 500MB` });
+      }
+
       const description = fields.description || null;
       const location = fields.location || null;
+      const locationId = fields.location_id || null;
+      const locationName = fields.location_name || null;
       const duration = fields.duration ? parseInt(fields.duration) : null;
+      const likes = fields.likes ? parseInt(fields.likes) : 0;
 
-      // Upload video file
+      // Upload video file to experiences bucket
       const videoExt = getFileExtension(fileMetadata.video.mimetype, fileMetadata.video.filename);
-      const videoKey = `${session.user.id}/${generateUUID()}.${videoExt}`;
+      const videoKey = `experiences/${session.user.id}/${generateUUID()}.${videoExt}`;
 
       app.logger.info({ userId: session.user.id, videoKey }, 'Uploading video');
       await app.storage.upload(videoKey, files.video);
@@ -133,7 +181,7 @@ export function registerExperienceRoutes(app: App) {
       if (files.thumbnail) {
         try {
           const thumbExt = getFileExtension(fileMetadata.thumbnail.mimetype, fileMetadata.thumbnail.filename);
-          const thumbKey = `thumbnails/${session.user.id}/${generateUUID()}.${thumbExt}`;
+          const thumbKey = `experiences/${session.user.id}/thumbnails/${generateUUID()}.${thumbExt}`;
 
           app.logger.info({ userId: session.user.id, thumbKey }, 'Uploading thumbnail');
           await app.storage.upload(thumbKey, files.thumbnail);
@@ -156,11 +204,14 @@ export function registerExperienceRoutes(app: App) {
           description,
           location,
           duration,
+          locationId,
+          locationName,
+          likes,
           viewCount: 0,
         })
         .returning();
 
-      const newExperience = (Array.isArray(result) ? result[0] : result) as typeof schema.experiences.$inferInsert & { id: string; createdAt: Date };
+      const newExperience = (Array.isArray(result) ? result[0] : result) as typeof schema.experiences.$inferInsert & { id: string; createdAt: Date; updatedAt: Date };
 
       // Fetch user profile
       const profile = await app.db
@@ -182,6 +233,9 @@ export function registerExperienceRoutes(app: App) {
         location: newExperience.location,
         duration: newExperience.duration,
         view_count: newExperience.viewCount,
+        location_id: newExperience.locationId,
+        location_name: newExperience.locationName,
+        likes: newExperience.likes,
         created_at: newExperience.createdAt.toISOString(),
         user: {
           id: profile[0]?.id || session.user.id,
@@ -270,6 +324,9 @@ export function registerExperienceRoutes(app: App) {
       location: e.experience.location,
       duration: e.experience.duration,
       view_count: e.experience.viewCount,
+      location_id: e.experience.locationId,
+      location_name: e.experience.locationName,
+      likes: e.experience.likes,
       created_at: e.experience.createdAt.toISOString(),
       user: {
         id: e.profile?.id || e.experience.userId,
@@ -313,6 +370,9 @@ export function registerExperienceRoutes(app: App) {
             location: { type: ['string', 'null'] },
             duration: { type: ['integer', 'null'] },
             view_count: { type: 'integer' },
+            location_id: { type: ['string', 'null'] },
+            location_name: { type: ['string', 'null'] },
+            likes: { type: 'integer' },
             created_at: { type: 'string', format: 'date-time' },
             user: {
               type: 'object',
@@ -376,6 +436,9 @@ export function registerExperienceRoutes(app: App) {
         location: e.experience.location,
         duration: e.experience.duration,
         view_count: e.experience.viewCount,
+        location_id: e.experience.locationId,
+        location_name: e.experience.locationName,
+        likes: e.experience.likes,
         created_at: e.experience.createdAt.toISOString(),
         user: {
           id: e.profile?.id || e.experience.userId,
@@ -388,6 +451,119 @@ export function registerExperienceRoutes(app: App) {
       app.logger.error({ err: error, experienceId: request.params.id }, 'Failed to fetch experience');
       throw error;
     }
+  });
+
+  // GET /api/experiences/location/:locationId - Get experiences by location
+  app.fastify.get('/api/experiences/location/:locationId', {
+    schema: {
+      description: 'Get experiences filtered by location',
+      tags: ['experiences'],
+      params: {
+        type: 'object',
+        required: ['locationId'],
+        properties: {
+          locationId: { type: 'string', description: 'Location ID' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', default: 20, description: 'Number of results to return (max 50)' },
+          excludeId: { type: 'string', format: 'uuid', description: 'Experience ID to exclude (optional)' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Experiences retrieved successfully',
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              user_id: { type: 'string' },
+              title: { type: 'string' },
+              description: { type: ['string', 'null'] },
+              video_url: { type: 'string' },
+              thumbnail_url: { type: ['string', 'null'] },
+              location_id: { type: ['string', 'null'] },
+              location_name: { type: ['string', 'null'] },
+              duration: { type: ['integer', 'null'] },
+              views: { type: 'integer' },
+              likes: { type: 'integer' },
+              created_at: { type: 'string', format: 'date-time' },
+              profile: {
+                type: 'object',
+                properties: {
+                  username: { type: ['string', 'null'] },
+                  avatar_url: { type: ['string', 'null'] },
+                },
+              },
+            },
+          },
+        },
+        400: {
+          description: 'Bad request',
+          type: 'object',
+          properties: { error: { type: 'string' } },
+        },
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { locationId: string }; Querystring: { limit?: string; excludeId?: string } }>,
+    reply: FastifyReply
+  ): Promise<LocationExperienceResponse[] | void> => {
+    const { locationId } = request.params;
+
+    if (!locationId || locationId.trim() === '') {
+      app.logger.warn({}, 'Location ID is required');
+      return reply.status(400).send({ error: 'Location ID is required' });
+    }
+
+    const limit = Math.min(parseInt(request.query.limit || '20'), 50);
+    const excludeId = request.query.excludeId;
+
+    app.logger.info({ locationId, limit, excludeId }, 'Fetching experiences by location');
+
+    // Build where conditions
+    const conditions = [eq(schema.experiences.locationId, locationId)];
+    if (excludeId) {
+      conditions.push(sql`${schema.experiences.id} != ${excludeId}`);
+    }
+
+    const query = app.db
+      .select({
+        experience: schema.experiences,
+        profile: schema.profiles,
+      })
+      .from(schema.experiences)
+      .leftJoin(schema.profiles, eq(schema.profiles.id, schema.experiences.userId))
+      .where(and(...(conditions as any)));
+
+    const experiencesData = await query
+      .orderBy(desc(schema.experiences.createdAt))
+      .limit(limit);
+
+    const result: LocationExperienceResponse[] = experiencesData.map((e) => ({
+      id: e.experience.id,
+      user_id: e.experience.userId,
+      title: e.experience.title,
+      description: e.experience.description,
+      video_url: e.experience.videoUrl,
+      thumbnail_url: e.experience.thumbnailUrl,
+      location_id: e.experience.locationId,
+      location_name: e.experience.locationName,
+      duration: e.experience.duration,
+      views: e.experience.viewCount,
+      likes: e.experience.likes,
+      created_at: e.experience.createdAt.toISOString(),
+      profile: {
+        username: e.profile?.username || null,
+        avatar_url: e.profile?.avatarUrl || null,
+      },
+    }));
+
+    app.logger.info({ locationId, count: result.length }, 'Experiences retrieved by location');
+    return result;
   });
 }
 
@@ -420,6 +596,8 @@ function getFileExtension(mimetype: string, filename: string): string {
     'video/x-msvideo': 'avi',
     'video/x-matroska': 'mkv',
     'video/webm': 'webm',
+    'video/mov': 'mov',
+    'video/mpeg': 'mpeg',
     'image/jpeg': 'jpg',
     'image/png': 'png',
     'image/webp': 'webp',
