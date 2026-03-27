@@ -352,6 +352,39 @@ export default function ExploreScreen() {
     }, [fetchMoments])
   );
 
+  // Pause active video when tab loses focus, resume when it regains focus
+  const wasPlayingOnBlurRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      // Screen gained focus — resume if it was playing before blur
+      if (wasPlayingOnBlurRef.current) {
+        console.log("ExploreScreen regained focus - resuming active video");
+        const moment = feed[currentIndex];
+        if (moment) {
+          const toggleFn = toggleFnMap.current.get(moment.id);
+          const isCurrentlyPlaying = playingMap.get(moment.id);
+          if (toggleFn && !isCurrentlyPlaying) {
+            toggleFn();
+          }
+        }
+        wasPlayingOnBlurRef.current = false;
+      }
+      return () => {
+        // Screen lost focus — pause active video
+        const moment = feed[currentIndex];
+        if (moment) {
+          const isCurrentlyPlaying = playingMap.get(moment.id);
+          if (isCurrentlyPlaying) {
+            console.log("ExploreScreen lost focus - pausing active video:", moment.id);
+            wasPlayingOnBlurRef.current = true;
+            const toggleFn = toggleFnMap.current.get(moment.id);
+            if (toggleFn) toggleFn();
+          }
+        }
+      };
+    }, [feed, currentIndex, playingMap])
+  );
+
   // ── Interactions ──
   const loadPostInteractions = useCallback(async (postId: string, userId: string) => {
     let isLiked = false;
