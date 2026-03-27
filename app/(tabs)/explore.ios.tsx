@@ -14,26 +14,37 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  useColorScheme,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 
-// ─── Colors ──────────────────────────────────────────────────────────────────
+// ─── Brand Colors (constant) ──────────────────────────────────────────────────
 const PINK = "#FF6B9D";
 const ORANGE = "#FF8C42";
-const BG = "#FFFFFF";
-const SURFACE = "#FFFFFF";
-const TEXT = "#1A1A1A";
-const TEXT_SECONDARY = "#6B6B6B";
-const TEXT_TERTIARY = "#A0A0A0";
-const BORDER = "rgba(0,0,0,0.07)";
-const INPUT_BG = "#F0F0F0";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 32;
 const THUMB_HEIGHT = CARD_WIDTH * (9 / 16);
+
+// ─── Color scheme helper ──────────────────────────────────────────────────────
+type ColorScheme = "light" | "dark";
+
+function getColors(scheme: ColorScheme | null | undefined) {
+  const dark = scheme === "dark";
+  return {
+    BG: dark ? "#0F0F0F" : "#FFFFFF",
+    SURFACE: dark ? "#1A1A1A" : "#FFFFFF",
+    CARD_BG: dark ? "#1A1A1A" : "#FFFFFF",
+    TEXT: dark ? "#F0F0F0" : "#1A1A1A",
+    TEXT_SECONDARY: dark ? "#A0A0A0" : "#6B6B6B",
+    TEXT_TERTIARY: dark ? "#666666" : "#A0A0A0",
+    BORDER: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.07)",
+    INPUT_BG: dark ? "#2A2A2A" : "#F0F0F0",
+  };
+}
 
 // ─── Demo Data ────────────────────────────────────────────────────────────────
 const DEMO_EXPERIENCES = [
@@ -75,6 +86,8 @@ interface FilterState {
   keywords: string[];
 }
 
+type Colors = ReturnType<typeof getColors>;
+
 const DEFAULT_FILTERS: FilterState = { sort: "Newest", duration: null, place: "", keywords: [] };
 
 function isFilterActive(f: FilterState): boolean {
@@ -102,20 +115,356 @@ function formatViews(count: number): string {
   return String(count);
 }
 
-// ─── Gradient Border Card ─────────────────────────────────────────────────────
-function GradientBorderCard({ children }: { children: React.ReactNode }) {
-  return (
-    <LinearGradient
-      colors={[PINK, ORANGE]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.gradientBorder}
-    >
-      <View style={styles.cardInner}>
-        {children}
-      </View>
-    </LinearGradient>
-  );
+// ─── Style factory ────────────────────────────────────────────────────────────
+function getStyles(c: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.BG,
+    },
+    header: {
+      backgroundColor: c.SURFACE,
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: c.BORDER,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      zIndex: 10,
+    },
+    searchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    searchInputWrapper: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.INPUT_BG,
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      height: 44,
+    },
+    searchIcon: {
+      marginRight: 8,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 15,
+      color: c.TEXT,
+      paddingVertical: 0,
+    },
+    filterBtnWrapper: {
+      position: "relative",
+    },
+    filterBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    filterBadge: {
+      position: "absolute",
+      top: 1,
+      right: 1,
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: ORANGE,
+      borderWidth: 2,
+      borderColor: c.SURFACE,
+    },
+    listContent: {
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      gap: 16,
+    },
+    // ── Card ──
+    card: {
+      backgroundColor: c.CARD_BG,
+      borderRadius: 18,
+      overflow: "hidden",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+    },
+    // ── Thumbnail ──
+    thumbContainer: {
+      width: "100%",
+      height: THUMB_HEIGHT,
+      backgroundColor: c.INPUT_BG,
+      overflow: "hidden",
+    },
+    thumb: {
+      width: "100%",
+      height: "100%",
+    },
+    thumbGradient: {
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 60,
+    },
+    durationBadge: {
+      position: "absolute",
+      bottom: 10,
+      right: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      borderRadius: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    viewsBadge: {
+      position: "absolute",
+      bottom: 10,
+      left: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: "rgba(0,0,0,0.6)",
+      borderRadius: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    durationBadgeText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: "#FFF",
+    },
+    // ── Card info ──
+    cardInfo: {
+      padding: 12,
+    },
+    cardInfoTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    },
+    cardAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.INPUT_BG,
+      marginTop: 2,
+    },
+    cardTextBlock: {
+      flex: 1,
+      gap: 2,
+    },
+    cardCreator: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: c.TEXT_SECONDARY,
+    },
+    cardTitle: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: c.TEXT,
+      lineHeight: 21,
+      letterSpacing: -0.1,
+    },
+    locationRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      marginTop: 2,
+    },
+    locationText: {
+      fontSize: 12,
+      color: PINK,
+      flex: 1,
+      textDecorationLine: "underline",
+    },
+    // ── Empty state ──
+    emptyState: {
+      alignItems: "center",
+      paddingTop: 80,
+      paddingHorizontal: 32,
+      gap: 12,
+    },
+    emptyIconCircle: {
+      width: 72,
+      height: 72,
+      borderRadius: 22,
+      backgroundColor: "rgba(255,107,157,0.1)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    emptyTitle: {
+      fontSize: 17,
+      fontWeight: "700",
+      color: c.TEXT,
+      textAlign: "center",
+    },
+    emptySubtitle: {
+      fontSize: 14,
+      color: c.TEXT_SECONDARY,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+    // ── Filter Sheet ──
+    sheetOverlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+    },
+    sheetBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0,0,0,0.45)",
+    },
+    sheetContainer: {
+      backgroundColor: c.SURFACE,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      maxHeight: "82%",
+    },
+    sheetHandle: {
+      width: 36,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.BORDER,
+      alignSelf: "center",
+      marginTop: 12,
+      marginBottom: 4,
+    },
+    sheetContent: {
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 8,
+    },
+    sheetSectionLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: c.TEXT_TERTIARY,
+      letterSpacing: 0.8,
+      textTransform: "uppercase",
+      marginBottom: 12,
+    },
+    chipRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+    },
+    chip: {
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 20,
+      backgroundColor: c.INPUT_BG,
+      borderWidth: 1,
+      borderColor: c.BORDER,
+    },
+    chipSelected: {
+      paddingHorizontal: 16,
+      paddingVertical: 9,
+      borderRadius: 20,
+    },
+    chipText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: c.TEXT_SECONDARY,
+    },
+    chipTextSelected: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#FFF",
+    },
+    filterInputWrapper: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.INPUT_BG,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      height: 44,
+      borderWidth: 1,
+      borderColor: c.BORDER,
+    },
+    filterInputIcon: {
+      marginRight: 8,
+    },
+    filterInput: {
+      flex: 1,
+      fontSize: 14,
+      color: c.TEXT,
+      paddingVertical: 0,
+    },
+    filterInputPlaceholder: {
+      flex: 1,
+      fontSize: 14,
+      color: c.TEXT_TERTIARY,
+    },
+    suggestionsBox: {
+      backgroundColor: c.SURFACE,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.BORDER,
+      marginTop: 6,
+      marginBottom: 8,
+      overflow: "hidden",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+    },
+    suggestionItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      borderBottomWidth: 1,
+      borderBottomColor: c.BORDER,
+    },
+    suggestionText: {
+      fontSize: 14,
+      color: c.TEXT,
+      fontWeight: "500",
+    },
+    sheetFooter: {
+      flexDirection: "row",
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 12,
+      gap: 12,
+      borderTopWidth: 1,
+      borderTopColor: c.BORDER,
+    },
+    resetBtn: {
+      flex: 1,
+      height: 50,
+      borderRadius: 14,
+      justifyContent: "center",
+      alignItems: "center",
+      borderWidth: 1.5,
+      borderColor: c.BORDER,
+    },
+    resetBtnText: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: c.TEXT_SECONDARY,
+    },
+    applyBtnWrapper: {
+      flex: 2,
+    },
+    applyBtn: {
+      height: 50,
+      borderRadius: 14,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    applyBtnText: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: "#FFF",
+    },
+  });
 }
 
 // ─── Filter Sheet ─────────────────────────────────────────────────────────────
@@ -124,16 +473,19 @@ function FilterSheet({
   onClose,
   filters,
   onApply,
+  colors,
 }: {
   visible: boolean;
   onClose: () => void;
   filters: FilterState;
   onApply: (f: FilterState) => void;
+  colors: Colors;
 }) {
   const [draft, setDraft] = useState<FilterState>(filters);
   const [placeInput, setPlaceInput] = useState(filters.place);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const insets = useSafeAreaInsets();
+  const styles = getStyles(colors);
 
   useEffect(() => {
     if (visible) {
@@ -253,11 +605,11 @@ function FilterSheet({
             {/* Location */}
             <Text style={[styles.sheetSectionLabel, { marginTop: 24 }]}>Filter by place</Text>
             <View style={styles.filterInputWrapper}>
-              <Feather name="map-pin" size={16} color={TEXT_TERTIARY} style={styles.filterInputIcon} />
+              <Feather name="map-pin" size={16} color={colors.TEXT_TERTIARY} style={styles.filterInputIcon} />
               <TextInput
                 style={styles.filterInput}
                 placeholder="Search a place..."
-                placeholderTextColor={TEXT_TERTIARY}
+                placeholderTextColor={colors.TEXT_TERTIARY}
                 value={placeInput}
                 onChangeText={handlePlaceInput}
                 autoCapitalize="words"
@@ -266,7 +618,7 @@ function FilterSheet({
               />
               {placeInput.length > 0 && (
                 <TouchableOpacity onPress={() => { setPlaceInput(""); setDraft((d) => ({ ...d, place: "" })); setShowSuggestions(false); }}>
-                  <Feather name="x" size={16} color={TEXT_TERTIARY} />
+                  <Feather name="x" size={16} color={colors.TEXT_TERTIARY} />
                 </TouchableOpacity>
               )}
             </View>
@@ -296,7 +648,7 @@ function FilterSheet({
             {/* Keywords */}
             <Text style={[styles.sheetSectionLabel, { marginTop: 24 }]}>Keywords</Text>
             <View style={styles.filterInputWrapper}>
-              <Feather name="tag" size={16} color={TEXT_TERTIARY} style={styles.filterInputIcon} />
+              <Feather name="tag" size={16} color={colors.TEXT_TERTIARY} style={styles.filterInputIcon} />
               <Text style={styles.filterInputPlaceholder}>Tap chips below to filter</Text>
             </View>
             <View style={[styles.chipRow, { marginTop: 10 }]}>
@@ -341,14 +693,19 @@ function ExperienceCard({
   item,
   index,
   onPress,
+  colors,
+  router,
 }: {
   item: DemoExperience;
   index: number;
   onPress: () => void;
+  colors: Colors;
+  router: ReturnType<typeof useRouter>;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const styles = getStyles(colors);
 
   useEffect(() => {
     Animated.parallel([
@@ -364,6 +721,11 @@ function ExperienceCard({
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
   };
 
+  const handleLocationPress = () => {
+    console.log("User tapped location on card:", item.location);
+    router.push(`/search-location?q=${encodeURIComponent(item.location)}` as any);
+  };
+
   const durationText = formatDuration(item.duration);
   const viewsText = formatViews(item.view_count);
   const thumbSource = resolveImageSource(item.thumbnail_url);
@@ -377,10 +739,16 @@ function ExperienceCard({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
       >
-        <GradientBorderCard>
+        <View style={styles.card}>
           {/* Thumbnail */}
           <View style={styles.thumbContainer}>
             <Image source={thumbSource} style={styles.thumb} resizeMode="cover" />
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.45)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.thumbGradient}
+            />
             <View style={styles.durationBadge}>
               <Feather name="clock" size={10} color="#FFF" />
               <Text style={styles.durationBadgeText}>{durationText}</Text>
@@ -398,46 +766,18 @@ function ExperienceCard({
               <View style={styles.cardTextBlock}>
                 <Text style={styles.cardCreator}>{item.creator}</Text>
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-                <View style={styles.locationRow}>
+                <TouchableOpacity
+                  style={styles.locationRow}
+                  activeOpacity={0.7}
+                  onPress={handleLocationPress}
+                >
                   <Feather name="map-pin" size={11} color={PINK} />
                   <Text style={styles.locationText} numberOfLines={1}>{item.location}</Text>
-                </View>
+                </TouchableOpacity>
               </View>
             </View>
-
-            {/* Action icons */}
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => console.log("User tapped heart on card (iOS):", item.id)}
-                activeOpacity={0.7}
-              >
-                <Feather name="heart" size={18} color={TEXT_TERTIARY} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => console.log("User tapped comment on card (iOS):", item.id)}
-                activeOpacity={0.7}
-              >
-                <Feather name="message-circle" size={18} color={TEXT_TERTIARY} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => console.log("User tapped bookmark on card (iOS):", item.id)}
-                activeOpacity={0.7}
-              >
-                <Feather name="bookmark" size={18} color={TEXT_TERTIARY} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => console.log("User tapped share on card (iOS):", item.id)}
-                activeOpacity={0.7}
-              >
-                <Feather name="send" size={18} color={TEXT_TERTIARY} />
-              </TouchableOpacity>
-            </View>
           </View>
-        </GradientBorderCard>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -447,6 +787,9 @@ function ExperienceCard({
 export default function ExploreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
+  const colors = getColors(colorScheme);
+  const styles = getStyles(colors);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -511,13 +854,15 @@ export default function ExploreScreen() {
       <ExperienceCard
         item={item}
         index={index}
+        colors={colors}
+        router={router}
         onPress={() => {
           console.log("User tapped experience card on explore screen (iOS):", item.id, item.title);
           router.push(`/experience/${item.id}` as any);
         }}
       />
     ),
-    [router]
+    [router, colors]
   );
 
   const keyExtractor = useCallback((item: DemoExperience) => item.id, []);
@@ -527,14 +872,13 @@ export default function ExploreScreen() {
     <View style={styles.container}>
       {/* Sticky header */}
       <View style={[styles.header, { paddingTop: headerPaddingTop }]}>
-        <Text style={styles.headerTitle}>Explore</Text>
         <View style={styles.searchRow}>
           <View style={styles.searchInputWrapper}>
-            <Feather name="search" size={17} color={TEXT_TERTIARY} style={styles.searchIcon} />
+            <Feather name="search" size={17} color={colors.TEXT_TERTIARY} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               placeholder="Search experiences..."
-              placeholderTextColor={TEXT_TERTIARY}
+              placeholderTextColor={colors.TEXT_TERTIARY}
               value={searchQuery}
               onChangeText={handleSearchChange}
               returnKeyType="search"
@@ -580,6 +924,7 @@ export default function ExploreScreen() {
         visible={filterSheetVisible}
         onClose={() => setFilterSheetVisible(false)}
         filters={filters}
+        colors={colors}
         onApply={(f) => {
           console.log("Explore (iOS): filters applied:", f);
           setFilters(f);
@@ -588,362 +933,3 @@ export default function ExploreScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-  header: {
-    backgroundColor: SURFACE,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    zIndex: 10,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: TEXT,
-    letterSpacing: -0.4,
-    marginBottom: 12,
-  },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  searchInputWrapper: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: INPUT_BG,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    height: 44,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: TEXT,
-    paddingVertical: 0,
-  },
-  filterBtnWrapper: {
-    position: "relative",
-  },
-  filterBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  filterBadge: {
-    position: "absolute",
-    top: 1,
-    right: 1,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: ORANGE,
-    borderWidth: 2,
-    borderColor: SURFACE,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    gap: 16,
-  },
-  gradientBorder: {
-    borderRadius: 18,
-    padding: 2.5,
-    shadowColor: PINK,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-  },
-  cardInner: {
-    backgroundColor: SURFACE,
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  thumbContainer: {
-    width: "100%",
-    height: THUMB_HEIGHT,
-    backgroundColor: INPUT_BG,
-    overflow: "hidden",
-  },
-  thumb: {
-    width: "100%",
-    height: "100%",
-  },
-  durationBadge: {
-    position: "absolute",
-    bottom: 10,
-    right: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  viewsBadge: {
-    position: "absolute",
-    bottom: 10,
-    left: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  durationBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  cardInfo: {
-    padding: 12,
-    gap: 10,
-  },
-  cardInfoTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  cardAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: INPUT_BG,
-    marginTop: 2,
-  },
-  cardTextBlock: {
-    flex: 1,
-    gap: 2,
-  },
-  cardCreator: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: TEXT_SECONDARY,
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: TEXT,
-    lineHeight: 21,
-    letterSpacing: -0.1,
-  },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 2,
-  },
-  locationText: {
-    fontSize: 12,
-    color: TEXT_TERTIARY,
-    flex: 1,
-  },
-  actionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    paddingTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-  },
-  actionBtn: {
-    padding: 4,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 80,
-    paddingHorizontal: 32,
-    gap: 12,
-  },
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,107,157,0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: TEXT,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  sheetOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  sheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  sheetContainer: {
-    backgroundColor: SURFACE,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "82%",
-  },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#DDD",
-    alignSelf: "center",
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  sheetContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  sheetSectionLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: TEXT_TERTIARY,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 12,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: INPUT_BG,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  chipSelected: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 20,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
-  },
-  chipTextSelected: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  filterInputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: INPUT_BG,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  filterInputIcon: {
-    marginRight: 8,
-  },
-  filterInput: {
-    flex: 1,
-    fontSize: 14,
-    color: TEXT,
-    paddingVertical: 0,
-  },
-  filterInputPlaceholder: {
-    flex: 1,
-    fontSize: 14,
-    color: TEXT_TERTIARY,
-  },
-  suggestionsBox: {
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    marginTop: 6,
-    marginBottom: 8,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-  },
-  suggestionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-  suggestionText: {
-    fontSize: 14,
-    color: TEXT,
-    fontWeight: "500",
-  },
-  sheetFooter: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-  },
-  resetBtn: {
-    flex: 1,
-    height: 50,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "rgba(0,0,0,0.12)",
-  },
-  resetBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
-  },
-  applyBtnWrapper: {
-    flex: 2,
-  },
-  applyBtn: {
-    height: 50,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  applyBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-});
