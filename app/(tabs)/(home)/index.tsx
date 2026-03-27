@@ -393,8 +393,10 @@ export default function HomeScreen() {
     });
   }, []);
 
-  const handleViewableItemsChanged = useCallback(
-    ({ viewableItems }: any) => {
+  const viewableItemsHandlerRef = useRef<(info: { viewableItems: any[] }) => void>(() => {});
+
+  useEffect(() => {
+    viewableItemsHandlerRef.current = ({ viewableItems }: any) => {
       if (viewableItems.length > 0) {
         const newIndex = viewableItems[0].index;
         setCurrentIndex(newIndex);
@@ -424,9 +426,12 @@ export default function HomeScreen() {
           }
         }
       }
-    },
-    [feed, currentUserId, loadPostInteractions, viewedPostIds]
-  );
+    };
+  }, [feed, currentUserId, loadPostInteractions, viewedPostIds]);
+
+  const handleViewableItemsChanged = useRef((info: any) => {
+    viewableItemsHandlerRef.current(info);
+  }).current;
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
