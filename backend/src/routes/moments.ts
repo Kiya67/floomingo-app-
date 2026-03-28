@@ -8,7 +8,7 @@ interface CreateMomentBody {
   thumbnail_url?: string;
   caption?: string;
   linked_experience_id?: string;
-  places?: Array<{ place_id: string; place_name: string; place_address?: string }>;
+  places?: string[];
 }
 
 interface MomentPlace {
@@ -186,14 +186,9 @@ export function registerMomentRoutes(app: App) {
           places: {
             type: 'array',
             items: {
-              type: 'object',
-              required: ['place_id', 'place_name'],
-              properties: {
-                place_id: { type: 'string' },
-                place_name: { type: 'string' },
-                place_address: { type: 'string' },
-              },
+              type: 'string',
             },
+            description: 'Array of place names',
           },
         },
       },
@@ -234,11 +229,11 @@ export function registerMomentRoutes(app: App) {
 
       // Insert places if provided
       if (request.body.places && request.body.places.length > 0) {
-        const placeValues = request.body.places.map((p) => ({
+        const placeValues = request.body.places.map((placeName: string) => ({
           momentId: moment.id,
-          placeId: p.place_id,
-          placeName: p.place_name,
-          placeAddress: p.place_address,
+          placeId: placeName,
+          placeName: placeName,
+          placeAddress: null,
         }));
         await app.db.insert(schema.momentPlaces).values(placeValues);
       }
