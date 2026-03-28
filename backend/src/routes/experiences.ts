@@ -39,8 +39,9 @@ interface LocationExperienceResponse {
   views: number;
   likes: number;
   created_at: string;
-  profile: {
+  creator: {
     username: string | null;
+    display_name: string | null;
     avatar_url: string | null;
   };
 }
@@ -168,25 +169,56 @@ export function registerExperienceRoutes(app: App) {
       const duration = fields.duration ? parseInt(fields.duration) : null;
       const likes = fields.likes ? parseInt(fields.likes) : 0;
 
+      // Get Supabase client from app context
+      const supabase = (app as any).supabase;
+      if (!supabase) {
+        app.logger.error({ userId: session.user.id }, 'Supabase client not available');
+        return reply.status(500).send({ error: 'Storage service not available' });
+      }
+
       // Upload video file to experiences bucket
       const videoExt = getFileExtension(fileMetadata.video.mimetype, fileMetadata.video.filename);
-      const videoKey = `experiences/${session.user.id}/${generateUUID()}.${videoExt}`;
+      const videoFilename = `${generateUUID()}.${videoExt}`;
+      const videoPath = `${session.user.id}/${videoFilename}`;
 
-      app.logger.info({ userId: session.user.id, videoKey }, 'Uploading video');
-      await app.storage.upload(videoKey, files.video);
-      const { url: videoUrl } = await app.storage.getSignedUrl(videoKey);
+      app.logger.info({ userId: session.user.id, videoPath }, 'Uploading video to Supabase');
+      const videoUpload = await supabase.storage.from('experiences').upload(videoPath, files.video, {
+        contentType: fileMetadata.video.mimetype,
+        upsert: false,
+      });
+
+      if (videoUpload.error) {
+        app.logger.error({ err: videoUpload.error, userId: session.user.id }, 'Failed to upload video');
+        return reply.status(500).send({ error: 'Failed to upload video' });
+      }
+
+      // Get public URL for video
+      const { data: videoUrlData } = supabase.storage.from('experiences').getPublicUrl(videoPath);
+      const videoUrl = videoUrlData?.publicUrl;
+
+      if (!videoUrl) {
+        app.logger.error({ userId: session.user.id, videoPath }, 'Failed to get public URL for video');
+        return reply.status(500).send({ error: 'Failed to generate video URL' });
+      }
 
       // Upload thumbnail if provided
       let thumbnailUrl: string | null = null;
       if (files.thumbnail) {
         try {
           const thumbExt = getFileExtension(fileMetadata.thumbnail.mimetype, fileMetadata.thumbnail.filename);
-          const thumbKey = `experiences/${session.user.id}/thumbnails/${generateUUID()}.${thumbExt}`;
+          const thumbFilename = `${generateUUID()}.${thumbExt}`;
+          const thumbPath = `${session.user.id}/${thumbFilename}`;
 
-          app.logger.info({ userId: session.user.id, thumbKey }, 'Uploading thumbnail');
-          await app.storage.upload(thumbKey, files.thumbnail);
-          const { url: thumbUrl } = await app.storage.getSignedUrl(thumbKey);
-          thumbnailUrl = thumbUrl;
+          app.logger.info({ userId: session.user.id, thumbPath }, 'Uploading thumbnail to Supabase');
+          const thumbUpload = await supabase.storage.from('thumbnails').upload(thumbPath, files.thumbnail, {
+            contentType: fileMetadata.thumbnail.mimetype,
+            upsert: false,
+          });
+
+          if (!thumbUpload.error) {
+            const { data: thumbUrlData } = supabase.storage.from('thumbnails').getPublicUrl(thumbPath);
+            thumbnailUrl = thumbUrlData?.publicUrl || null;
+          }
         } catch (err) {
           app.logger.warn({ err, userId: session.user.id }, 'Failed to upload thumbnail');
           // Continue without thumbnail
@@ -491,10 +523,11 @@ export function registerExperienceRoutes(app: App) {
               views: { type: 'integer' },
               likes: { type: 'integer' },
               created_at: { type: 'string', format: 'date-time' },
-              profile: {
+              creator: {
                 type: 'object',
                 properties: {
                   username: { type: ['string', 'null'] },
+                  display_name: { type: ['string', 'null'] },
                   avatar_url: { type: ['string', 'null'] },
                 },
               },
@@ -556,8 +589,9 @@ export function registerExperienceRoutes(app: App) {
       views: e.experience.viewCount,
       likes: e.experience.likes,
       created_at: e.experience.createdAt.toISOString(),
-      profile: {
+      creator: {
         username: e.profile?.username || null,
+        display_name: e.profile?.displayName || null,
         avatar_url: e.profile?.avatarUrl || null,
       },
     }));

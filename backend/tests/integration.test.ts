@@ -811,6 +811,19 @@ describe('Post Locations Feature', () => {
     await expectStatus(res, 404);
   });
 
+  it('should return 400 when adding location without required fields', async () => {
+    const res = await authenticatedApi(
+      `/api/posts/${postId}/locations`,
+      authToken,
+      {
+        method: 'POST',
+        body: JSON.stringify({ place_id: 'place-123' }),
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+    await expectStatus(res, 400);
+  });
+
   it('should add location to own post', async () => {
     const res = await authenticatedApi(
       `/api/posts/${postId}/locations`,
@@ -1307,23 +1320,13 @@ describe('Moments Feature', () => {
     momentId = data.id;
   });
 
-  it('should create moment with places array', async () => {
+  it('should create moment with places array (array of place names)', async () => {
     const res = await authenticatedApi('/api/moments', authToken, {
       method: 'POST',
       body: JSON.stringify({
         video_url: 'https://example.com/moment2.mp4',
         caption: 'Moment with places',
-        places: [
-          {
-            place_id: 'place-001',
-            place_name: 'Paris',
-            place_address: '75001 Paris, France',
-          },
-          {
-            place_id: 'place-002',
-            place_name: 'Eiffel Tower',
-          },
-        ],
+        places: ['Paris', 'Eiffel Tower'],
       }),
       headers: { 'Content-Type': 'application/json' },
     });
