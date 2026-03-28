@@ -12,22 +12,44 @@ import {
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { LinearGradient } from "expo-linear-gradient";
 import { Video, MapPin } from "lucide-react-native";
-import { getBearerToken } from "@/utils/api";
+import { authenticatedPost } from "@/utils/api";
+import { supabase } from "@/lib/supabase";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const EXPERIENCE_ENDPOINT = "https://7efxms2e3tmdd7a38j8uphfzrnwcgesc.app.specular.dev/api/experiences";
+async function uploadBlobToSupabase(
+  localUri: string,
+  bucket: string,
+  path: string,
+  contentType: string
+): Promise<string> {
+  console.log(`[Upload iOS] Fetching local file: ${localUri}`);
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  console.log(`[Upload iOS] Uploading to bucket "${bucket}" path "${path}"`);
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(path, blob, { contentType, upsert: true });
+  if (error) {
+    console.error(`[Upload iOS] Supabase storage error:`, error);
+    throw new Error(error.message);
+  }
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  console.log(`[Upload iOS] Public URL: ${urlData.publicUrl}`);
+  return urlData.publicUrl;
+}
 
 export default function UploadExperienceScreen() {
   const router = useRouter();
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoName, setVideoName] = useState<string>("");
-  const [videoDuration, setVideoDuration] = useState<number>(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   const handlePickVideo = useCallback(async () => {
     console.log("User tapped pick video for experience upload (iOS)");
@@ -41,7 +63,6 @@ export default function UploadExperienceScreen() {
       const asset = result.assets[0];
       const durationSecs = asset.duration ? asset.duration / 1000 : 0;
       setVideoUri(asset.uri);
-      setVideoDuration(durationSecs);
       const parts = asset.uri.split("/");
       setVideoName(parts[parts.length - 1] || "video.mp4");
       console.log("User selected video for experience (iOS):", asset.uri, "duration:", durationSecs, "s");
@@ -57,47 +78,49 @@ export default function UploadExperienceScreen() {
       Alert.alert("Missing title", "Please add a title for your experience.");
       return;
     }
-    console.log("User tapped Post Experience (iOS) - submitting multipart upload");
+    console.log("User tapped Post Experience (iOS) - submitting Supabase Storage upload");
     setSubmitting(true);
     try {
-      const token = await getBearerToken();
-      if (!token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         Alert.alert("Not signed in", "Please sign in to upload.");
         return;
       }
 
-      const formData = new FormData();
-      formData.append("video", {
-        uri: videoUri,
-        name: videoName || "video.mp4",
-        type: "video/mp4",
-      } as any);
-      formData.append("title", title.trim());
-      if (description.trim()) formData.append("description", description.trim());
-      if (location.trim()) formData.append("location", location.trim());
-      formData.append("duration", String(Math.round(videoDuration)));
+      const timestamp = Date.now();
+      const videoPath = `${user.id}/${timestamp}.mp4`;
+      const thumbPath = `${user.id}/${timestamp}.jpg`;
 
-      console.log("POST multipart/form-data to", EXPERIENCE_ENDPOINT, "title:", title.trim(), "duration:", Math.round(videoDuration));
+      // Step 1: Upload video to 'experiences' bucket
+      setUploadStatus("Uploading video...");
+      console.log("Step 1 (iOS): Uploading experience video to Supabase Storage bucket 'experiences'");
+      const videoUrl = await uploadBlobToSupabase(videoUri, "experiences", videoPath, "video/mp4");
 
-      const response = await fetch(EXPERIENCE_ENDPOINT, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      console.log("Experience upload response status (iOS):", response.status);
-
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Experience upload error response (iOS):", text);
-        Alert.alert("Upload failed", text || "Couldn't post your experience. Please try again.");
-        return;
+      // Step 2: Generate and upload thumbnail
+      setUploadStatus("Generating thumbnail...");
+      let thumbnailUrl: string | null = null;
+      try {
+        console.log("Step 2 (iOS): Generating thumbnail from experience video");
+        const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
+        console.log("Thumbnail generated at:", thumbResult.uri);
+        setUploadStatus("Uploading thumbnail...");
+        thumbnailUrl = await uploadBlobToSupabase(thumbResult.uri, "thumbnails", thumbPath, "image/jpeg");
+      } catch (thumbErr: any) {
+        console.warn("Thumbnail generation/upload failed (iOS, continuing without thumbnail):", thumbErr?.message);
       }
 
-      const data = await response.json();
-      console.log("Experience posted successfully (iOS):", data);
+      // Step 3: POST JSON to backend
+      setUploadStatus("Posting experience...");
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        location: location.trim() || undefined,
+        video_url: videoUrl,
+        thumbnail_url: thumbnailUrl,
+      };
+      console.log("Posting experience to /api/experiences (iOS):", payload);
+      await authenticatedPost("/api/experiences", payload);
+      console.log("Experience posted successfully (iOS)");
       Alert.alert("Posted!", "Your experience has been shared.", [
         { text: "OK", onPress: () => router.back() },
       ]);
@@ -106,10 +129,12 @@ export default function UploadExperienceScreen() {
       Alert.alert("Upload failed", e?.message || "Couldn't post your experience. Please try again.");
     } finally {
       setSubmitting(false);
+      setUploadStatus("");
     }
-  }, [videoUri, videoName, videoDuration, title, description, location, router]);
+  }, [videoUri, videoName, title, description, location, router]);
 
   const canSubmit = !!videoUri && !!title.trim() && !submitting;
+  const submitLabel = submitting ? (uploadStatus || "Uploading...") : "Post Experience";
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -186,7 +211,7 @@ export default function UploadExperienceScreen() {
             {submitting ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator size="small" color="#FFF" />
-                <Text style={styles.submitBtnText}>Uploading...</Text>
+                <Text style={styles.submitBtnText}>{submitLabel}</Text>
               </View>
             ) : (
               <Text style={styles.submitBtnText}>Post Experience</Text>

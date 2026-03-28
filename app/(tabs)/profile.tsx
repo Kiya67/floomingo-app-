@@ -9,6 +9,15 @@ import { IconSymbol } from "@/components/IconSymbol";
 import { getFollowCounts } from "@/utils/supabaseHelpers";
 import { Bell } from "lucide-react-native";
 
+interface Experience {
+  id: string;
+  user_id: string;
+  title: string;
+  thumbnail_url: string | null;
+  views_count: number;
+  created_at: string;
+}
+
 interface Profile {
   id: string;
   email: string;
@@ -64,6 +73,8 @@ export default function ProfileScreen() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [experiences, setExperiences] = useState<Experience[]>([]);
+  const [activeTab, setActiveTab] = useState<"moments" | "experiences">("moments");
   const [stats, setStats] = useState<ProfileStats>({ follower_count: 0, following_count: 0, post_count: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -130,6 +141,27 @@ export default function ProfileScreen() {
     }
   };
 
+  const fetchExperiences = async () => {
+    console.log('Fetching user experiences');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('experiences')
+        .select('id, user_id, title, thumbnail_url, views_count, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('Error fetching experiences:', error);
+      } else {
+        console.log('User experiences fetched:', data?.length || 0);
+        setExperiences(data || []);
+      }
+    } catch (error) {
+      console.error('Error in fetchExperiences:', error);
+    }
+  };
+
   const fetchStats = async () => {
     console.log('Fetching profile stats using Supabase client');
     try {
@@ -184,15 +216,15 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Profile screen focused - refreshing profile, moments, and stats');
-      Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
+      console.log('Profile screen focused - refreshing profile, moments, experiences, and stats');
+      Promise.all([fetchProfile(), fetchUserPosts(), fetchExperiences(), fetchStats(), fetchUnreadNotifications()]);
     }, [])
   );
 
   const onRefresh = async () => {
     console.log('User pulled to refresh profile');
     setRefreshing(true);
-    await Promise.all([fetchProfile(), fetchUserPosts(), fetchStats(), fetchUnreadNotifications()]);
+    await Promise.all([fetchProfile(), fetchUserPosts(), fetchExperiences(), fetchStats(), fetchUnreadNotifications()]);
     setRefreshing(false);
   };
 
@@ -276,6 +308,7 @@ export default function ProfileScreen() {
   const followingCountText = followingCount.toString();
   const momentsCountText = momentsCount.toString();
   const emptyText = 'No moments yet';
+  const emptyExpText = 'No experiences yet';
   const unreadBadgeText = unreadNotificationsCount > 9 ? '9+' : String(unreadNotificationsCount);
 
   if (loading) {
@@ -411,46 +444,98 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.postsSection}>
-          <View style={styles.postsSectionHeader}>
-            <IconSymbol 
-              android_material_icon_name="videocam" 
-              size={24} 
-              color={textColor}
-            />
-            <Text style={[styles.postsSectionTitle, { color: textColor }]}>Moments</Text>
+          {/* Tab switcher */}
+          <View style={styles.tabSwitcher}>
+            <TouchableOpacity
+              style={[styles.tabBtn, activeTab === 'moments' && styles.tabBtnActive]}
+              onPress={() => {
+                console.log('User tapped Moments tab');
+                setActiveTab('moments');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabBtnText, activeTab === 'moments' && styles.tabBtnTextActive]}>Moments</Text>
+              {activeTab === 'moments' && <View style={styles.tabUnderline} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabBtn, activeTab === 'experiences' && styles.tabBtnActive]}
+              onPress={() => {
+                console.log('User tapped Experiences tab');
+                setActiveTab('experiences');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabBtnText, activeTab === 'experiences' && styles.tabBtnTextActive]}>Experiences</Text>
+              {activeTab === 'experiences' && <View style={styles.tabUnderline} />}
+            </TouchableOpacity>
           </View>
 
-          {posts.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <IconSymbol 
-                android_material_icon_name="videocam" 
-                size={64} 
-                color={textSecondaryColor}
-              />
-              <Text style={[styles.emptyText, { color: textSecondaryColor }]}>
-                {emptyText}
-              </Text>
-            </View>
+          {activeTab === 'moments' ? (
+            posts.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <IconSymbol android_material_icon_name="videocam" size={64} color={textSecondaryColor} />
+                <Text style={[styles.emptyText, { color: textSecondaryColor }]}>{emptyText}</Text>
+              </View>
+            ) : (
+              <View style={styles.gridContainer}>
+                {posts.map((post) => {
+                  if (!post) return null;
+                  return (
+                    <VideoGridItem
+                      key={post.id}
+                      post={post}
+                      size={gridItemSize}
+                      shouldPlay={false}
+                      onPress={() => {
+                        console.log('User tapped moment:', post.id);
+                        router.push(`/video/${post.id}`);
+                      }}
+                      onLongPress={() => handleLongPress(post)}
+                      showViewCount={false}
+                    />
+                  );
+                })}
+              </View>
+            )
           ) : (
-            <View style={styles.gridContainer}>
-              {posts.map((post) => {
-                if (!post) return null;
-                return (
-                  <VideoGridItem
-                    key={post.id}
-                    post={post}
-                    size={gridItemSize}
-                    shouldPlay={false}
-                    onPress={() => {
-                      console.log('User tapped moment:', post.id);
-                      router.push(`/video/${post.id}`);
-                    }}
-                    onLongPress={() => handleLongPress(post)}
-                    showViewCount={false}
-                  />
-                );
-              })}
-            </View>
+            experiences.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <IconSymbol android_material_icon_name="movie" size={64} color={textSecondaryColor} />
+                <Text style={[styles.emptyText, { color: textSecondaryColor }]}>{emptyExpText}</Text>
+              </View>
+            ) : (
+              <View style={styles.expGridContainer}>
+                {experiences.map((exp) => {
+                  const expThumbSource = exp.thumbnail_url ? { uri: exp.thumbnail_url } : null;
+                  const expViewsText = String(exp.views_count ?? 0);
+                  return (
+                    <TouchableOpacity
+                      key={exp.id}
+                      style={[styles.expCard, { width: (width - 48) / 2 }]}
+                      onPress={() => {
+                        console.log('User tapped experience:', exp.id);
+                        router.push(`/experience/${exp.id}` as any);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <View style={styles.expThumb}>
+                        {expThumbSource ? (
+                          <Image source={expThumbSource} style={styles.expThumbImg} resizeMode="cover" />
+                        ) : (
+                          <View style={[styles.expThumbPlaceholder, { backgroundColor: primaryColor }]}>
+                            <IconSymbol android_material_icon_name="movie" size={28} color="#fff" />
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.expInfo}>
+                        <Text style={[styles.expTitle, { color: textColor }]} numberOfLines={2}>{exp.title}</Text>
+                        <Text style={[styles.expViews, { color: textSecondaryColor }]}>{expViewsText} views</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )
           )}
         </View>
       </ScrollView>
@@ -641,15 +726,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
-  postsSectionHeader: {
+  tabSwitcher: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
   },
-  postsSectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  tabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    position: 'relative',
+  },
+  tabBtnActive: {},
+  tabBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#999',
+  },
+  tabBtnTextActive: {
+    color: '#FF3B7A',
+  },
+  tabUnderline: {
+    position: 'absolute',
+    bottom: -1,
+    left: '20%',
+    right: '20%',
+    height: 2,
+    backgroundColor: '#FF3B7A',
+    borderRadius: 1,
+  },
+  expGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  expCard: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+  },
+  expThumb: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    backgroundColor: '#ddd',
+  },
+  expThumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  expThumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expInfo: {
+    padding: 8,
+  },
+  expTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  expViews: {
+    fontSize: 11,
+    marginTop: 2,
   },
   emptyContainer: {
     alignItems: 'center',

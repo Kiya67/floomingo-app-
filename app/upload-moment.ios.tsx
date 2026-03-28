@@ -12,15 +12,39 @@ import {
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { LinearGradient } from "expo-linear-gradient";
 import { Video, MapPin, X, Plus } from "lucide-react-native";
 import { authenticatedPost } from "@/utils/api";
+import { supabase } from "@/lib/supabase";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 interface Place {
   id: string;
   place_id: string;
   place_name: string;
+}
+
+async function uploadBlobToSupabase(
+  localUri: string,
+  bucket: string,
+  path: string,
+  contentType: string
+): Promise<string> {
+  console.log(`[Upload iOS] Fetching local file: ${localUri}`);
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  console.log(`[Upload iOS] Uploading to bucket "${bucket}" path "${path}"`);
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(path, blob, { contentType, upsert: true });
+  if (error) {
+    console.error(`[Upload iOS] Supabase storage error:`, error);
+    throw new Error(error.message);
+  }
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  console.log(`[Upload iOS] Public URL: ${urlData.publicUrl}`);
+  return urlData.publicUrl;
 }
 
 export default function UploadMomentScreen() {
@@ -31,6 +55,7 @@ export default function UploadMomentScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [placeInput, setPlaceInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   const handlePickVideo = useCallback(async () => {
     console.log("User tapped pick video for moment upload (iOS)");
@@ -81,8 +106,39 @@ export default function UploadMomentScreen() {
     console.log("User tapped Post Moment (iOS) - submitting moment upload");
     setSubmitting(true);
     try {
-      const payload: Record<string, any> = {
-        video_url: videoUri,
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert("Not signed in", "Please sign in to upload.");
+        return;
+      }
+
+      const timestamp = Date.now();
+      const videoPath = `${user.id}/${timestamp}.mp4`;
+      const thumbPath = `${user.id}/${timestamp}.jpg`;
+
+      // Step 1: Upload video to 'posts' bucket
+      setUploadStatus("Uploading video...");
+      console.log("Step 1 (iOS): Uploading video to Supabase Storage bucket 'posts'");
+      const videoUrl = await uploadBlobToSupabase(videoUri, "posts", videoPath, "video/mp4");
+
+      // Step 2: Generate thumbnail
+      setUploadStatus("Generating thumbnail...");
+      let thumbnailUrl: string | null = null;
+      try {
+        console.log("Step 2 (iOS): Generating thumbnail from video");
+        const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
+        console.log("Thumbnail generated at:", thumbResult.uri);
+        setUploadStatus("Uploading thumbnail...");
+        thumbnailUrl = await uploadBlobToSupabase(thumbResult.uri, "thumbnails", thumbPath, "image/jpeg");
+      } catch (thumbErr: any) {
+        console.warn("Thumbnail generation/upload failed (iOS, continuing without thumbnail):", thumbErr?.message);
+      }
+
+      // Step 3: POST to backend
+      setUploadStatus("Posting moment...");
+      const payload = {
+        video_url: videoUrl,
+        thumbnail_url: thumbnailUrl,
         caption: caption.trim() || undefined,
         places: places.map((p) => ({ place_id: p.place_id, place_name: p.place_name })),
       };
@@ -97,8 +153,11 @@ export default function UploadMomentScreen() {
       Alert.alert("Upload failed", e?.message || "Couldn't post your moment. Please try again.");
     } finally {
       setSubmitting(false);
+      setUploadStatus("");
     }
   }, [videoUri, caption, places, router]);
+
+  const submitLabel = submitting ? (uploadStatus || "Uploading...") : "Post Moment";
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -177,7 +236,7 @@ export default function UploadMomentScreen() {
             {submitting ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator size="small" color="#FFF" />
-                <Text style={styles.submitBtnText}>Uploading...</Text>
+                <Text style={styles.submitBtnText}>{submitLabel}</Text>
               </View>
             ) : (
               <Text style={styles.submitBtnText}>Post Moment</Text>

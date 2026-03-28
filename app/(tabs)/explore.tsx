@@ -715,8 +715,13 @@ function ExperienceCard({
   };
 
   const handleLocationPress = () => {
-    console.log("User tapped location on card:", item.location);
-    router.push(`/search-location?q=${encodeURIComponent(item.location)}` as any);
+    console.log("User tapped location on card:", item.location, "location_id:", (item as any).location_id);
+    const locationId = (item as any).location_id;
+    if (locationId) {
+      router.push(`/location/${locationId}` as any);
+    } else {
+      router.push(`/search-location?q=${encodeURIComponent(item.location)}` as any);
+    }
   };
 
   const handleCreatorPress = () => {

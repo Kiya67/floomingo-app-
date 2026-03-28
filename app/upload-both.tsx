@@ -12,17 +12,54 @@ import {
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as VideoThumbnails from "expo-video-thumbnails";
 import { LinearGradient } from "expo-linear-gradient";
 import { Video, MapPin, X, Plus, Play, Film } from "lucide-react-native";
-import { getBearerToken, authenticatedPost, BACKEND_URL } from "@/utils/api";
+import { authenticatedPost } from "@/utils/api";
+import { supabase } from "@/lib/supabase";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-const EXPERIENCE_ENDPOINT = "https://7efxms2e3tmdd7a38j8uphfzrnwcgesc.app.specular.dev/api/experiences";
 
 interface Place {
   id: string;
   place_id: string;
   place_name: string;
+}
+
+async function uploadBlobToSupabase(
+  localUri: string,
+  bucket: string,
+  path: string,
+  contentType: string
+): Promise<string> {
+  console.log(`[Upload] Fetching local file: ${localUri}`);
+  const response = await fetch(localUri);
+  const blob = await response.blob();
+  console.log(`[Upload] Uploading to bucket "${bucket}" path "${path}"`);
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(path, blob, { contentType, upsert: true });
+  if (error) {
+    console.error(`[Upload] Supabase storage error:`, error);
+    throw new Error(error.message);
+  }
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  console.log(`[Upload] Public URL: ${urlData.publicUrl}`);
+  return urlData.publicUrl;
+}
+
+async function generateAndUploadThumbnail(
+  videoUri: string,
+  bucket: string,
+  path: string
+): Promise<string | null> {
+  try {
+    const thumbResult = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 1000 });
+    console.log("Thumbnail generated at:", thumbResult.uri);
+    return await uploadBlobToSupabase(thumbResult.uri, bucket, path, "image/jpeg");
+  } catch (err: any) {
+    console.warn("Thumbnail generation/upload failed (continuing without thumbnail):", err?.message);
+    return null;
+  }
 }
 
 export default function UploadBothScreen() {
@@ -31,7 +68,6 @@ export default function UploadBothScreen() {
   const [momentVideoName, setMomentVideoName] = useState<string>("");
   const [expVideoUri, setExpVideoUri] = useState<string | null>(null);
   const [expVideoName, setExpVideoName] = useState<string>("");
-  const [expVideoDuration, setExpVideoDuration] = useState<number>(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -75,7 +111,6 @@ export default function UploadBothScreen() {
       const asset = result.assets[0];
       const durationSecs = asset.duration ? asset.duration / 1000 : 0;
       setExpVideoUri(asset.uri);
-      setExpVideoDuration(durationSecs);
       const parts = asset.uri.split("/");
       setExpVideoName(parts[parts.length - 1] || "video.mp4");
       console.log("User selected experience video (upload-both):", asset.uri, "duration:", durationSecs, "s");
@@ -115,57 +150,57 @@ export default function UploadBothScreen() {
     }
     console.log("User tapped Post Both - submitting moment + experience upload in parallel");
     setSubmitting(true);
-    setSubmitStep("Uploading...");
+    setSubmitStep("Getting user...");
 
     try {
-      const token = await getBearerToken();
-      if (!token) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         Alert.alert("Not signed in", "Please sign in to upload.");
         return;
       }
 
-      // Build moment payload
+      const timestamp = Date.now();
+
+      // Upload both videos + thumbnails in parallel
+      setSubmitStep("Uploading videos...");
+      console.log("Uploading moment video to 'posts' bucket and experience video to 'experiences' bucket in parallel");
+
+      const [momentVideoUrl, expVideoUrl] = await Promise.all([
+        uploadBlobToSupabase(momentVideoUri, "posts", `${user.id}/${timestamp}_moment.mp4`, "video/mp4"),
+        uploadBlobToSupabase(expVideoUri, "experiences", `${user.id}/${timestamp}_exp.mp4`, "video/mp4"),
+      ]);
+
+      setSubmitStep("Uploading thumbnails...");
+      console.log("Generating and uploading thumbnails in parallel");
+
+      const [momentThumbUrl, expThumbUrl] = await Promise.all([
+        generateAndUploadThumbnail(momentVideoUri, "thumbnails", `${user.id}/${timestamp}_moment.jpg`),
+        generateAndUploadThumbnail(expVideoUri, "thumbnails", `${user.id}/${timestamp}_exp.jpg`),
+      ]);
+
+      // POST both to backend in parallel
+      setSubmitStep("Posting...");
       const momentPayload = {
-        video_url: momentVideoUri,
+        video_url: momentVideoUrl,
+        thumbnail_url: momentThumbUrl,
         caption: title.trim(),
         places: places.map((p) => ({ place_id: p.place_id, place_name: p.place_name })),
       };
+      const expPayload = {
+        title: title.trim(),
+        description: description.trim() || undefined,
+        location: location.trim() || undefined,
+        video_url: expVideoUrl,
+        thumbnail_url: expThumbUrl,
+      };
 
-      // Build experience FormData
-      const expFormData = new FormData();
-      expFormData.append("video", {
-        uri: expVideoUri,
-        name: expVideoName || "video.mp4",
-        type: "video/mp4",
-      } as any);
-      expFormData.append("title", title.trim());
-      if (description.trim()) expFormData.append("description", description.trim());
-      if (location.trim()) expFormData.append("location", location.trim());
-      expFormData.append("duration", String(Math.round(expVideoDuration)));
-
-      console.log("Uploading moment to /api/moments and experience to", EXPERIENCE_ENDPOINT, "in parallel");
-
-      const [momentResult, expResponse] = await Promise.all([
+      console.log("Posting moment to /api/moments and experience to /api/experiences in parallel");
+      await Promise.all([
         authenticatedPost("/api/moments", momentPayload).catch((e) => { throw new Error("Moment upload failed: " + e.message); }),
-        fetch(EXPERIENCE_ENDPOINT, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: expFormData,
-        }),
+        authenticatedPost("/api/experiences", expPayload).catch((e) => { throw new Error("Experience upload failed: " + e.message); }),
       ]);
 
-      console.log("Moment upload result:", momentResult);
-      console.log("Experience upload response status:", expResponse.status);
-
-      if (!expResponse.ok) {
-        const text = await expResponse.text();
-        console.error("Experience upload error response:", text);
-        throw new Error("Experience upload failed: " + text);
-      }
-
-      const expData = await expResponse.json();
-      console.log("Both uploads successful. Experience:", expData);
-
+      console.log("Both uploads successful");
       Alert.alert("Posted!", "Your Moment and Experience have been shared.", [
         { text: "OK", onPress: () => router.back() },
       ]);
@@ -176,7 +211,7 @@ export default function UploadBothScreen() {
       setSubmitting(false);
       setSubmitStep("");
     }
-  }, [momentVideoUri, expVideoUri, expVideoName, expVideoDuration, title, description, location, places, router]);
+  }, [momentVideoUri, expVideoUri, title, description, location, places, router]);
 
   const canSubmit = !!momentVideoUri && !!expVideoUri && !!title.trim() && !submitting;
 

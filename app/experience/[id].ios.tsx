@@ -26,7 +26,7 @@ const TEXT_TERTIARY = "#A0A0A0";
 const BORDER = "rgba(0,0,0,0.07)";
 const INPUT_BG = "#F0F0F0";
 const SURFACE = "#FFFFFF";
-const API_BASE = "https://7efxms2e3tmdd7a38j8uphfzrnwwcgesc.app.specular.dev";
+const API_BASE = "https://7efxms2e3tmdd7a38j8uphfzrnwcgesc.app.specular.dev";
 
 const { width } = Dimensions.get("window");
 const VIDEO_HEIGHT = 250;
@@ -174,34 +174,30 @@ export default function ExperienceDetailScreen() {
       if (locationId) {
         console.log("Fetching related experiences for location (iOS):", locationId, "excluding:", id);
         try {
-          const url = `${API_BASE}/api/experiences/location/${locationId}?limit=20&excludeId=${id}`;
+          const url = `${API_BASE}/api/experiences/location/${locationId}?exclude=${id}`;
           console.log("Network request: GET", url);
           const response = await fetch(url);
           if (!response.ok) {
             const errText = await response.text();
             console.error("Related experiences API error (iOS):", response.status, errText);
-            fallbackToDemo();
+            setRelatedExperiences([]);
           } else {
             const data = await response.json();
             console.log("Related experiences fetched (iOS):", Array.isArray(data) ? data.length : 0, "items");
             const list: ApiExperience[] = Array.isArray(data) ? data : (data?.experiences ?? data?.data ?? []);
-            setRelatedExperiences(list);
+            // Filter out current experience client-side as a safety net
+            setRelatedExperiences(list.filter((e) => e.id !== id));
           }
         } catch (err) {
           console.error("Error fetching related experiences (iOS):", err);
-          fallbackToDemo();
+          setRelatedExperiences([]);
         }
       } else {
-        console.log("No location_id on experience (iOS), falling back to demo related");
-        fallbackToDemo();
+        console.log("No location_id on experience (iOS), hiding related section");
+        setRelatedExperiences([]);
       }
 
       setRelatedLoading(false);
-    };
-
-    const fallbackToDemo = () => {
-      const fallback = DEMO_EXPERIENCES.filter((e) => e.id !== experience.id).slice(0, 4);
-      setRelatedExperiences(fallback as any);
     };
 
     fetchRelated();
